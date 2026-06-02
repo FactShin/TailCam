@@ -50,7 +50,32 @@ anycam run
 | `anycam status` | Show cameras, Tailscale status, and access URL |
 | `anycam cameras` | List detected cameras |
 | `anycam install-service` / `uninstall-service` | Manage the background service |
-| `anycam tailscale serve` / `status` | Manage tailnet exposure |
+| `anycam tailscale serve` / `serve-off` / `status` | Manage tailnet exposure |
+| `anycam config [--init]` | Show (or create) the config file and current values |
+
+## Ports & Tailscale
+
+There are two separate ports:
+
+- **`server.port`** (default **8088**) — the local web UI: `http://localhost:8088/`.
+- **`tailscale.serve_port`** (default **8443**) — the tailnet-facing HTTPS port.
+
+AnyCam serves on **`https://<host>.<tailnet>.ts.net:8443/`** by default rather than the
+root (`:443`), so it won't clobber another app (e.g. OpenClaw) already served at the root
+URL. Tailscale permits `443`, `8443`, and `10000` for serve/funnel.
+
+To change the tailnet port:
+
+```bash
+anycam tailscale serve --https-port 10000   # one-off + saved to config
+# or edit ~/.config/anycam/config.toml  ([tailscale] serve_port = 10000) and restart the service
+```
+
+If AnyCam previously grabbed the root URL and you want it back for another app:
+
+```bash
+anycam tailscale serve-off --https-port 443   # removes only AnyCam's :443 handler
+```
 
 ## Features
 

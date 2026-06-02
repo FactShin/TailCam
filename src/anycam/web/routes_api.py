@@ -176,7 +176,7 @@ def system_info(ctx: AppContext = Depends(get_context)) -> SystemInfo:
         version=__version__,
         tailscale_installed=status.installed,
         tailscale_running=status.running,
-        access_url=ctx.tailscale.access_url(port, ctx.served),
+        access_url=ctx.tailscale.access_url(port, ctx.served, ctx.config.tailscale.serve_port),
         local_url=f"http://localhost:{port}/",
         media_bytes=ctx.gallery.total_bytes(),
     )

@@ -50,7 +50,13 @@ def test_access_url_prefers_magicdns_when_served(monkeypatch):
     monkeypatch.setattr("anycam.tailscale.client.shutil.which", lambda _b: "/usr/bin/tailscale")
     monkeypatch.setattr(subprocess, "run", _fake_run(json.dumps(_STATUS_RUNNING)))
     client = TailscaleClient()
-    assert client.access_url(8088, served=True) == "https://mybox.tailnet-abc.ts.net/"
+    # Port 443 -> root URL (no port shown).
+    assert client.access_url(8088, served=True, https_port=443) == "https://mybox.tailnet-abc.ts.net/"
+    # Non-443 serve port -> URL includes the port.
+    assert (
+        client.access_url(8088, served=True, https_port=8443)
+        == "https://mybox.tailnet-abc.ts.net:8443/"
+    )
     assert client.access_url(8088, served=False) == "http://100.101.102.103:8088/"
 
 

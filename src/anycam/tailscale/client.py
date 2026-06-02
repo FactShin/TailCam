@@ -66,9 +66,16 @@ class TailscaleClient:
         magic = (self_node.get("DNSName") or "").rstrip(".") or None
         return TailscaleStatus(True, running, ipv4, magic)
 
-    def serve(self, port: int) -> bool:
-        """Expose a local port over HTTPS within the tailnet (background)."""
-        proc = self._run("serve", "--bg", str(port))
+    def serve(self, local_port: int, https_port: int = 8443) -> bool:
+        """Expose a local port over HTTPS within the tailnet (background).
+
+        ``https_port`` is the tailnet-facing port. Using a non-443 port (e.g.
+        8443) keeps AnyCam off the root URL so it won't clobber another app
+        already served at ``https://<host>/``.
+        """
+        proc = self._run(
+            "serve", "--bg", f"--https={https_port}", f"localhost:{local_port}"
+        )
         if proc is None:
             return False
         if proc.returncode != 0:
@@ -76,14 +83,21 @@ class TailscaleClient:
             return False
         return True
 
+    def serve_off(self, https_port: int) -> bool:
+        """Remove only AnyCam's handler on ``https_port`` (leaves others intact)."""
+        proc = self._run("serve", "--https", str(https_port), "off")
+        return proc is not None and proc.returncode == 0
+
     def serve_reset(self) -> bool:
         proc = self._run("serve", "reset")
         return proc is not None and proc.returncode == 0
 
-    def access_url(self, port: int, served: bool) -> str:
+    def access_url(self, local_port: int, served: bool, https_port: int = 8443) -> str:
         status = self.status()
         if served and status.magic_dns:
-            return f"https://{status.magic_dns}/"
+            if https_port == 443:
+                return f"https://{status.magic_dns}/"
+            return f"https://{status.magic_dns}:{https_port}/"
         if status.ipv4:
-            return f"http://{status.ipv4}:{port}/"
-        return f"http://localhost:{port}/"
+            return f"http://{status.ipv4}:{local_port}/"
+        return f"http://localhost:{local_port}/"

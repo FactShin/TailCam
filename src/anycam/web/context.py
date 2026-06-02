@@ -37,9 +37,14 @@ class AppContext:
     def startup(self) -> None:
         self.manager.discover()
         if self.config.tailscale.auto_serve and self.tailscale.status().running:
-            self.served = self.tailscale.serve(self.config.server.port)
+            https_port = self.config.tailscale.serve_port
+            self.served = self.tailscale.serve(self.config.server.port, https_port)
             if self.served:
-                log.info("Tailscale serve enabled on port %s", self.config.server.port)
+                log.info(
+                    "Tailscale serve enabled: tailnet :%s -> localhost:%s",
+                    https_port,
+                    self.config.server.port,
+                )
 
     def shutdown(self) -> None:
         for worker in list(self._motion_workers.values()):

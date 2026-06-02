@@ -54,6 +54,10 @@ class RetentionConfig:
 @dataclass
 class TailscaleConfig:
     auto_serve: bool = True
+    # Tailnet-facing HTTPS port. 8443 keeps AnyCam off the root URL (443) so it
+    # won't clobber another app already served there. Tailscale allows 443,
+    # 8443, and 10000 for serve/funnel.
+    serve_port: int = 8443
 
 
 @dataclass
