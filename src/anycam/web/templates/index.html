@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · AnyCam{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>Cameras</h1>
+    <button class="btn" id="refresh-cameras">↻ Refresh</button>
+</div>
+
+{% if not cameras %}
+<p class="empty">No cameras detected. Plug in a webcam and press Refresh.</p>
+{% endif %}
+
+<div class="grid" id="camera-grid">
+    {% for cam in cameras %}
+    <div class="tile" data-camera-id="{{ cam.descriptor.id }}">
+        <a href="/camera/{{ cam.descriptor.id }}">
+            <img class="tile-feed"
+                 src="/stream/{{ cam.descriptor.id }}.mjpg?fps=10"
+                 alt="{{ cam.name }}"
+                 loading="lazy">
+        </a>
+        <div class="tile-bar">
+            <span class="tile-name">{{ cam.name }}</span>
+            <span class="badge" data-status>•</span>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script>AnyCam.initDashboard();</script>
+{% endblock %}

@@ -1,0 +1,95 @@
+:root {
+    --bg: #0f1115;
+    --panel: #1a1d24;
+    --panel-2: #232733;
+    --text: #e6e8ee;
+    --muted: #8b91a0;
+    --accent: #4f8cff;
+    --ok: #3ecf8e;
+    --warn: #f5a623;
+    --err: #ff5c5c;
+    --radius: 10px;
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+}
+a { color: var(--accent); text-decoration: none; }
+
+.topbar {
+    display: flex; align-items: center; gap: 24px;
+    padding: 12px 20px; background: var(--panel);
+    border-bottom: 1px solid #00000040; position: sticky; top: 0; z-index: 10;
+}
+.brand { font-weight: 700; font-size: 1.1rem; color: var(--text); }
+.topbar nav { display: flex; gap: 18px; }
+.topbar nav a { color: var(--muted); }
+.topbar nav a:hover { color: var(--text); }
+.access-banner { margin-left: auto; font-size: .85rem; color: var(--muted); }
+.access-banner a { font-family: monospace; }
+
+.content { padding: 20px; max-width: 1200px; margin: 0 auto; }
+.page-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.page-head h1 { font-size: 1.4rem; margin: 0; }
+.filters { display: flex; gap: 10px; }
+
+.grid {
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+.tile { background: var(--panel); border-radius: var(--radius); overflow: hidden; }
+.tile-feed { width: 100%; aspect-ratio: 16/9; object-fit: cover; background: #000; display: block; }
+.tile-bar { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; }
+.tile-name { font-weight: 600; }
+
+.badge { color: var(--muted); font-size: .8rem; }
+.badge.online { color: var(--ok); }
+.badge.degraded { color: var(--warn); }
+.badge.offline { color: var(--err); }
+
+.camera-layout { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; align-items: start; }
+@media (max-width: 820px) { .camera-layout { grid-template-columns: 1fr; } }
+.viewer { position: relative; background: #000; border-radius: var(--radius); overflow: hidden; }
+.viewer img { width: 100%; display: block; }
+.viewer-status { position: absolute; top: 10px; left: 10px; display: flex; gap: 10px; }
+.rec { color: #fff; background: var(--err); padding: 2px 8px; border-radius: 6px; font-size: .8rem; }
+.viewer-status .badge { background: #00000080; padding: 2px 8px; border-radius: 6px; }
+
+.controls section {
+    background: var(--panel); border-radius: var(--radius);
+    padding: 14px 16px; margin-bottom: 14px;
+}
+.controls h3 { margin: 0 0 10px; font-size: .95rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.controls label { display: block; margin-bottom: 12px; font-size: .9rem; }
+.controls label.inline { display: flex; align-items: center; gap: 8px; }
+.controls input[type=range] { width: 100%; }
+.controls select, .controls input[type=text] {
+    width: 100%; margin-top: 4px; padding: 6px 8px;
+    background: var(--panel-2); color: var(--text); border: 1px solid #00000040; border-radius: 6px;
+}
+
+.btn {
+    background: var(--accent); color: #fff; border: none; cursor: pointer;
+    padding: 8px 14px; border-radius: 8px; font-size: .9rem; margin-top: 4px;
+}
+.btn:hover { filter: brightness(1.1); }
+.btn.ghost { background: var(--panel-2); color: var(--text); }
+.btn.recording { background: var(--err); }
+
+.empty { color: var(--muted); padding: 40px; text-align: center; }
+.hidden { display: none !important; }
+
+.media-card { background: var(--panel); border-radius: var(--radius); overflow: hidden; }
+.media-card img { width: 100%; aspect-ratio: 16/9; object-fit: cover; background: #000; }
+.media-meta { padding: 8px 12px; font-size: .8rem; color: var(--muted); display: flex; justify-content: space-between; align-items: center; }
+.media-actions { display: flex; gap: 8px; padding: 0 12px 12px; }
+
+.events-table { width: 100%; border-collapse: collapse; }
+.events-table th, .events-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #ffffff14; font-size: .9rem; }
+.events-table th { color: var(--muted); font-weight: 600; }
+
+select, input { font-family: inherit; }
+select { background: var(--panel-2); color: var(--text); border: 1px solid #00000040; border-radius: 6px; padding: 6px 8px; }
