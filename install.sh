@@ -63,16 +63,52 @@ confirm() {
 }
 
 # --- Python -----------------------------------------------------------------
+# Resolved interpreter (>=3.10) is stored in $PYTHON and used for the venv.
+PYTHON=""
+
+py_ok() {
+    # Succeeds if "$1" is a Python interpreter of version >= 3.10.
+    "$1" -c 'import sys; sys.exit(0 if sys.version_info[:2] >= (3, 10) else 1)' >/dev/null 2>&1
+}
+
+find_python() {
+    local cand
+    for cand in python3.13 python3.12 python3.11 python3.10 python3 python; do
+        if command -v "$cand" >/dev/null 2>&1 && py_ok "$cand"; then
+            PYTHON="$(command -v "$cand")"
+            return 0
+        fi
+    done
+    return 1
+}
+
 ensure_python() {
-    if have python3; then
-        PYV="$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
-        log "Found Python ${PYV}"
+    if find_python; then
+        log "Using Python $("$PYTHON" -c 'import sys; print("%d.%d" % sys.version_info[:2])') ($PYTHON)"
         return 0
     fi
-    err "Python 3.10+ is required but was not found."
+    warn "Python 3.10+ not found (system python3 is $(python3 --version 2>/dev/null || echo 'absent'))."
     case "$DISTRO" in
-        debian|ubuntu) echo "  Install it with: sudo apt-get install -y python3 python3-venv python3-pip" ;;
-        *) [ "$OS" = "Darwin" ] && echo "  Install it with: brew install python" ;;
+        debian|ubuntu)
+            if confirm "Install Python 3 via apt?"; then
+                sudo apt-get update -y && sudo apt-get install -y python3 python3-venv python3-pip || \
+                    warn "apt install failed."
+            fi ;;
+        *)
+            if [ "$OS" = "Darwin" ] && have brew; then
+                if confirm "Install Python 3.12 via Homebrew?"; then
+                    brew install python@3.12 || warn "Homebrew install failed."
+                fi
+            fi ;;
+    esac
+    if find_python; then
+        log "Using Python $("$PYTHON" -c 'import sys; print("%d.%d" % sys.version_info[:2])') ($PYTHON)"
+        return 0
+    fi
+    err "Python 3.10+ is required and could not be installed automatically."
+    case "$DISTRO" in
+        debian|ubuntu) echo "  Try: sudo apt-get install -y python3 python3-venv python3-pip" ;;
+        *) [ "$OS" = "Darwin" ] && echo "  Try: brew install python@3.12" ;;
     esac
     exit 1
 }
@@ -125,11 +161,12 @@ install_anycam() {
     local spec="git+https://github.com/${REPO}.git@${REF}"
     if have pipx; then
         log "Installing AnyCam with pipx"
-        pipx install --force "$spec"
+        pipx install --force --python "$PYTHON" "$spec"
         ANYCAM_BIN="$(command -v anycam || echo "${HOME}/.local/bin/anycam")"
     else
         log "Creating virtualenv at ${VENV_DIR}"
-        python3 -m venv "$VENV_DIR"
+        rm -rf "$VENV_DIR"   # recreate so a stale/old-Python venv can't linger
+        "$PYTHON" -m venv "$VENV_DIR"
         "${VENV_DIR}/bin/pip" install --upgrade pip >/dev/null
         log "Installing AnyCam from ${spec}"
         "${VENV_DIR}/bin/pip" install "$spec"
