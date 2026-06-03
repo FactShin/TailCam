@@ -113,6 +113,9 @@ Notes & current limits:
 
 ## Features
 
+- **Polished dashboard (PWA)** — a responsive React web app (installable on phone or desktop) with
+  a live camera grid grouped by device, a mobile-first camera view with pinch/zoom, gallery, and
+  motion events. Built and shipped inside the package; see [`web-ui/`](web-ui/).
 - **Multi-host aggregation** — see every camera across all your tailnet devices from any one of them.
 - **Multi-camera** — auto-detects connected webcams; name them and view them in a grid.
 - **Resolution, zoom & pan** — set capture resolution; per-viewer digital zoom + pan;
@@ -143,6 +146,11 @@ ruff check . && mypy src
 
 Set `ANYCAM_SYNTHETIC=1` to use a built-in synthetic camera source — useful on
 headless servers, in containers, and in CI where no webcam exists.
+
+The dashboard front-end lives in [`web-ui/`](web-ui/) (React + Vite). Its build
+output is committed to `src/anycam/web/spa/` and ships in the wheel, so end users
+never need Node. To change the UI: `cd web-ui && npm install && npm run build`,
+then commit both the source and the regenerated `src/anycam/web/spa/`.
 
 ## License
 
