@@ -77,8 +77,43 @@ If AnyCam previously grabbed the root URL and you want it back for another app:
 anycam tailscale serve-off --https-port 443   # removes only AnyCam's :443 handler
 ```
 
+## Multi-host: every camera, from any device
+
+Install AnyCam on more than one machine on the same tailnet (a Raspberry Pi, a Mac, a Linux
+box…) and **each node automatically discovers the others and shows all of their cameras**. Open
+the dashboard on any device and you see every camera across your tailnet in one place — no matter
+which machine the webcam is physically plugged into.
+
+How it works:
+
+- The node you're viewing becomes an **aggregator**: it finds the other AnyCam nodes, asks each
+  for its camera list, merges them, and **reverse-proxies** the remote video and controls — so
+  your browser only ever talks to the node you opened (one origin, one Tailscale cert).
+- **Discovery is automatic** over Tailscale (it probes online tailnet peers for a running AnyCam).
+  You can also list peers explicitly:
+
+  ```toml
+  # ~/.config/anycam/config.toml
+  [peers]
+  auto_discover = true
+  static = ["https://anycam-pi.your-tailnet.ts.net:8443"]   # optional explicit peers
+  ```
+
+- Name a node with `ANYCAM_HOST` (otherwise its Tailscale MagicDNS name / hostname is used), e.g.
+  `ANYCAM_HOST=garage-pi`.
+- `GET /api/hosts` lists every node (local + peers) and their camera counts.
+
+Notes & current limits:
+- Remote cameras are fully viewable **and** controllable (resolution, zoom/pan, snapshot, record).
+- This treats every AnyCam node on your tailnet as trusted — the intended model for a personal
+  tailnet (there is no separate auth; Tailscale is the security boundary).
+- For now, the **gallery and motion-event feed are per-host** (snapshots/recordings live on the
+  node that captured them). Cross-host media aggregation is planned next.
+- **Windows nodes** aren't supported yet (Linux/macOS only) — a future addition.
+
 ## Features
 
+- **Multi-host aggregation** — see every camera across all your tailnet devices from any one of them.
 - **Multi-camera** — auto-detects connected webcams; name them and view them in a grid.
 - **Resolution, zoom & pan** — set capture resolution; per-viewer digital zoom + pan;
   rotate/flip; brightness/contrast/FPS controls.

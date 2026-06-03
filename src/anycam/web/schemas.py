@@ -39,6 +39,19 @@ class CameraInfo(BaseModel):
     motion_enabled: bool
     properties: dict
     transform: TransformModel
+    # Multi-host: which node owns this camera, and the prefix to reach its
+    # stream/controls through this node ("" = local, "/proxy/<key>" = remote).
+    host: str = ""
+    proxy_prefix: str = ""
+
+
+class HostInfo(BaseModel):
+    host: str
+    kind: str  # "local" | "peer"
+    online: bool
+    version: str | None = None
+    camera_count: int = 0
+    proxy_prefix: str = ""
 
 
 class MediaInfo(BaseModel):
@@ -62,6 +75,7 @@ class MotionEventInfo(BaseModel):
 
 class SystemInfo(BaseModel):
     version: str
+    host: str = ""  # this node's identity (used for peer discovery)
     tailscale_installed: bool
     tailscale_running: bool
     access_url: str

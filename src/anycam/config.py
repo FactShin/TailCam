@@ -61,12 +61,23 @@ class TailscaleConfig:
 
 
 @dataclass
+class PeersConfig:
+    # Multi-host: discover other AnyCam nodes on the tailnet and show every
+    # camera from any device. ``auto_discover`` probes online Tailscale peers;
+    # ``static`` lists explicit peer base URLs (e.g. http://100.x.y.z:8088 or
+    # https://host.tailnet.ts.net:8443) as a fallback/override.
+    auto_discover: bool = True
+    static: list[str] = field(default_factory=list)
+
+
+@dataclass
 class AppConfig:
     server: ServerConfig = field(default_factory=ServerConfig)
     stream: StreamConfig = field(default_factory=StreamConfig)
     motion: MotionConfig = field(default_factory=MotionConfig)
     retention: RetentionConfig = field(default_factory=RetentionConfig)
     tailscale: TailscaleConfig = field(default_factory=TailscaleConfig)
+    peers: PeersConfig = field(default_factory=PeersConfig)
 
     @classmethod
     def load(cls, path: Path | None = None) -> AppConfig:
@@ -85,6 +96,7 @@ class AppConfig:
             motion=MotionConfig(**raw.get("motion", {})),
             retention=RetentionConfig(**raw.get("retention", {})),
             tailscale=TailscaleConfig(**raw.get("tailscale", {})),
+            peers=PeersConfig(**raw.get("peers", {})),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -94,6 +106,7 @@ class AppConfig:
             "motion": asdict(self.motion),
             "retention": asdict(self.retention),
             "tailscale": asdict(self.tailscale),
+            "peers": asdict(self.peers),
         }
 
     def save(self, path: Path | None = None) -> None:

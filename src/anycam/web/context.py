@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 
 from anycam.camera.manager import CameraManager
+from anycam.cluster.service import ClusterService, resolve_local_host
 from anycam.config import AppConfig
 from anycam.logging_setup import get_logger
 from anycam.media.gallery import MediaGallery
@@ -30,6 +31,10 @@ class AppContext:
         self.event_log = EventLog(self.store)
         self.tailscale = TailscaleClient()
         self.mjpeg = MJPEGBackend()
+        self.local_host = resolve_local_host(self.tailscale)
+        self.cluster = ClusterService(
+            config.peers, self.tailscale, self.local_host, config.tailscale.serve_port
+        )
         self.served = False
         self._motion_workers: dict[str, MotionWorker] = {}
         self._lock = threading.Lock()
@@ -52,6 +57,9 @@ class AppContext:
         self._motion_workers.clear()
         self.recorder.stop_all()
         self.manager.stop_all()
+
+    async def aclose(self) -> None:
+        await self.cluster.aclose()
 
     # -- motion ------------------------------------------------------------
     def motion_enabled(self, camera_id: str) -> bool:

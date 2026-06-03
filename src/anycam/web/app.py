@@ -27,6 +27,7 @@ def create_app(config: AppConfig | None = None, context: AppContext | None = Non
         ctx.startup()
         yield
         ctx.shutdown()
+        await ctx.aclose()
 
     app = FastAPI(title="AnyCam", lifespan=lifespan)
     app.state.ctx = ctx
@@ -35,9 +36,10 @@ def create_app(config: AppConfig | None = None, context: AppContext | None = Non
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
     # Import here to avoid circular imports at module load.
-    from anycam.web import routes_api, routes_pages, routes_stream
+    from anycam.web import routes_api, routes_pages, routes_proxy, routes_stream
 
     app.include_router(routes_stream.router)
+    app.include_router(routes_proxy.router)
     app.include_router(routes_api.router)
     app.include_router(routes_pages.router)
     return app

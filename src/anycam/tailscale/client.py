@@ -27,6 +27,13 @@ class TailscaleStatus:
     served: bool = False
 
 
+@dataclass
+class TailscalePeer:
+    dns_name: str  # e.g. "anycam-pi.tailnet-name.ts.net"
+    ipv4: str | None
+    online: bool
+
+
 class TailscaleClient:
     def __init__(self, binary: str = "tailscale") -> None:
         self._binary = binary
@@ -65,6 +72,27 @@ class TailscaleClient:
         ipv4 = next((ip for ip in ips if ":" not in ip), None)
         magic = (self_node.get("DNSName") or "").rstrip(".") or None
         return TailscaleStatus(True, running, ipv4, magic)
+
+    def peers(self) -> list[TailscalePeer]:
+        """Return online tailnet peers (other devices), for AnyCam discovery."""
+        if not self.is_installed():
+            return []
+        proc = self._run("status", "--json")
+        if proc is None or proc.returncode != 0 or not proc.stdout:
+            return []
+        try:
+            data = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            return []
+        out: list[TailscalePeer] = []
+        for node in (data.get("Peer") or {}).values():
+            dns = (node.get("DNSName") or "").rstrip(".")
+            if not dns:
+                continue
+            ips = node.get("TailscaleIPs") or []
+            ipv4 = next((ip for ip in ips if ":" not in ip), None)
+            out.append(TailscalePeer(dns_name=dns, ipv4=ipv4, online=bool(node.get("Online"))))
+        return out
 
     def serve(self, local_port: int, https_port: int = 8443) -> bool:
         """Expose a local port over HTTPS within the tailnet (background).

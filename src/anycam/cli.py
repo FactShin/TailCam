@@ -172,6 +172,8 @@ def config(
     typer.echo(f"  server.port        = {cfg.server.port}        # local web UI port")
     typer.echo(f"  tailscale.auto_serve = {cfg.tailscale.auto_serve}")
     typer.echo(f"  tailscale.serve_port = {cfg.tailscale.serve_port}     # tailnet HTTPS port")
+    typer.echo(f"  peers.auto_discover  = {cfg.peers.auto_discover}     # find other AnyCam nodes")
+    typer.echo(f"  peers.static         = {cfg.peers.static}")
 
 
 @app.command()

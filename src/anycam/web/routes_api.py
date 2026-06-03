@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from anycam import __version__
 from anycam.camera.manager import ManagedCamera
@@ -11,6 +11,7 @@ from anycam.web.deps import get_context
 from anycam.web.schemas import (
     CameraInfo,
     CameraSettingsUpdate,
+    HostInfo,
     MediaCreatedResponse,
     MediaInfo,
     MotionEventInfo,
@@ -42,18 +43,66 @@ def _camera_info(ctx: AppContext, cam: ManagedCamera) -> CameraInfo:
             flip_h=cam.transform.flip_h,
             flip_v=cam.transform.flip_v,
         ),
+        host=ctx.local_host,
+        proxy_prefix="",
     )
 
 
+async def _aggregate_cameras(ctx: AppContext, scope: str) -> list[CameraInfo]:
+    local = [_camera_info(ctx, cam) for cam in ctx.manager.list()]
+    if scope == "local":
+        return local
+    # Remote cameras arrive as CameraInfo-shaped dicts already tagged with the
+    # peer's host + proxy_prefix; validate them into the response model.
+    remote = [CameraInfo.model_validate(c) for c in await ctx.cluster.remote_cameras()]
+    return local + remote
+
+
 @router.get("/cameras", response_model=list[CameraInfo])
-def list_cameras(ctx: AppContext = Depends(get_context)) -> list[CameraInfo]:
-    return [_camera_info(ctx, cam) for cam in ctx.manager.list()]
+async def list_cameras(
+    scope: str = Query("all", pattern="^(all|local)$"),
+    ctx: AppContext = Depends(get_context),
+) -> list[CameraInfo]:
+    """List cameras. ``scope=local`` returns only this node's cameras (peers use
+    this to avoid recursive aggregation); ``all`` (default) includes peers."""
+    return await _aggregate_cameras(ctx, scope)
 
 
 @router.post("/cameras/refresh", response_model=list[CameraInfo])
-def refresh_cameras(ctx: AppContext = Depends(get_context)) -> list[CameraInfo]:
+async def refresh_cameras(
+    scope: str = Query("all", pattern="^(all|local)$"),
+    ctx: AppContext = Depends(get_context),
+) -> list[CameraInfo]:
     ctx.manager.discover()
-    return [_camera_info(ctx, cam) for cam in ctx.manager.list()]
+    if scope != "local":
+        await ctx.cluster.refresh(force=True)
+    return await _aggregate_cameras(ctx, scope)
+
+
+@router.get("/hosts", response_model=list[HostInfo])
+async def list_hosts(ctx: AppContext = Depends(get_context)) -> list[HostInfo]:
+    hosts = [
+        HostInfo(
+            host=ctx.local_host,
+            kind="local",
+            online=True,
+            version=__version__,
+            camera_count=len(ctx.manager.list()),
+            proxy_prefix="",
+        )
+    ]
+    for peer in await ctx.cluster.peers():
+        hosts.append(
+            HostInfo(
+                host=peer.host,
+                kind="peer",
+                online=peer.online,
+                version=peer.version,
+                camera_count=peer.camera_count,
+                proxy_prefix=f"/proxy/{peer.key}",
+            )
+        )
+    return hosts
 
 
 @router.get("/cameras/{camera_id:path}", response_model=CameraInfo)
@@ -174,6 +223,7 @@ def system_info(ctx: AppContext = Depends(get_context)) -> SystemInfo:
     port = ctx.config.server.port
     return SystemInfo(
         version=__version__,
+        host=ctx.local_host,
         tailscale_installed=status.installed,
         tailscale_running=status.running,
         access_url=ctx.tailscale.access_url(port, ctx.served, ctx.config.tailscale.serve_port),
