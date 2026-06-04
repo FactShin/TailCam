@@ -27,6 +27,8 @@ _KNOWN_BINARIES = (
     "/Applications/Tailscale.app/Contents/MacOS/Tailscale",  # macOS App Store / standalone
     "/usr/bin/tailscale",  # Linux package
     "/usr/sbin/tailscale",
+    r"C:\Program Files\Tailscale\tailscale.exe",  # Windows
+    r"C:\Program Files (x86)\Tailscale\tailscale.exe",  # Windows (32-bit install)
 )
 
 

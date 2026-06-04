@@ -68,12 +68,16 @@ def _launchd_plist_path() -> Path:
 
 
 def install() -> str:
+    if sys.platform == "win32":
+        return _install_windows()
     if sys.platform == "darwin":
         return _install_launchd()
     return _install_systemd()
 
 
 def uninstall() -> str:
+    if sys.platform == "win32":
+        return _uninstall_windows()
     if sys.platform == "darwin":
         return _uninstall_launchd()
     return _uninstall_systemd()
@@ -110,3 +114,32 @@ def _uninstall_launchd() -> str:
     subprocess.run(["launchctl", "unload", str(path)], check=False)
     path.unlink(missing_ok=True)
     return "Removed launchd agent"
+
+
+SCHTASK_NAME = "AnyCam"
+
+
+def _windows_exec() -> str:
+    """`pythonw -m anycam run` — pythonw avoids a console window. Falls back to
+    the current interpreter if pythonw isn't beside it."""
+    pythonw = Path(sys.executable).with_name("pythonw.exe")
+    exe = pythonw if pythonw.exists() else Path(sys.executable)
+    return f'"{exe}" -m anycam run'
+
+
+def _install_windows() -> str:
+    # A per-user logon task: no admin, runs in the user session (camera access),
+    # hidden (pythonw). /RL LIMITED = normal privileges, /F overwrites.
+    subprocess.run(
+        ["schtasks", "/Create", "/TN", SCHTASK_NAME, "/SC", "ONLOGON",
+         "/RL", "LIMITED", "/F", "/TR", _windows_exec()],
+        check=False,
+    )
+    subprocess.run(["schtasks", "/Run", "/TN", SCHTASK_NAME], check=False)
+    return f"Installed Windows logon task '{SCHTASK_NAME}'"
+
+
+def _uninstall_windows() -> str:
+    subprocess.run(["schtasks", "/End", "/TN", SCHTASK_NAME], check=False)
+    subprocess.run(["schtasks", "/Delete", "/TN", SCHTASK_NAME, "/F"], check=False)
+    return f"Removed Windows logon task '{SCHTASK_NAME}'"

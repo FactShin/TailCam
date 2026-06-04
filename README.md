@@ -10,17 +10,25 @@ good use as a monitoring system.
 
 ## Install (one-liner)
 
+**Linux / macOS:**
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/factshin/anycam/main/install.sh | bash
 ```
 
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/factshin/anycam/main/install.ps1 | iex
+```
+
 The installer:
-- checks for Python 3.10+ and the system libraries OpenCV needs,
-- installs AnyCam into an isolated environment (pipx or a dedicated venv),
+- checks for Python 3.10+ (and, on Linux, the system libraries OpenCV/numpy need),
+- installs AnyCam into an isolated virtualenv,
 - detects Tailscale and, if it's running, exposes the UI over HTTPS on your
   tailnet with `tailscale serve`,
-- registers a background **user** service (systemd on Linux, launchd on macOS)
-  so AnyCam starts automatically.
+- registers a background **user** service so AnyCam starts automatically —
+  systemd (Linux), launchd (macOS), or a logon Scheduled Task (Windows).
 
 After install, open the URL printed at the end (your tailnet HTTPS address, or
 `http://localhost:8088/` locally).
@@ -28,10 +36,20 @@ After install, open the URL printed at the end (your tailnet HTTPS address, or
 ### Installer options
 
 ```bash
-curl -fsSL .../install.sh | bash -s -- --yes --port 9000 --no-tailscale
+curl -fsSL .../install.sh | bash -s -- --yes --port 9000 --no-tailscale   # Linux/macOS
+```
+```powershell
+irm .../install.ps1 | iex                      # defaults
+# for flags, download then run: .\install.ps1 -Port 9000 -NoTailscale
 ```
 
-`--yes` (non-interactive), `--port`, `--ref <tag>`, `--no-service`, `--no-tailscale`.
+Linux/macOS flags: `--yes` (non-interactive), `--port`, `--ref <tag>`, `--no-service`,
+`--no-tailscale`. Windows: `-Port`, `-Ref`, `-NoService`, `-NoTailscale`.
+
+> **Windows note:** the logon Scheduled Task runs AnyCam in your user session (so the webcam is
+> accessible) and starts after you log in — the same "user session" model as the Mac/Linux
+> services. Camera names need the optional `pygrabber` package (installed automatically); without
+> it cameras show as "Camera 0/1…".
 
 ## Manual install
 
@@ -109,7 +127,7 @@ Notes & current limits:
   tailnet (there is no separate auth; Tailscale is the security boundary).
 - For now, the **gallery and motion-event feed are per-host** (snapshots/recordings live on the
   node that captured them). Cross-host media aggregation is planned next.
-- **Windows nodes** aren't supported yet (Linux/macOS only) — a future addition.
+- Linux, macOS, **and Windows** nodes all participate in the same tailnet dashboard.
 
 ## Features
 

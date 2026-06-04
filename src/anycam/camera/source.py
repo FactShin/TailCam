@@ -62,11 +62,14 @@ class OpenCVCameraSource(CameraSource):
 
         if sys.platform == "darwin":
             return cv2.CAP_AVFOUNDATION
+        if sys.platform == "win32":
+            return cv2.CAP_DSHOW  # DirectShow: reliable enumeration + capture on Windows
         return cv2.CAP_V4L2
 
     def _device_arg(self):
-        # Linux paths open directly; macOS uses an integer index.
-        if self.descriptor.backend == "avfoundation":
+        # Linux opens device paths directly; macOS (avfoundation) and Windows
+        # (dshow) use an integer index.
+        if self.descriptor.backend in ("avfoundation", "dshow"):
             return int(self.descriptor.id)
         return self.descriptor.id
 

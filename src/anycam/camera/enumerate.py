@@ -1,4 +1,5 @@
-"""Discover connected webcams on Linux (V4L2) and macOS (AVFoundation)."""
+"""Discover connected webcams on Linux (V4L2), macOS (AVFoundation), and
+Windows (DirectShow)."""
 
 from __future__ import annotations
 
@@ -55,12 +56,42 @@ def _enumerate_macos(max_probe: int = 8) -> list[CameraDescriptor]:
     return descriptors
 
 
+def _windows_names() -> list[str]:
+    """Friendly camera names via the optional pygrabber DirectShow helper."""
+    try:
+        from pygrabber.dshow_graph import FilterGraph  # type: ignore
+
+        return list(FilterGraph().get_input_devices())
+    except Exception:
+        return []
+
+
+def _enumerate_windows(max_probe: int = 8) -> list[CameraDescriptor]:
+    import cv2
+
+    names = _windows_names()
+    descriptors: list[CameraDescriptor] = []
+    for index in range(max_probe):
+        cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
+        opened = cap.isOpened()
+        cap.release()
+        if opened:
+            name = names[index] if index < len(names) else f"Camera {index}"
+            descriptors.append(CameraDescriptor(id=str(index), name=name, backend="dshow"))
+        elif index > 0:
+            # Indices are contiguous; stop at the first gap after index 0.
+            break
+    return descriptors
+
+
 def discover() -> list[CameraDescriptor]:
     if use_synthetic():
         return [SYNTHETIC_DESCRIPTOR]
     try:
         if sys.platform == "darwin":
             found = _enumerate_macos()
+        elif sys.platform == "win32":
+            found = _enumerate_windows()
         else:
             found = _enumerate_linux()
     except Exception as exc:  # pragma: no cover - hardware/driver dependent

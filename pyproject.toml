@@ -17,6 +17,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS :: MacOS X",
+    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
     "Topic :: Multimedia :: Video :: Capture",
 ]
@@ -32,6 +33,9 @@ dependencies = [
     "tomli-w~=1.0",
     "tomli~=2.0; python_version < '3.11'",
     "httpx~=0.28",
+    # Windows only: friendly DirectShow camera names (import is guarded, so
+    # AnyCam still works if it's unavailable).
+    "pygrabber~=0.2; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
