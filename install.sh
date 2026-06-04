@@ -114,21 +114,38 @@ ensure_python() {
 }
 
 # --- System dependencies ----------------------------------------------------
+# numpy's Linux wheels dynamically link OpenBLAS (libopenblas.so.0) and OpenCV
+# needs libGL/glib — these are REQUIRED for AnyCam to import, so we install them
+# by default rather than behind a prompt (a piped `curl | bash` has no TTY to
+# answer one). Optional extras (ffmpeg, v4l-utils) are attempted but tolerated.
 ensure_system_deps() {
+    if [ "$OS" = "Darwin" ]; then
+        # macOS numpy/opencv wheels bundle their native libs; only ffmpeg is extra.
+        if have brew && ! have ffmpeg && [ "$ASSUME_YES" -eq 1 ]; then
+            brew install ffmpeg || true
+        fi
+        return 0
+    fi
     case "$DISTRO" in
-        debian|ubuntu)
-            local pkgs="python3-venv libgl1 libglib2.0-0"
-            if confirm "Install system packages (${pkgs}) via apt?"; then
-                sudo apt-get update -y && sudo apt-get install -y $pkgs ffmpeg v4l-utils || \
-                    warn "Some apt packages failed to install; continuing."
-            else
-                warn "Skipping apt deps. If AnyCam fails to import cv2, install: ${pkgs}"
-            fi ;;
-        *)
-            if [ "$OS" = "Darwin" ] && have brew; then
-                have ffmpeg || confirm "Install ffmpeg via Homebrew?" && brew install ffmpeg || true
-            fi ;;
+        debian|ubuntu) ;;
+        *) warn "Unknown distro; if AnyCam fails to import, install libopenblas0, libgl1, libglib2.0-0."; return 0 ;;
     esac
+
+    local required="python3-venv libgl1 libglib2.0-0 libopenblas0"
+    local optional="ffmpeg v4l-utils"
+
+    if ! sudo -n true 2>/dev/null && [ ! -t 0 ]; then
+        warn "System libraries are required but sudo can't prompt in a piped install."
+        echo "    Run this once, then re-run the installer (or just 'anycam status'):"
+        echo "    sudo apt-get update && sudo apt-get install -y ${required} ${optional}"
+        return 0
+    fi
+
+    log "Installing required system libraries: ${required}"
+    sudo apt-get update -y || warn "apt-get update failed."
+    sudo apt-get install -y $required \
+        || warn "Could not install ${required}. AnyCam may fail to import numpy/cv2 — install them manually."
+    sudo apt-get install -y $optional || true  # nice-to-have (recording, v4l tooling)
 }
 
 # --- Tailscale --------------------------------------------------------------

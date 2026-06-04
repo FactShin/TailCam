@@ -7,6 +7,7 @@ app remains fully usable on a LAN.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -16,6 +17,17 @@ from anycam.logging_setup import get_logger
 log = get_logger(__name__)
 
 _TIMEOUT = 5.0
+
+# Background services (launchd on macOS, systemd) run with a minimal PATH that
+# often excludes Homebrew and the Tailscale.app bundle, so `which tailscale`
+# fails there even when the CLI is installed. Check these absolute paths too.
+_KNOWN_BINARIES = (
+    "/opt/homebrew/bin/tailscale",  # Apple Silicon Homebrew
+    "/usr/local/bin/tailscale",  # Intel Homebrew / common Linux
+    "/Applications/Tailscale.app/Contents/MacOS/Tailscale",  # macOS App Store / standalone
+    "/usr/bin/tailscale",  # Linux package
+    "/usr/sbin/tailscale",
+)
 
 
 @dataclass
@@ -34,12 +46,23 @@ class TailscalePeer:
     online: bool
 
 
+def _resolve_binary(name: str) -> str | None:
+    """Find the tailscale CLI on PATH or in known absolute locations."""
+    found = shutil.which(name)
+    if found:
+        return found
+    for path in _KNOWN_BINARIES:
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return None
+
+
 class TailscaleClient:
     def __init__(self, binary: str = "tailscale") -> None:
-        self._binary = binary
+        self._binary = _resolve_binary(binary)
 
     def _run(self, *args: str) -> subprocess.CompletedProcess | None:
-        if not self.is_installed():
+        if self._binary is None:
             return None
         try:
             return subprocess.run(
@@ -54,7 +77,7 @@ class TailscaleClient:
             return None
 
     def is_installed(self) -> bool:
-        return shutil.which(self._binary) is not None
+        return self._binary is not None
 
     def status(self) -> TailscaleStatus:
         if not self.is_installed():
