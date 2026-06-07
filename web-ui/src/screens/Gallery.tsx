@@ -42,9 +42,7 @@ function CamFilter({
 export function Gallery() {
   const toast = useToast();
   const cameras = useCameras().data ?? [];
-  // Media is stored on the node that captured it; the gallery shows this node's
-  // media. Filter chips therefore use local cameras.
-  const localCameras = cameras.filter((c) => c.proxy_prefix === "");
+  // Media is aggregated across every tailnet node; filter chips show all cameras.
   const camName = (id: string) => cameras.find((c) => c.id === id)?.name ?? id;
 
   const [cam, setCam] = useState("");
@@ -71,10 +69,10 @@ export function Gallery() {
     return () => io.disconnect();
   }, [hasMore, rows.length]);
 
-  const doDelete = async (mid: number) => {
+  const doDelete = async (m: MediaInfo) => {
     setConfirm(null);
     try {
-      await del.mutateAsync(mid);
+      await del.mutateAsync({ prefix: m.proxy_prefix, id: m.id });
       toast.ok("Deleted");
       setLight(null);
     } catch {
@@ -87,7 +85,7 @@ export function Gallery() {
       <div className="screen-head">
         <div>
           <h1 className="screen-title">Gallery</h1>
-          <p className="screen-sub">{rows.length} item{rows.length !== 1 ? "s" : ""} · this device</p>
+          <p className="screen-sub">{rows.length} item{rows.length !== 1 ? "s" : ""} · all devices</p>
         </div>
         <Segmented
           ariaLabel="Media type"
@@ -96,26 +94,26 @@ export function Gallery() {
           onChange={(v) => setType(v as string)}
         />
       </div>
-      <CamFilter cameras={localCameras} value={cam} onChange={setCam} />
+      <CamFilter cameras={cameras} value={cam} onChange={setCam} />
 
       {rows.length === 0 ? (
         <div className="empty">
           <div className="empty-ic"><IconFilm size={36} /></div>
           <div className="empty-title">No media yet</div>
-          <div className="empty-sub">Snapshots and recordings captured on this device appear here.</div>
+          <div className="empty-sub">Snapshots and recordings from any device appear here.</div>
         </div>
       ) : (
         <>
           <div className="media-grid">
             {rows.map((m, i) => (
-              <button key={m.id} className="media-card" onClick={() => setLight(i)} aria-label={`${m.media_type} from ${camName(m.camera_id)}`}>
+              <button key={`${m.host}/${m.id}`} className="media-card" onClick={() => setLight(i)} aria-label={`${m.media_type} from ${camName(m.camera_id)}`}>
                 <div className="media-thumb">
-                  <img className="thumb-canvas" src={m.has_thumbnail ? mediaThumbUrl("", m.id) : mediaFileUrl("", m.id)} alt="" loading="lazy" />
+                  <img className="thumb-canvas" src={m.has_thumbnail ? mediaThumbUrl(m.proxy_prefix, m.id) : mediaFileUrl(m.proxy_prefix, m.id)} alt="" loading="lazy" />
                   {m.media_type === "recording" && <span className="media-play"><IconPlay size={20} /></span>}
                   <span className={`media-type-tag ${m.media_type}`}>{m.media_type === "recording" ? "REC" : "IMG"}</span>
                 </div>
                 <div className="media-meta">
-                  <span className="media-cam">{camName(m.camera_id)}</span>
+                  <span className="media-cam">{camName(m.camera_id)} <span className="media-host mono">{m.host}</span></span>
                   <span className="media-time mono">{fmtAgo(m.created_ts)}</span>
                   <span className="media-sub mono">
                     <span className={`trigger trigger-${m.trigger}`}>{m.trigger}</span> · {fmtBytes(m.size_bytes)}
@@ -147,7 +145,7 @@ export function Gallery() {
         confirmLabel="Delete"
         body={confirm ? `This ${confirm.media_type} from ${camName(confirm.camera_id)} will be permanently removed.` : ""}
         onCancel={() => setConfirm(null)}
-        onConfirm={() => confirm && doDelete(confirm.id)}
+        onConfirm={() => confirm && doDelete(confirm)}
       />
     </div>
   );
@@ -183,7 +181,7 @@ function Lightbox({
   }, [hasPrev, hasNext, onClose, onPrev, onNext]);
 
   const isRec = row.media_type === "recording";
-  const fileUrl = mediaFileUrl("", row.id);
+  const fileUrl = mediaFileUrl(row.proxy_prefix, row.id);
   return (
     <div className="lb-root" role="dialog" aria-modal="true" aria-label="Media viewer">
       <div className="lb-backdrop" onClick={onClose} />
@@ -193,7 +191,7 @@ function Lightbox({
       <div className="lb-stage">
         <div className="lb-media">
           {isRec ? (
-            <video className="lb-canvas" src={fileUrl} controls playsInline poster={row.has_thumbnail ? mediaThumbUrl("", row.id) : undefined} />
+            <video className="lb-canvas" src={fileUrl} controls playsInline poster={row.has_thumbnail ? mediaThumbUrl(row.proxy_prefix, row.id) : undefined} />
           ) : (
             <img className="lb-canvas" src={fileUrl} alt="" />
           )}

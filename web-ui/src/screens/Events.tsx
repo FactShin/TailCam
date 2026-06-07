@@ -31,7 +31,6 @@ function CamFilter({
 export function Events() {
   const navigate = useNavigate();
   const cameras = useCameras().data ?? [];
-  const localCameras = cameras.filter((c) => c.proxy_prefix === "");
   const camName = (id: string) => cameras.find((c) => c.id === id)?.name ?? id;
   const [cam, setCam] = useState("");
   const events = useEvents(cam ? { camera_id: cam, limit: 80 } : { limit: 80 }).data ?? [];
@@ -47,10 +46,10 @@ export function Events() {
       <div className="screen-head">
         <div>
           <h1 className="screen-title">Motion events</h1>
-          <p className="screen-sub">{events.length} event{events.length !== 1 ? "s" : ""} · newest first · this device</p>
+          <p className="screen-sub">{events.length} event{events.length !== 1 ? "s" : ""} · newest first · all devices</p>
         </div>
       </div>
-      <CamFilter cameras={localCameras} value={cam} onChange={setCam} />
+      <CamFilter cameras={cameras} value={cam} onChange={setCam} />
 
       {events.length === 0 ? (
         <div className="empty">
@@ -77,7 +76,7 @@ export function Events() {
                     <span className="event-cam">{camName(e.camera_id)}</span>
                     {ongoing && <span className="event-ongoing"><span className="rec-dot" /> ongoing</span>}
                   </div>
-                  <div className="event-l2 mono">{fmtDateTime(e.start_ts)} · {fmtDur(dur)} · peak {pct}%</div>
+                  <div className="event-l2 mono">{e.host} · {fmtDateTime(e.start_ts)} · {fmtDur(dur)} · peak {pct}%</div>
                 </div>
                 <div className="event-actions">
                   {e.recording_id != null ? (

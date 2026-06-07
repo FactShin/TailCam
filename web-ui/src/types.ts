@@ -57,6 +57,8 @@ export interface MediaInfo {
   trigger: "manual" | "motion";
   size_bytes: number;
   has_thumbnail: boolean;
+  host: string;
+  proxy_prefix: string;
 }
 
 export interface MotionEventInfo {
@@ -66,6 +68,8 @@ export interface MotionEventInfo {
   end_ts: number | null;
   peak_score: number;
   recording_id: number | null;
+  host: string;
+  proxy_prefix: string;
 }
 
 export interface SystemInfo {

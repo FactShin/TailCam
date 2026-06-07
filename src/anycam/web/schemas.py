@@ -62,6 +62,10 @@ class MediaInfo(BaseModel):
     trigger: str
     size_bytes: int
     has_thumbnail: bool
+    # Multi-host: owning node + prefix to reach the file/thumbnail/delete through
+    # the node you're viewing ("" = local).
+    host: str = ""
+    proxy_prefix: str = ""
 
 
 class MotionEventInfo(BaseModel):
@@ -71,6 +75,8 @@ class MotionEventInfo(BaseModel):
     end_ts: float | None
     peak_score: float
     recording_id: int | None
+    host: str = ""
+    proxy_prefix: str = ""
 
 
 class SystemInfo(BaseModel):

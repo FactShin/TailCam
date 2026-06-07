@@ -471,3 +471,10 @@ input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border-radius: 
   background:
     radial-gradient(circle at 50% 45%, #20242e 0%, #14171d 70%);
 }
+
+/* host badge on gallery cards (cross-host aggregation) */
+.media-host {
+  margin-left: 6px; padding: 0 6px; border-radius: 999px;
+  background: var(--panel-2); color: var(--muted);
+  font-size: .7rem; vertical-align: middle;
+}

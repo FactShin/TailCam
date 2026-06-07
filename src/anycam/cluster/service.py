@@ -161,30 +161,40 @@ class ClusterService:
         return peer.base_url if peer else None
 
     # -- aggregation -------------------------------------------------------
-    async def remote_cameras(self) -> list[dict]:
-        """Fetch every peer's local camera list, tagged for proxy routing."""
+    async def _remote_items(self, path: str, params: dict | None = None) -> list[dict]:
+        """Fetch a list endpoint from every peer (scope=local) and tag each item
+        with the peer's host + proxy_prefix. Used for cameras, media, events."""
         peers = await self.peers()
         if not peers:
             return []
+        query = {**(params or {}), "scope": "local"}
 
         async def fetch(peer: Peer) -> list[dict]:
             try:
                 r = await self.client().get(
-                    f"{peer.base_url}/api/cameras",
-                    params={"scope": "local"},
-                    timeout=_FETCH_TIMEOUT,
+                    f"{peer.base_url}{path}", params=query, timeout=_FETCH_TIMEOUT
                 )
                 r.raise_for_status()
-                cams = r.json()
+                items = r.json()
             except (httpx.HTTPError, ValueError):
                 peer.online = False
                 return []
             prefix = f"/proxy/{peer.key}"
-            for c in cams:
-                c["host"] = peer.host
-                c["proxy_prefix"] = prefix
-            peer.camera_count = len(cams)
-            return cams
+            for it in items:
+                it["host"] = peer.host
+                it["proxy_prefix"] = prefix
+            if path == "/api/cameras":
+                peer.camera_count = len(items)
+            return items
 
         chunks = await asyncio.gather(*(fetch(p) for p in peers))
-        return [cam for chunk in chunks for cam in chunk]
+        return [it for chunk in chunks for it in chunk]
+
+    async def remote_cameras(self) -> list[dict]:
+        return await self._remote_items("/api/cameras")
+
+    async def remote_media(self, params: dict) -> list[dict]:
+        return await self._remote_items("/api/media", params)
+
+    async def remote_events(self, params: dict) -> list[dict]:
+        return await self._remote_items("/api/events", params)

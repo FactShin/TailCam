@@ -165,7 +165,7 @@ def stop_recording(camera_id: str, ctx: AppContext = Depends(get_context)) -> Me
     return MediaCreatedResponse(media_id=record.id)
 
 
-def _media_info(record) -> MediaInfo:
+def _media_info(ctx: AppContext, record) -> MediaInfo:
     return MediaInfo(
         id=record.id,
         camera_id=record.camera_id,
@@ -174,19 +174,27 @@ def _media_info(record) -> MediaInfo:
         trigger=record.trigger,
         size_bytes=record.size_bytes,
         has_thumbnail=bool(record.thumbnail),
+        host=ctx.local_host,
+        proxy_prefix="",
     )
 
 
 @router.get("/media", response_model=list[MediaInfo])
-def list_media(
+async def list_media(
     camera_id: str | None = None,
     media_type: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    scope: str = Query("all", pattern="^(all|local)$"),
     ctx: AppContext = Depends(get_context),
 ) -> list[MediaInfo]:
-    records = ctx.gallery.list(camera_id, media_type, limit, offset)
-    return [_media_info(r) for r in records]
+    local = [_media_info(ctx, r) for r in ctx.gallery.list(camera_id, media_type, limit + offset)]
+    if scope == "local":
+        return local[offset:]
+    params = {"camera_id": camera_id, "media_type": media_type, "limit": limit + offset}
+    remote = [MediaInfo.model_validate(m) for m in await ctx.cluster.remote_media(params)]
+    merged = sorted(local + remote, key=lambda m: m.created_ts, reverse=True)
+    return merged[offset : offset + limit]
 
 
 @router.delete("/media/{media_id}", response_model=OkResponse)
@@ -196,25 +204,34 @@ def delete_media(media_id: int, ctx: AppContext = Depends(get_context)) -> OkRes
     return OkResponse(detail="deleted")
 
 
+def _event_info(ctx: AppContext, e) -> MotionEventInfo:
+    return MotionEventInfo(
+        id=e.id,
+        camera_id=e.camera_id,
+        start_ts=e.start_ts,
+        end_ts=e.end_ts,
+        peak_score=e.peak_score,
+        recording_id=e.recording_id,
+        host=ctx.local_host,
+        proxy_prefix="",
+    )
+
+
 @router.get("/events", response_model=list[MotionEventInfo])
-def list_events(
+async def list_events(
     camera_id: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    scope: str = Query("all", pattern="^(all|local)$"),
     ctx: AppContext = Depends(get_context),
 ) -> list[MotionEventInfo]:
-    events = ctx.event_log.list(camera_id, limit, offset)
-    return [
-        MotionEventInfo(
-            id=e.id,
-            camera_id=e.camera_id,
-            start_ts=e.start_ts,
-            end_ts=e.end_ts,
-            peak_score=e.peak_score,
-            recording_id=e.recording_id,
-        )
-        for e in events
-    ]
+    local = [_event_info(ctx, e) for e in ctx.event_log.list(camera_id, limit + offset)]
+    if scope == "local":
+        return local[offset:]
+    params = {"camera_id": camera_id, "limit": limit + offset}
+    remote = [MotionEventInfo.model_validate(e) for e in await ctx.cluster.remote_events(params)]
+    merged = sorted(local + remote, key=lambda e: e.start_ts, reverse=True)
+    return merged[offset : offset + limit]
 
 
 @router.get("/system", response_model=SystemInfo)

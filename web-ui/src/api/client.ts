@@ -98,8 +98,8 @@ export const getMedia = (params: { camera_id?: string; media_type?: string; limi
     })}`,
   );
 
-export const deleteMedia = (mid: number) =>
-  jsonFetch<{ ok: boolean }>(`/api/media/${mid}`, { method: "DELETE" });
+export const deleteMedia = (prefix: string, mid: number) =>
+  jsonFetch<{ ok: boolean }>(`${prefix}/api/media/${mid}`, { method: "DELETE" });
 
 export const getEvents = (params: { camera_id?: string; limit?: number }) =>
   jsonFetch<MotionEventInfo[]>(

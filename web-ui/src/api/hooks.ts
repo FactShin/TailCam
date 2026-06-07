@@ -116,7 +116,7 @@ export function useRecording(prefix: string, id: string) {
 export function useDeleteMedia() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (mid: number) => api.deleteMedia(mid),
+    mutationFn: ({ prefix, id }: { prefix: string; id: number }) => api.deleteMedia(prefix, id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["media"] });
       qc.invalidateQueries({ queryKey: ["system"] });
