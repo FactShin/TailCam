@@ -478,3 +478,17 @@ input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border-radius: 
   background: var(--panel-2); color: var(--muted);
   font-size: .7rem; vertical-align: middle;
 }
+
+/* connection banner + freshness (polish) */
+.conn-banner {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 16px; background: rgba(245,166,35,0.14);
+  color: var(--warn); font-size: .85rem; border-bottom: 1px solid rgba(245,166,35,0.3);
+}
+.conn-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--warn);
+  animation: conn-pulse 1.2s ease-in-out infinite;
+}
+@keyframes conn-pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .conn-dot { animation: none; } }
+.updating { color: var(--muted); font-style: italic; }

@@ -74,9 +74,10 @@ Info "Installing AnyCam from $Zip"
 if ($LASTEXITCODE -ne 0) { Fail "pip install failed." }
 
 # --- background service (logon Scheduled Task) ------------------------------
+# Persist the chosen port so the service and `tailscale serve` both use it.
+& $AnycamBin config --port $Port | Out-Null
 if (-not $NoService) {
   Info "Registering logon task"
-  $env:ANYCAM_PORT = "$Port"
   & $AnycamBin install-service
 } else { Warn "Skipping service registration (-NoService)." }
 

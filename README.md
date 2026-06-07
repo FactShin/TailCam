@@ -65,11 +65,14 @@ anycam run
 | Command | Description |
 | --- | --- |
 | `anycam run` | Start the web server |
-| `anycam status` | Show cameras, Tailscale status, and access URL |
+| `anycam status` | Cameras + tailnet nodes (Rich table) and the access URL |
+| `anycam doctor` | Diagnostics: Python, OpenCV, cameras, Tailscale, fleet reachability |
 | `anycam cameras` | List detected cameras |
 | `anycam install-service` / `uninstall-service` | Manage the background service |
 | `anycam tailscale serve` / `serve-off` / `status` | Manage tailnet exposure |
-| `anycam config [--init]` | Show (or create) the config file and current values |
+| `anycam config [--init] [--port N] [--serve-port N] [--host H]` | Show or update config |
+
+Tab-completion: `anycam --install-completion`.
 
 ## Ports & Tailscale
 

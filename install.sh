@@ -193,9 +193,11 @@ install_anycam() {
 
 # --- Service ----------------------------------------------------------------
 setup_service() {
+    # Persist the chosen port so the service and `tailscale serve` both use it.
+    "$ANYCAM_BIN" config --port "$PORT" >/dev/null 2>&1 || true
     [ "$DO_SERVICE" -eq 0 ] && { warn "Skipping service registration (--no-service)."; return 0; }
     log "Registering background service"
-    ANYCAM_PORT="$PORT" "$ANYCAM_BIN" install-service || warn "Service registration failed."
+    "$ANYCAM_BIN" install-service || warn "Service registration failed."
 }
 
 # --- Tailscale serve --------------------------------------------------------

@@ -40,6 +40,23 @@ export function Dashboard() {
     );
   }
 
+  if (camerasQ.isError && cameras.length === 0) {
+    return (
+      <div className="screen">
+        <div className="empty">
+          <div className="empty-ic"><IconCamera size={40} /></div>
+          <div className="empty-title">Can't reach AnyCam</div>
+          <div className="empty-sub">
+            The server isn't responding. Check that AnyCam is running and you're connected to your tailnet.
+          </div>
+          <Button variant="primary" icon={<IconRefresh size={16} />} onClick={() => camerasQ.refetch()}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   // Group cameras by host, ordered local-first using the hosts list.
   const orderedHosts: HostInfo[] = hosts.length
     ? hosts
@@ -61,6 +78,7 @@ export function Dashboard() {
             <span className="bw-note" title="Grid tiles request a low-bandwidth stream (8 fps, 480px) and pause when off-screen or the tab is hidden.">
               <IconFps size={13} /> low-bandwidth grid
             </span>
+            {camerasQ.isFetching && <span className="updating"> · updating…</span>}
           </p>
         </div>
         <Button

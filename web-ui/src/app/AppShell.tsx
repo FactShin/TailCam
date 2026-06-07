@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
-import { useSystem } from "../api/hooks";
+import { useCameras, useSystem } from "../api/hooks";
 import { fmtBytes } from "../lib/format";
 import {
   IconFilm,
@@ -38,6 +38,18 @@ function SystemChip({ onClick }: { onClick: () => void }) {
   );
 }
 
+function ConnectionBanner() {
+  // The cameras query polls every 2.5s; if it errors the server/Tailscale link
+  // is down. Show a thin banner (and only once we've lost a working connection).
+  const q = useCameras();
+  if (!q.isError) return null;
+  return (
+    <div className="conn-banner" role="status">
+      <span className="conn-dot" /> Connection lost — reconnecting…
+    </div>
+  );
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const path = useLocation().pathname;
@@ -71,6 +83,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <SystemChip onClick={() => navigate("/settings")} />
           </div>
         </header>
+        <ConnectionBanner />
         <main className="content">{children}</main>
       </div>
 
