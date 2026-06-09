@@ -87,15 +87,16 @@ def test_installer_windows_schtask(monkeypatch):
 
     msg = installer.install()
     assert "AnyCam" in msg
-    create = next(c for c in calls if "/Create" in c)
-    assert "ONLOGON" in create
-    assert "AnyCam" in create  # /TN AnyCam
-    tr = create[create.index("/TR") + 1]
-    assert "-m anycam run" in tr
+    # PowerShell Register-ScheduledTask (robust quoting), at logon.
+    register = next(c for c in calls if any("Register-ScheduledTask" in str(a) for a in c))
+    script = register[-1]
+    assert "New-ScheduledTaskTrigger -AtLogOn" in script
+    assert "-m anycam run" in script
+    assert "AnyCam" in script
 
     calls.clear()
     installer.uninstall()
-    assert any("/Delete" in c for c in calls)
+    assert any(any("Unregister-ScheduledTask" in str(a) for a in c) for c in calls)
 
 
 def test_tailscale_known_windows_path():

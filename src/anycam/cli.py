@@ -151,6 +151,19 @@ def doctor() -> None:
     (ok if data_writable else bad)("Data dir writable", str(paths.data_dir()))
     ok("Config file", str(paths.config_file()))
 
+    # Is a server (the background service) actually serving on the configured port?
+    import httpx
+
+    port = config.server.port
+    try:
+        r = httpx.get(f"http://127.0.0.1:{port}/api/system", timeout=2.0)
+        if r.status_code == 200:
+            ok("Server running", f"serving on http://localhost:{port}/")
+        else:
+            bad("Server running", f"port {port} returned HTTP {r.status_code}")
+    except Exception:
+        bad("Server running", f"nothing on :{port} (start it: `anycam install-service`)")
+
     from anycam.tailscale.client import TailscaleClient
 
     st = TailscaleClient().status()

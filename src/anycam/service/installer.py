@@ -119,27 +119,45 @@ def _uninstall_launchd() -> str:
 SCHTASK_NAME = "AnyCam"
 
 
-def _windows_exec() -> str:
-    """`pythonw -m anycam run` — pythonw avoids a console window. Falls back to
-    the current interpreter if pythonw isn't beside it."""
+def _windows_pythonw() -> Path:
+    """pythonw.exe (no console window), falling back to the current interpreter."""
     pythonw = Path(sys.executable).with_name("pythonw.exe")
-    exe = pythonw if pythonw.exists() else Path(sys.executable)
-    return f'"{exe}" -m anycam run'
+    return pythonw if pythonw.exists() else Path(sys.executable)
+
+
+def _ps_quote(s: str) -> str:
+    return "'" + s.replace("'", "''") + "'"
+
+
+def _powershell(script: str) -> None:
+    subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", script], check=False
+    )
 
 
 def _install_windows() -> str:
-    # A per-user logon task: no admin, runs in the user session (camera access),
-    # hidden (pythonw). /RL LIMITED = normal privileges, /F overwrites.
-    subprocess.run(
-        ["schtasks", "/Create", "/TN", SCHTASK_NAME, "/SC", "ONLOGON",
-         "/RL", "LIMITED", "/F", "/TR", _windows_exec()],
-        check=False,
+    # Register a per-user logon task via PowerShell. Register-ScheduledTask keeps
+    # the executable and its arguments separate, so paths with spaces (e.g.
+    # C:\Users\me\AppData\Local) work — unlike `schtasks /TR "<quoted> args>"`,
+    # whose quoting mangles such paths and silently breaks the task.
+    exe = _ps_quote(str(_windows_pythonw()))
+    script = (
+        f"$a = New-ScheduledTaskAction -Execute {exe} -Argument '-m anycam run'; "
+        "$t = New-ScheduledTaskTrigger -AtLogOn; "
+        "$s = New-ScheduledTaskSettingsSet -StartWhenAvailable "
+        "-AllowStartIfOnBatteries -DontStopIfGoingOnBatteries; "
+        f"Register-ScheduledTask -TaskName '{SCHTASK_NAME}' -Action $a -Trigger $t "
+        "-Settings $s -Force | Out-Null"
     )
-    subprocess.run(["schtasks", "/Run", "/TN", SCHTASK_NAME], check=False)
+    _powershell(script)
+    _powershell(f"Start-ScheduledTask -TaskName '{SCHTASK_NAME}'")
     return f"Installed Windows logon task '{SCHTASK_NAME}'"
 
 
 def _uninstall_windows() -> str:
-    subprocess.run(["schtasks", "/End", "/TN", SCHTASK_NAME], check=False)
-    subprocess.run(["schtasks", "/Delete", "/TN", SCHTASK_NAME, "/F"], check=False)
+    _powershell(f"Stop-ScheduledTask -TaskName '{SCHTASK_NAME}' -ErrorAction SilentlyContinue")
+    _powershell(
+        f"Unregister-ScheduledTask -TaskName '{SCHTASK_NAME}' -Confirm:$false "
+        "-ErrorAction SilentlyContinue"
+    )
     return f"Removed Windows logon task '{SCHTASK_NAME}'"
