@@ -70,6 +70,16 @@ install_anycam() {
     ANYCAM_BIN="${VENV_DIR}/bin/anycam"
 }
 
+link_cli() {
+    # Put `anycam` on PATH via ~/.local/bin.
+    mkdir -p "$HOME/.local/bin"
+    ln -sf "${VENV_DIR}/bin/anycam" "$HOME/.local/bin/anycam"
+    case ":$PATH:" in
+        *":$HOME/.local/bin:"*) ;;
+        *) warn "Add ~/.local/bin to your PATH to use 'anycam' directly (e.g. in ~/.zshrc): export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
+    esac
+}
+
 setup_service() {
     "$ANYCAM_BIN" config --port "$PORT" >/dev/null 2>&1 || true
     [ "$DO_SERVICE" -eq 0 ] && { warn "Skipping service (--no-service)."; return 0; }
@@ -92,6 +102,7 @@ ensure_tailscale() {
 log "Installing AnyCam on macOS (ref=${REF}, port=${PORT})"
 ensure_python
 install_anycam
+link_cli
 setup_service
 ensure_tailscale
 echo

@@ -60,18 +60,29 @@ if (-not $py) {
 Info ("Using Python: " + $py.Exe + " " + ($py.Args -join " "))
 
 # --- create venv + install AnyCam from the GitHub zip (no Git needed) -------
+# Wipe any existing venv so we always install the latest build (the version is
+# 0.1.0, so pip would otherwise treat the old copy as "already satisfied").
+if (Test-Path $VenvDir) { Info "Removing old virtualenv"; Remove-Item -Recurse -Force $VenvDir }
 Info "Creating virtualenv at $VenvDir"
 New-Item -ItemType Directory -Force -Path (Split-Path $VenvDir) | Out-Null
 $PyArgs = $py.Args
 & $py.Exe @PyArgs -m venv $VenvDir
 $VenvPy = Join-Path $VenvDir "Scripts\python.exe"
 $AnycamBin = Join-Path $VenvDir "Scripts\anycam.exe"
+$Scripts = Join-Path $VenvDir "Scripts"
 
 & $VenvPy -m pip install --upgrade pip | Out-Null
 $Zip = "https://github.com/$Repo/archive/refs/heads/$Ref.zip"
 Info "Installing AnyCam from $Zip"
 & $VenvPy -m pip install $Zip
 if ($LASTEXITCODE -ne 0) { Fail "pip install failed." }
+
+# Put `anycam` on PATH for this user (takes effect in new terminals).
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if (($userPath -split ';') -notcontains $Scripts) {
+  [Environment]::SetEnvironmentVariable("Path", ($userPath.TrimEnd(';') + ";" + $Scripts), "User")
+  Info "Added AnyCam to your PATH — open a NEW terminal to use the 'anycam' command."
+}
 
 # --- background service (logon Scheduled Task) ------------------------------
 # Persist the chosen port so the service and `tailscale serve` both use it.
