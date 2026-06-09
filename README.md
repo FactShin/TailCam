@@ -8,27 +8,36 @@ any device on your tailnet — with multi-camera support, resolution and zoom
 controls, snapshots, recording, and motion detection. Put those old webcams to
 good use as a monitoring system.
 
-## Install (one-liner)
+## Install
 
-**Linux / macOS:**
+Pick the one-liner for your OS — each installer is dedicated to that platform (no
+cross-OS guesswork).
+
+**Linux** (Debian/Ubuntu/Raspberry Pi OS):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/factshin/anycam/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/factshin/anycam/main/install-linux.sh | bash
 ```
 
-**Windows (PowerShell):**
+**macOS:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/factshin/anycam/main/install-macos.sh | bash
+```
+
+**Windows** (PowerShell):
 
 ```powershell
 irm https://raw.githubusercontent.com/factshin/anycam/main/install.ps1 | iex
 ```
 
-The installer:
-- checks for Python 3.10+ (and, on Linux, the system libraries OpenCV/numpy need),
+Each installer:
+- checks for Python 3.10+ (Linux also installs the system libraries numpy/OpenCV need),
 - installs AnyCam into an isolated virtualenv,
-- detects Tailscale and, if it's running, exposes the UI over HTTPS on your
-  tailnet with `tailscale serve`,
 - registers a background **user** service so AnyCam starts automatically —
-  systemd (Linux), launchd (macOS), or a logon Scheduled Task (Windows).
+  systemd `--user` + lingering (Linux), launchd agent (macOS), or a logon
+  Scheduled Task (Windows),
+- detects Tailscale and, if it's running, exposes the UI over HTTPS with `tailscale serve`.
 
 After install, open the URL printed at the end (your tailnet HTTPS address, or
 `http://localhost:8088/` locally).
@@ -36,15 +45,19 @@ After install, open the URL printed at the end (your tailnet HTTPS address, or
 ### Installer options
 
 ```bash
-curl -fsSL .../install.sh | bash -s -- --yes --port 9000 --no-tailscale   # Linux/macOS
+# Linux / macOS — download then run with flags:
+curl -fsSL .../install-linux.sh -o install-linux.sh && bash install-linux.sh --port 9000 --no-tailscale
 ```
 ```powershell
-irm .../install.ps1 | iex                      # defaults
-# for flags, download then run: .\install.ps1 -Port 9000 -NoTailscale
+# Windows:
+irm .../install.ps1 -OutFile install.ps1 ; .\install.ps1 -Port 9000 -NoTailscale
 ```
 
-Linux/macOS flags: `--yes` (non-interactive), `--port`, `--ref <tag>`, `--no-service`,
-`--no-tailscale`. Windows: `-Port`, `-Ref`, `-NoService`, `-NoTailscale`.
+Linux/macOS flags: `--port`, `--ref <tag>`, `--no-service`, `--no-tailscale`.
+Windows: `-Port`, `-Ref`, `-NoService`, `-NoTailscale`.
+
+To uninstall: run `uninstall-linux.sh` / `uninstall-macos.sh` / `uninstall.ps1`, or
+`anycam uninstall-service` to just remove the background service.
 
 > **Windows note:** the logon Scheduled Task runs AnyCam in your user session (so the webcam is
 > accessible) and starts after you log in — the same "user session" model as the Mac/Linux
