@@ -158,6 +158,13 @@ def doctor() -> None:
     real = [d for d in descriptors if d.backend != "synthetic"]
     cam_detail = f"{len(real)} device(s)" if real else "none (synthetic only)"
     (ok if real else bad)("Cameras detected", cam_detail)
+    if not real and sys.platform == "darwin":
+        console.print(
+            "  [dim]macOS: if you see 'not authorized to capture video' above, grant camera "
+            "access in[/dim]\n"
+            "  [dim]System Settings › Privacy & Security › Camera (enable Terminal, or the "
+            "AnyCam/Python entry), then re-run.[/dim]"
+        )
 
     data_writable = os.access(paths.data_dir(), os.W_OK)
     (ok if data_writable else bad)("Data dir writable", str(paths.data_dir()))
