@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { streamUrl } from "../api/client";
+import { snapshotUrl, streamUrl } from "../api/client";
 import { usePageVisible } from "../api/hooks";
 import { IconZoom } from "../icons";
 import { fmtDur, osdStamp } from "../lib/format";
@@ -8,6 +8,16 @@ import type { CameraInfo, ViewParams } from "../types";
 import { Spinner } from "./ui";
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
+
+// iOS WebKit (every iPhone/iPad browser) fails to render long-running
+// multipart/x-mixed-replace MJPEG streams, especially over HTTP/2 (the
+// Tailscale serve path). Fall back to polling snapshot.jpg there — lower fps,
+// but it renders everywhere. iPadOS masquerades as macOS, hence the touch check.
+const IS_IOS_WEBKIT =
+  typeof navigator !== "undefined" &&
+  (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.userAgent.includes("Mac") && navigator.maxTouchPoints > 1));
+const SNAPSHOT_POLL_MAX_FPS = 3;
 
 function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value);
@@ -67,10 +77,24 @@ export function LiveViewer({
   const active = (pageVisible && inView) || big;
   const shouldStream = active && cam.status !== "offline";
 
+  // iOS compatibility mode: poll single JPEG snapshots instead of MJPEG.
+  const [pollTick, setPollTick] = useState(0);
+  useEffect(() => {
+    if (!IS_IOS_WEBKIT || !shouldStream) return;
+    const fps = Math.max(0.5, Math.min(debouncedView.fps, SNAPSHOT_POLL_MAX_FPS));
+    const t = setInterval(() => setPollTick(Date.now()), 1000 / fps);
+    setPollTick(Date.now());
+    return () => clearInterval(t);
+  }, [shouldStream, debouncedView.fps]);
+
   let src: string | undefined;
   if (shouldStream) {
-    const base = streamUrl(cam.proxy_prefix, cam.id, debouncedView);
-    src = nonce ? `${base}&_=${nonce}` : base;
+    if (IS_IOS_WEBKIT) {
+      src = `${snapshotUrl(cam.proxy_prefix, cam.id)}?_=${pollTick}`;
+    } else {
+      const base = streamUrl(cam.proxy_prefix, cam.id, debouncedView);
+      src = nonce ? `${base}&_=${nonce}` : base;
+    }
   }
 
   // REC timer

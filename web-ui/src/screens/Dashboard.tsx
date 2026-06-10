@@ -102,6 +102,7 @@ export function Dashboard() {
         orderedHosts.map((h) => {
           const cams = byHost(h.host);
           if (!cams.length && h.online) return null;
+          const liveCount = cams.filter((c) => c.status === "online").length;
           return (
             <section key={h.host} className="host-group">
               {multiHost && (
@@ -110,8 +111,8 @@ export function Dashboard() {
                     <IconServer size={15} /> {h.host}
                     {h.kind === "local" && <span className="host-tag">this device</span>}
                   </span>
-                  <span className={`host-status ${h.online ? "ok" : "off"}`}>
-                    {h.online ? `${cams.length} online` : "offline"}
+                  <span className={`host-status ${h.online && liveCount ? "ok" : "off"}`}>
+                    {h.online ? `${liveCount}/${cams.length} online` : "node offline"}
                   </span>
                 </header>
               )}

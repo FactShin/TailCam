@@ -61,6 +61,8 @@ ensure_python() {
 
 install_anycam() {
     local spec="git+https://github.com/${REPO}.git@${REF}"
+    # Stop a running agent so the upgrade actually takes effect.
+    launchctl unload "$HOME/Library/LaunchAgents/com.anycam.plist" 2>/dev/null || true
     log "Creating virtualenv at ${VENV_DIR}"
     rm -rf "$VENV_DIR"
     "$PYTHON" -m venv "$VENV_DIR"

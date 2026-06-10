@@ -61,8 +61,19 @@ Info ("Using Python: " + $py.Exe + " " + ($py.Args -join " "))
 
 # --- create venv + install AnyCam from the GitHub zip (no Git needed) -------
 # Wipe any existing venv so upgrades always take effect, even when pip would
-# consider the installed version "already satisfied".
-if (Test-Path $VenvDir) { Info "Removing old virtualenv"; Remove-Item -Recurse -Force $VenvDir }
+# consider the installed version "already satisfied". Stop the running service
+# first — Windows locks the files of a running pythonw.exe, which would make
+# the wipe fail and leave the old build in place.
+if (Test-Path $VenvDir) {
+  Info "Stopping AnyCam service"
+  Stop-ScheduledTask -TaskName "AnyCam" -ErrorAction SilentlyContinue
+  Get-Process pythonw, python -ErrorAction SilentlyContinue |
+    Where-Object { $_.Path -like "$VenvDir*" } |
+    Stop-Process -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Seconds 1
+  Info "Removing old virtualenv"
+  Remove-Item -Recurse -Force $VenvDir
+}
 Info "Creating virtualenv at $VenvDir"
 New-Item -ItemType Directory -Force -Path (Split-Path $VenvDir) | Out-Null
 $PyArgs = $py.Args

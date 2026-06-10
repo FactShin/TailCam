@@ -78,6 +78,9 @@ ensure_python() {
 
 install_anycam() {
     local spec="git+https://github.com/${REPO}.git@${REF}"
+    # Stop a running service so the upgrade actually takes effect (an active
+    # process would keep serving the old code from the deleted venv).
+    systemctl --user stop anycam.service 2>/dev/null || true
     log "Creating virtualenv at ${VENV_DIR}"
     rm -rf "$VENV_DIR"
     "$PYTHON" -m venv "$VENV_DIR"

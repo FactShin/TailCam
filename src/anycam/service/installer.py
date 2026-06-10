@@ -88,8 +88,11 @@ def _install_systemd() -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_SYSTEMD_UNIT.format(exec_start=_exec_start()))
     subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
-    subprocess.run(["systemctl", "--user", "enable", "--now", SYSTEMD_LABEL], check=False)
-    return f"Installed systemd user service at {path}"
+    subprocess.run(["systemctl", "--user", "enable", SYSTEMD_LABEL], check=False)
+    # `restart`, not `enable --now`: --now is a no-op when the service is
+    # already active, which left upgrades running the OLD code until reboot.
+    subprocess.run(["systemctl", "--user", "restart", SYSTEMD_LABEL], check=False)
+    return f"Installed systemd user service at {path} (restarted)"
 
 
 def _uninstall_systemd() -> str:
@@ -149,9 +152,12 @@ def _install_windows() -> str:
         f"Register-ScheduledTask -TaskName '{SCHTASK_NAME}' -Action $a -Trigger $t "
         "-Settings $s -Force | Out-Null"
     )
+    # Stop any running instance first so upgrades actually swap in the new
+    # code (re-registering does not restart an already-running task).
+    _powershell(f"Stop-ScheduledTask -TaskName '{SCHTASK_NAME}' -ErrorAction SilentlyContinue")
     _powershell(script)
     _powershell(f"Start-ScheduledTask -TaskName '{SCHTASK_NAME}'")
-    return f"Installed Windows logon task '{SCHTASK_NAME}'"
+    return f"Installed Windows logon task '{SCHTASK_NAME}' (restarted)"
 
 
 def _uninstall_windows() -> str:
