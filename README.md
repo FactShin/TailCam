@@ -81,6 +81,7 @@ anycam run
 | `anycam status` | Cameras + tailnet nodes (Rich table) and the access URL |
 | `anycam doctor` | Diagnostics: Python, OpenCV, cameras, Tailscale, fleet reachability |
 | `anycam cameras` | List detected cameras |
+| `anycam update [--check]` | Update to the latest version (and restart the service) |
 | `anycam start` / `stop` / `restart` | Control the background service |
 | `anycam install-service` / `uninstall-service` | Register/remove the background service |
 | `anycam tailscale serve` / `serve-off` / `status` | Manage tailnet exposure |
