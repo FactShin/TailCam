@@ -405,6 +405,44 @@ def config(
 
 
 @app.command()
+def update(
+    check: bool = typer.Option(
+        False, "--check", help="Only check for a new version; don't install."
+    ),
+) -> None:
+    """Update AnyCam to the latest version and restart the service."""
+    setup_logging("WARNING")
+    from anycam import update as upd
+
+    current, latest, newer = upd.update_available()
+    if latest is None:
+        typer.echo(f"Current version {current} — couldn't reach GitHub to check for updates.")
+        raise typer.Exit(code=1)
+    if not newer:
+        typer.echo(f"Up to date ({current}).")
+        return
+    typer.echo(f"Update available: {current} → {latest}")
+    if check:
+        return
+
+    if sys.platform == "win32":
+        # A running anycam.exe can't replace itself; hand off to the installer.
+        upd.spawn_windows_installer()
+        typer.echo("Updating via the installer in a background window.")
+        typer.echo("Check `anycam version` in a minute or two (open a new terminal).")
+        return
+
+    typer.echo("Installing…")
+    if not upd.run_pip_upgrade():
+        typer.echo("pip install failed — try re-running the install script.")
+        raise typer.Exit(code=1)
+    from anycam.service import installer
+
+    typer.echo(installer.restart())
+    typer.echo(f"Updated to {latest}.")
+
+
+@app.command()
 def version() -> None:
     """Print the AnyCam version."""
     typer.echo(__version__)
