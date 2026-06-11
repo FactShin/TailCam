@@ -167,3 +167,66 @@ def _uninstall_windows() -> str:
         "-ErrorAction SilentlyContinue"
     )
     return f"Removed Windows logon task '{SCHTASK_NAME}'"
+
+
+# --- service control (anycam start / stop / restart) ------------------------
+
+
+def _installed() -> bool:
+    if sys.platform == "win32":
+        return True  # task existence is checked by schtasks itself
+    if sys.platform == "darwin":
+        return _launchd_plist_path().exists()
+    return _systemd_unit_path().exists()
+
+
+_NOT_INSTALLED = "Service not installed — run `anycam install-service` first."
+
+
+def start() -> str:
+    """Start the background service."""
+    if not _installed():
+        return _NOT_INSTALLED
+    if sys.platform == "win32":
+        _powershell(f"Start-ScheduledTask -TaskName '{SCHTASK_NAME}'")
+        return f"Started Windows task '{SCHTASK_NAME}'"
+    if sys.platform == "darwin":
+        subprocess.run(["launchctl", "load", str(_launchd_plist_path())], check=False)
+        return "Started launchd agent"
+    proc = subprocess.run(["systemctl", "--user", "start", SYSTEMD_LABEL], check=False)
+    return "Started systemd service" if proc.returncode == 0 else "Failed to start systemd service"
+
+
+def stop() -> str:
+    """Stop the background service (it will start again at next login/boot)."""
+    if not _installed():
+        return _NOT_INSTALLED
+    if sys.platform == "win32":
+        _powershell(f"Stop-ScheduledTask -TaskName '{SCHTASK_NAME}' -ErrorAction SilentlyContinue")
+        return f"Stopped Windows task '{SCHTASK_NAME}'"
+    if sys.platform == "darwin":
+        # The agent has KeepAlive=true, so `launchctl stop` would respawn it;
+        # unload is the real stop (it loads again at next login).
+        subprocess.run(["launchctl", "unload", str(_launchd_plist_path())], check=False)
+        return "Stopped launchd agent (will start again at next login)"
+    proc = subprocess.run(["systemctl", "--user", "stop", SYSTEMD_LABEL], check=False)
+    return "Stopped systemd service" if proc.returncode == 0 else "Failed to stop systemd service"
+
+
+def restart() -> str:
+    """Restart the background service (e.g. after changing config)."""
+    if not _installed():
+        return _NOT_INSTALLED
+    if sys.platform == "win32":
+        _powershell(f"Stop-ScheduledTask -TaskName '{SCHTASK_NAME}' -ErrorAction SilentlyContinue")
+        _powershell(f"Start-ScheduledTask -TaskName '{SCHTASK_NAME}'")
+        return f"Restarted Windows task '{SCHTASK_NAME}'"
+    if sys.platform == "darwin":
+        path = str(_launchd_plist_path())
+        subprocess.run(["launchctl", "unload", path], check=False)
+        subprocess.run(["launchctl", "load", path], check=False)
+        return "Restarted launchd agent"
+    proc = subprocess.run(["systemctl", "--user", "restart", SYSTEMD_LABEL], check=False)
+    return (
+        "Restarted systemd service" if proc.returncode == 0 else "Failed to restart systemd service"
+    )

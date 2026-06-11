@@ -245,6 +245,65 @@ def uninstall_service() -> None:
     typer.echo(installer.uninstall())
 
 
+def _wait_for_server(port: int, timeout: float = 8.0) -> bool:
+    """Poll the local API until the server answers (used after start/restart)."""
+    import time
+
+    import httpx
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            if httpx.get(f"http://127.0.0.1:{port}/api/system", timeout=1.5).status_code == 200:
+                return True
+        except Exception:
+            pass
+        time.sleep(0.4)
+    return False
+
+
+def _report_server(port: int) -> None:
+    if _wait_for_server(port):
+        console.print(f"[green]✓[/green] Serving on [cyan]http://localhost:{port}/[/cyan]")
+    else:
+        console.print(
+            f"[yellow]![/yellow] Server not answering on :{port} yet — check `anycam doctor`."
+        )
+
+
+@app.command()
+def start() -> None:
+    """Start the AnyCam background service."""
+    setup_logging("WARNING")
+    from anycam.service import installer
+
+    msg = installer.start()
+    typer.echo(msg)
+    if "install-service" not in msg:
+        _report_server(AppConfig.load().server.port)
+
+
+@app.command()
+def stop() -> None:
+    """Stop the AnyCam background service (it starts again at next login/boot)."""
+    setup_logging("WARNING")
+    from anycam.service import installer
+
+    typer.echo(installer.stop())
+
+
+@app.command()
+def restart() -> None:
+    """Restart the AnyCam background service (e.g. after changing config)."""
+    setup_logging("WARNING")
+    from anycam.service import installer
+
+    msg = installer.restart()
+    typer.echo(msg)
+    if "install-service" not in msg:
+        _report_server(AppConfig.load().server.port)
+
+
 @tailscale_app.command("serve")
 def tailscale_serve(
     https_port: int | None = typer.Option(
