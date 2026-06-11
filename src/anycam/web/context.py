@@ -40,6 +40,9 @@ class AppContext:
         self._lock = threading.Lock()
 
     def startup(self) -> None:
+        stale = self.store.close_stale_motion_events()
+        if stale:
+            log.info("Closed %d orphaned motion event(s) from a previous run", stale)
         self.manager.discover()
         # Eager-start workers so status reflects reality from the first poll
         # (the UI only streams cameras that report online).

@@ -204,6 +204,20 @@ class Store:
                 (end_ts, peak_score, recording_id, event_id),
             )
 
+    def close_stale_motion_events(self) -> int:
+        """Close any event still marked ongoing (end_ts IS NULL).
+
+        Called at startup: nothing can genuinely be ongoing then, so leftovers
+        are orphans from a crash or an older version that leaked them. The true
+        end time is unknown — close at start_ts (zero duration) rather than
+        showing a bogus hours-long event.
+        """
+        with self._conn() as conn:
+            cur = conn.execute(
+                "UPDATE motion_events SET end_ts=start_ts WHERE end_ts IS NULL"
+            )
+            return cur.rowcount
+
     def list_motion_events(
         self, camera_id: str | None = None, limit: int = 50, offset: int = 0
     ) -> list[MotionEventRecord]:

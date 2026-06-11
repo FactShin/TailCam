@@ -135,3 +135,32 @@ def test_cross_origin_mutation_blocked(client):
     # …while localhost / same-origin is allowed.
     ok = client.post(f"/api/cameras/{cam_id}/snapshot", headers={"origin": "http://localhost:8088"})
     assert ok.status_code in (200, 503)  # 503 only if no frame yet
+
+
+def test_disabling_motion_closes_open_event(client, context):
+    """Regression: toggling motion off mid-event left it 'ongoing' forever."""
+    cam_id = client.get("/api/cameras").json()[0]["id"]
+    client.patch(f"/api/cameras/{cam_id}", json={"motion_enabled": True})
+    # The synthetic camera has a moving square, so an event opens quickly.
+    deadline = time.time() + 8.0
+    while time.time() < deadline:
+        events = client.get("/api/events").json()
+        if events:
+            break
+        time.sleep(0.2)
+    assert events, "synthetic motion should have opened an event"
+    client.patch(f"/api/cameras/{cam_id}", json={"motion_enabled": False})
+    events = client.get("/api/events").json()
+    assert all(e["end_ts"] is not None for e in events), "no event may stay 'ongoing'"
+
+
+def test_startup_closes_stale_events(store):
+    from anycam.persistence.models import MotionEventRecord
+
+    store.add_motion_event(
+        MotionEventRecord(id=None, camera_id="x", start_ts=123.0, end_ts=None,
+                          peak_score=0.5, recording_id=None)
+    )
+    assert store.close_stale_motion_events() == 1
+    (event,) = store.list_motion_events()
+    assert event.end_ts == 123.0  # closed at start_ts (true end unknown)
