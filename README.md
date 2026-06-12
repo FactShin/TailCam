@@ -8,8 +8,7 @@ it from any device on your tailnet — with multi-camera support, resolution and
 zoom controls, snapshots, recording, and motion detection. Put those old
 webcams to good use as a monitoring system.
 
-> **Renamed from AnyCam** (v0.5.0). The GitHub repo URL still says `anycam`
-> until the repo itself is renamed. If you previously ran AnyCam, reinstall with
+> **Renamed from AnyCam** (v0.5.0). If you previously ran AnyCam, reinstall with
 > the one-liner for your OS — your cameras, settings, recordings, and event
 > history migrate across automatically (see [Upgrading from AnyCam](#upgrading-from-anycam)).
 
@@ -21,19 +20,19 @@ cross-OS guesswork).
 **Linux** (Debian/Ubuntu/Raspberry Pi OS):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/factshin/anycam/main/install-linux.sh | bash
+curl -fsSL https://raw.githubusercontent.com/factshin/tailcam/main/install-linux.sh | bash
 ```
 
 **macOS:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/factshin/anycam/main/install-macos.sh | bash
+curl -fsSL https://raw.githubusercontent.com/factshin/tailcam/main/install-macos.sh | bash
 ```
 
 **Windows** (PowerShell):
 
 ```powershell
-irm https://raw.githubusercontent.com/factshin/anycam/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/factshin/tailcam/main/install.ps1 | iex
 ```
 
 Each installer:
@@ -72,9 +71,9 @@ To uninstall: run `uninstall-linux.sh` / `uninstall-macos.sh` / `uninstall.ps1`,
 ## Manual install
 
 ```bash
-pipx install git+https://github.com/factshin/anycam.git
+pipx install git+https://github.com/factshin/tailcam.git
 # or
-python3 -m venv .venv && .venv/bin/pip install git+https://github.com/factshin/anycam.git
+python3 -m venv .venv && .venv/bin/pip install git+https://github.com/factshin/tailcam.git
 tailcam run
 ```
 

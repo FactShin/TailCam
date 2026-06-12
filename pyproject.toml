@@ -50,8 +50,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/factshin/anycam"
-Repository = "https://github.com/factshin/anycam"
+Homepage = "https://github.com/factshin/tailcam"
+Repository = "https://github.com/factshin/tailcam"
 
 [project.scripts]
 tailcam = "tailcam.cli:main"

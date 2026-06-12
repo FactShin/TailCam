@@ -23,11 +23,10 @@ from tailcam import __version__
 _CACHE_TTL = 3600.0  # don't hammer GitHub from the dashboard banner
 _cache: tuple[float, str | None] | None = None
 
-# The GitHub repo is still named "anycam" (rename pending). When it is renamed,
-# GitHub redirects keep these URLs working; update them in the release after.
-RAW_VERSION_URL = "https://raw.githubusercontent.com/factshin/anycam/main/src/tailcam/__init__.py"
-ZIP_URL = "https://github.com/factshin/anycam/archive/refs/heads/main.zip"
-PS_INSTALL_CMD = "irm https://raw.githubusercontent.com/factshin/anycam/main/install.ps1 | iex"
+# Self-update fetches the version/zip from the GitHub repo on `main`.
+RAW_VERSION_URL = "https://raw.githubusercontent.com/factshin/tailcam/main/src/tailcam/__init__.py"
+ZIP_URL = "https://github.com/factshin/tailcam/archive/refs/heads/main.zip"
+PS_INSTALL_CMD = "irm https://raw.githubusercontent.com/factshin/tailcam/main/install.ps1 | iex"
 
 
 def parse_version(v: str) -> tuple[int, ...]:
