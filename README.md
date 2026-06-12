@@ -9,8 +9,9 @@ zoom controls, snapshots, recording, and motion detection. Put those old
 webcams to good use as a monitoring system.
 
 > **Renamed from AnyCam** (v0.5.0). The GitHub repo URL still says `anycam`
-> until the repo itself is renamed; existing installs migrate automatically the
-> next time they update, and the old `anycam` command keeps working as an alias.
+> until the repo itself is renamed. If you previously ran AnyCam, reinstall with
+> the one-liner for your OS — your cameras, settings, recordings, and event
+> history migrate across automatically (see [Upgrading from AnyCam](#upgrading-from-anycam)).
 
 ## Install
 
@@ -91,16 +92,22 @@ tailcam run
 | `tailcam tailscale serve` / `serve-off` / `status` | Manage tailnet exposure |
 | `tailcam config [--init] [--port N] [--serve-port N] [--host H]` | Show or update config |
 
-Tab-completion: `tailcam --install-completion`. The old `anycam` command still
-works as an alias for everything above.
+Tab-completion: `tailcam --install-completion`. `tailcam --version` prints the version.
 
 ## Upgrading from AnyCam
 
-Run `anycam update` (or re-run your OS installer one-liner). The update:
-- keeps your existing config, media, and event database where they are,
+AnyCam and TailCam are a clean break — there is no `anycam` command anymore. To
+upgrade, just **reinstall** with the one-liner for your OS (above). On its first
+run TailCam automatically migrates a previous AnyCam install:
+
+- moves your config, media, and SQLite database into the TailCam locations
+  (renaming `anycam.db` → `tailcam.db`) — cameras, settings, recordings, and
+  motion-event history all carry over,
 - replaces the background service (`anycam.service` / `com.anycam` / task
-  "AnyCam") with the TailCam-named equivalent,
-- installs the `tailcam` command and keeps `anycam` as an alias.
+  "AnyCam") with the TailCam-named equivalent.
+
+The migration is one-time and idempotent. You can also run it explicitly with
+`tailcam migrate`.
 
 ## Ports & Tailscale
 
@@ -251,11 +258,10 @@ output is committed to `src/tailcam/web/spa/` and ships in the wheel, so end use
 never need Node. To change the UI: `cd web-ui && npm install && npm run build`,
 then commit both the source and the regenerated `src/tailcam/web/spa/`.
 
-**Releases:** bump `__version__` in **both** `src/tailcam/__init__.py` and the
-legacy shim `src/anycam/__init__.py` with every change merged to `main` (the
-shim is how pre-rename installs detect updates). The version is shown by
-`tailcam version`, `tailcam status`, `/api/system`, and the dashboard Settings
-page — it's how you confirm a node is actually running the build you think it is.
+**Releases:** bump `__version__` in `src/tailcam/__init__.py` with every change
+merged to `main`. The version is shown by `tailcam version` (and `tailcam
+--version`), `tailcam status`, `/api/system`, and the dashboard Settings page —
+it's how you confirm a node is actually running the build you think it is.
 
 ## License
 

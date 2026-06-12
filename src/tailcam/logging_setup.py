@@ -13,8 +13,7 @@ def setup_logging(level: str | None = None) -> None:
     global _CONFIGURED
     if _CONFIGURED:
         return
-    env_level = os.environ.get("TAILCAM_LOG_LEVEL") or os.environ.get("ANYCAM_LOG_LEVEL")
-    resolved = (level or env_level or "INFO").upper()
+    resolved = (level or os.environ.get("TAILCAM_LOG_LEVEL") or "INFO").upper()
     logging.basicConfig(
         level=getattr(logging, resolved, logging.INFO),
         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
