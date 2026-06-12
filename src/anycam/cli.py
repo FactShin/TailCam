@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 
 import typer
@@ -377,13 +378,23 @@ def config(
         None, "--serve-port", help="Set the tailnet HTTPS port and save."
     ),
     host: str | None = typer.Option(None, "--host", help="Set the bind address and save."),
+    reset: bool = typer.Option(False, "--reset", help="Overwrite config.toml with clean defaults."),
+    edit: bool = typer.Option(False, "--edit", help="Open config.toml in your $EDITOR."),
 ) -> None:
     """Show the config file path and values; --port/--serve-port/--host persist changes."""
     paths.ensure_dirs()
     cfg_path = paths.config_file()
+    if reset:
+        AppConfig().save()
+        typer.echo(f"Reset config to defaults at {cfg_path}")
     if init and not cfg_path.exists():
         AppConfig().save()
         typer.echo(f"Wrote default config to {cfg_path}")
+    if edit:
+        if not cfg_path.exists():
+            AppConfig().save()
+        editor = os.environ.get("EDITOR") or ("notepad" if sys.platform == "win32" else "nano")
+        subprocess.run([editor, str(cfg_path)], check=False)
     cfg = AppConfig.load()
     if port is not None:
         cfg.server.port = port

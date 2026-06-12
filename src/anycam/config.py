@@ -6,6 +6,7 @@ App-level and per-camera *display* settings live here. Dynamic, queryable data
 
 from __future__ import annotations
 
+import logging
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -111,9 +112,23 @@ class AppConfig:
         cfg_path = path or paths.config_file()
         if not cfg_path.exists():
             return cls()
-        with cfg_path.open("rb") as fh:
-            raw = tomllib.load(fh)
-        return cls.from_dict(raw)
+        try:
+            with cfg_path.open("rb") as fh:
+                raw = tomllib.load(fh)
+            return cls.from_dict(raw)
+        except (tomllib.TOMLDecodeError, OSError, TypeError, ValueError) as exc:
+            # A malformed/hand-edited config must NOT brick every command or
+            # crash-loop the background service. Back the bad file up and run on
+            # defaults; the user can fix it and `anycam restart`.
+            logging.getLogger("anycam.config").error(
+                "Invalid config at %s (%s). Using defaults; bad file saved as %s.bad",
+                cfg_path, exc, cfg_path.name,
+            )
+            try:
+                cfg_path.replace(cfg_path.with_suffix(cfg_path.suffix + ".bad"))
+            except OSError:
+                pass
+            return cls()
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> AppConfig:
