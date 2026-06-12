@@ -1,9 +1,9 @@
 {
-  "name": "anycam-web-ui",
+  "name": "tailcam-web-ui",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.5.0",
   "type": "module",
-  "description": "AnyCam dashboard — responsive web / PWA front-end",
+  "description": "TailCam dashboard — responsive web / PWA front-end",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

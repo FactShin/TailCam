@@ -5,7 +5,7 @@ const { useState: useS1, useEffect: useE1, useRef: useR1, useCallback: useC1 } =
 // persist per-camera local view params
 const VIEW_DEFAULT = { fps: 15, zoom: 1, panX: 0.5, panY: 0.5, quality: 75, w: 0 };
 function loadView(id) {
-  try { return { ...VIEW_DEFAULT, ...JSON.parse(localStorage.getItem("anycam.view." + id) || "{}") }; }
+  try { return { ...VIEW_DEFAULT, ...JSON.parse(localStorage.getItem("tailcam.view." + id) || "{}") }; }
   catch { return { ...VIEW_DEFAULT }; }
 }
 
@@ -187,7 +187,7 @@ function CameraDetail({ id, detailLayout }) {
   useE1(() => { setViewState(loadView(id)); }, [id]);
   const setView = useC1((v) => {
     setViewState(v);
-    try { localStorage.setItem("anycam.view." + id, JSON.stringify(v)); } catch {}
+    try { localStorage.setItem("tailcam.view." + id, JSON.stringify(v)); } catch {}
   }, [id]);
 
   // optimistic global PATCH with revert

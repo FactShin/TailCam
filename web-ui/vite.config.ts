@@ -2,12 +2,12 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
-// Built output goes INTO the Python package so pip-installed AnyCam can serve
+// Built output goes INTO the Python package so pip-installed TailCam can serve
 // the dashboard with no Node build step on the host.
-const OUT_DIR = "../src/anycam/web/spa";
+const OUT_DIR = "../src/tailcam/web/spa";
 
-// Dev: proxy the API/stream/media/proxy paths to a locally running AnyCam.
-const target = process.env.ANYCAM_DEV_TARGET || "http://localhost:8088";
+// Dev: proxy the API/stream/media/proxy paths to a locally running TailCam.
+const target = process.env.TAILCAM_DEV_TARGET || "http://localhost:8088";
 const proxy = Object.fromEntries(
   ["/api", "/stream", "/media", "/proxy"].map((p) => [p, { target, changeOrigin: true }]),
 );
@@ -20,11 +20,11 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg"],
       manifest: {
-        name: "AnyCam",
-        short_name: "AnyCam",
-        description: "View any webcam from anywhere over Tailscale",
-        theme_color: "#0f1115",
-        background_color: "#0f1115",
+        name: "TailCam",
+        short_name: "TailCam",
+        description: "TailCam — view any webcam from anywhere over Tailscale",
+        theme_color: "#0b0d1d",
+        background_color: "#0b0d1d",
         display: "standalone",
         start_url: "/",
         icons: [

@@ -40,22 +40,19 @@ const Icon = ({
   </svg>
 );
 
+// TailCam mark — lens reticle.
 export const Logo = ({ size = 28, className = "" }: { size?: number; className?: string }) => (
-  <svg width={size} height={size} viewBox="0 0 32 32" fill="none" className={className} aria-hidden="true">
+  <svg width={size} height={size} viewBox="0 0 48 48" fill="none" className={className} aria-hidden="true">
     <defs>
-      <linearGradient id="acg" x1="4" y1="4" x2="28" y2="28" gradientUnits="userSpaceOnUse">
-        <stop stopColor="#6ba2ff" />
-        <stop offset="1" stopColor="#4f8cff" />
+      <linearGradient id="tcg" x1="6" y1="6" x2="42" y2="42" gradientUnits="userSpaceOnUse">
+        <stop stopColor="#5b7fff" />
+        <stop offset="1" stopColor="#9b5cff" />
       </linearGradient>
     </defs>
-    <circle cx="16" cy="16" r="13" stroke="url(#acg)" strokeWidth="2.2" />
-    <g strokeWidth="2.2" strokeLinecap="round">
-      <path d="M16 5.5 L21.5 15 L10.5 15 Z" fill="rgba(79,140,255,0.18)" stroke="none" />
-      <path d="M26.5 16 L18 21.5 L18 11 Z" fill="rgba(79,140,255,0.10)" stroke="none" />
-      <path d="M5.5 16 L14 11 L14 21.5 Z" fill="rgba(79,140,255,0.10)" stroke="none" />
-    </g>
-    <circle cx="16" cy="16" r="4.4" fill="#4f8cff" />
-    <circle cx="14.4" cy="14.4" r="1.4" fill="#cfe0ff" />
+    <circle cx="24" cy="24" r="19" stroke="url(#tcg)" strokeWidth="2.5" strokeDasharray="22 8" strokeDashoffset="11" strokeLinecap="round" />
+    <path d="M24 1.5v5M24 41.5v5M1.5 24h5M41.5 24h5" stroke="url(#tcg)" strokeWidth="2.5" strokeLinecap="round" />
+    <circle cx="24" cy="24" r="9" fill="url(#tcg)" />
+    <circle cx="20.5" cy="20.5" r="2.6" fill="#dff0ff" opacity="0.9" />
   </svg>
 );
 
@@ -117,3 +114,9 @@ export const IconPlay = (p: IconProps) => <Icon {...p} fill="currentColor" strok
 export const IconInfo = (p: IconProps) => <Icon {...p}><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 7.5v.01" /></Icon>;
 export const IconSliders = (p: IconProps) => <Icon {...p}><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5" /><circle cx="16" cy="6" r="2" /><circle cx="8" cy="12" r="2" /><circle cx="13" cy="18" r="2" /></Icon>;
 export const IconServer = (p: IconProps) => <Icon {...p}><rect x="3" y="4" width="18" height="7" rx="1.5" /><rect x="3" y="13" width="18" height="7" rx="1.5" /><path d="M7 7.5h.01M7 16.5h.01" /></Icon>;
+export const IconWall = (p: IconProps) => <Icon {...p}><rect x="2.5" y="4" width="19" height="16" rx="1.5" /><path d="M2.5 12h19M9 4v8M16 12v8" /></Icon>;
+export const IconSearch = (p: IconProps) => <Icon {...p}><circle cx="11" cy="11" r="7" /><path d="m21 21-4.5-4.5" /></Icon>;
+export const IconClock = (p: IconProps) => <Icon {...p}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3.5 2" /></Icon>;
+export const IconBolt = (p: IconProps) => <Icon {...p}><path d="M13 2 4.5 13.5h6L10.5 22 19 10.5h-6L13 2Z" /></Icon>;
+export const IconChip = (p: IconProps) => <Icon {...p}><rect x="6" y="6" width="12" height="12" rx="1.5" /><rect x="9.5" y="9.5" width="5" height="5" rx="0.8" /><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4" /></Icon>;
+export const IconPause = (p: IconProps) => <Icon {...p} fill="currentColor" stroke={false}><path d="M7 4h3.5v16H7zM13.5 4H17v16h-3.5z" /></Icon>;

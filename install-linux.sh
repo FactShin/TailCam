@@ -1,19 +1,23 @@
 #!/usr/bin/env bash
-# AnyCam installer for Linux (Debian/Ubuntu/Raspberry Pi OS and friends).
+# TailCam installer for Linux (Debian/Ubuntu/Raspberry Pi OS and friends).
 #
 #   curl -fsSL https://raw.githubusercontent.com/factshin/anycam/main/install-linux.sh | bash
 #
-# Installs AnyCam into a per-user virtualenv, installs the libraries numpy/OpenCV
+# Installs TailCam into a per-user virtualenv, installs the libraries numpy/OpenCV
 # need, registers a systemd --user service (with lingering so it survives reboot),
 # and exposes the dashboard over Tailscale when available.
+#
+# (The GitHub repo is still named "anycam" — rename pending; the URL above will
+# redirect once it changes.)
 set -eu
 
-REPO="${ANYCAM_REPO:-factshin/anycam}"
-REF="${ANYCAM_REF:-main}"
-PORT="${ANYCAM_PORT:-8088}"
+REPO="${TAILCAM_REPO:-${ANYCAM_REPO:-factshin/anycam}}"
+REF="${TAILCAM_REF:-${ANYCAM_REF:-main}}"
+PORT="${TAILCAM_PORT:-${ANYCAM_PORT:-8088}}"
 DO_SERVICE=1
 DO_TAILSCALE=1
-VENV_DIR="${HOME}/.local/share/anycam/venv"
+VENV_DIR="${HOME}/.local/share/tailcam/venv"
+LEGACY_VENV_DIR="${HOME}/.local/share/anycam/venv"
 
 log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
@@ -43,7 +47,7 @@ DISTRO=""
 ensure_system_deps() {
     case "$DISTRO" in
         debian|ubuntu|raspbian) ;;
-        *) warn "Non-Debian distro '${DISTRO:-?}'. If AnyCam fails to import, install: libopenblas0 libgl1 libglib2.0-0"; return 0 ;;
+        *) warn "Non-Debian distro '${DISTRO:-?}'. If TailCam fails to import, install: libopenblas0 libgl1 libglib2.0-0"; return 0 ;;
     esac
     local required="python3-venv python3-pip libgl1 libglib2.0-0 libopenblas0"
     local optional="ffmpeg v4l-utils"
@@ -54,7 +58,7 @@ ensure_system_deps() {
     fi
     log "Installing system libraries: ${required}"
     sudo apt-get update -y || warn "apt-get update failed."
-    sudo apt-get install -y $required || warn "Failed to install ${required}; AnyCam may not import. Install them manually."
+    sudo apt-get install -y $required || warn "Failed to install ${required}; TailCam may not import. Install them manually."
     sudo apt-get install -y $optional || true
 }
 
@@ -76,35 +80,44 @@ ensure_python() {
     exit 1
 }
 
-install_anycam() {
+install_tailcam() {
     local spec="git+https://github.com/${REPO}.git@${REF}"
     # Stop a running service so the upgrade actually takes effect (an active
     # process would keep serving the old code from the deleted venv).
+    systemctl --user stop tailcam.service 2>/dev/null || true
     systemctl --user stop anycam.service 2>/dev/null || true
     log "Creating virtualenv at ${VENV_DIR}"
     rm -rf "$VENV_DIR"
     "$PYTHON" -m venv "$VENV_DIR"
     "${VENV_DIR}/bin/pip" install --upgrade pip >/dev/null
-    log "Installing AnyCam ($spec)"
+    log "Installing TailCam ($spec)"
     "${VENV_DIR}/bin/pip" install "$spec"
-    ANYCAM_BIN="${VENV_DIR}/bin/anycam"
+    TAILCAM_BIN="${VENV_DIR}/bin/tailcam"
+    # A pre-rename AnyCam venv is fully replaced by this one; drop it.
+    if [ -d "$LEGACY_VENV_DIR" ]; then
+        log "Removing old AnyCam virtualenv at ${LEGACY_VENV_DIR}"
+        rm -rf "$LEGACY_VENV_DIR"
+        rmdir "$(dirname "$LEGACY_VENV_DIR")" 2>/dev/null || true
+    fi
 }
 
 link_cli() {
-    # Put `anycam` on PATH via ~/.local/bin (on PATH for most shells).
+    # Put `tailcam` on PATH via ~/.local/bin (on PATH for most shells).
+    # Keep an `anycam` alias for muscle memory / old docs.
     mkdir -p "$HOME/.local/bin"
-    ln -sf "${VENV_DIR}/bin/anycam" "$HOME/.local/bin/anycam"
+    ln -sf "${VENV_DIR}/bin/tailcam" "$HOME/.local/bin/tailcam"
+    ln -sf "${VENV_DIR}/bin/tailcam" "$HOME/.local/bin/anycam"
     case ":$PATH:" in
         *":$HOME/.local/bin:"*) ;;
-        *) warn "Add ~/.local/bin to your PATH to use 'anycam' directly (e.g. add to ~/.bashrc): export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
+        *) warn "Add ~/.local/bin to your PATH to use 'tailcam' directly (e.g. add to ~/.bashrc): export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
     esac
 }
 
 setup_service() {
-    "$ANYCAM_BIN" config --port "$PORT" >/dev/null 2>&1 || true
+    "$TAILCAM_BIN" config --port "$PORT" >/dev/null 2>&1 || true
     [ "$DO_SERVICE" -eq 0 ] && { warn "Skipping service (--no-service)."; return 0; }
     log "Registering systemd --user service"
-    "$ANYCAM_BIN" install-service || warn "Service registration failed."
+    "$TAILCAM_BIN" install-service || warn "Service registration failed."
     # Lingering lets the user service start at boot without an interactive login
     # (important for a headless Pi).
     if have loginctl; then
@@ -128,20 +141,20 @@ ensure_tailscale() {
     # operator so it works without sudo (avoids "Access denied").
     sudo tailscale set --operator="$USER" 2>/dev/null \
         || warn "If serve is denied, run: sudo tailscale set --operator=$USER"
-    log "Exposing AnyCam over Tailscale"
-    "$ANYCAM_BIN" tailscale serve \
+    log "Exposing TailCam over Tailscale"
+    "$TAILCAM_BIN" tailscale serve \
         || warn "tailscale serve failed (try: sudo tailscale set --operator=$USER). UI still works locally."
 }
 
-log "Installing AnyCam on Linux (${DISTRO:-unknown}, ref=${REF}, port=${PORT})"
+log "Installing TailCam on Linux (${DISTRO:-unknown}, ref=${REF}, port=${PORT})"
 ensure_system_deps
 ensure_python
-install_anycam
+install_tailcam
 link_cli
 setup_service
 ensure_tailscale
 echo
-log "AnyCam installed."
-"$ANYCAM_BIN" status || true
+log "TailCam installed."
+"$TAILCAM_BIN" status || true
 echo
 log "Open the web UI at one of the URLs above."

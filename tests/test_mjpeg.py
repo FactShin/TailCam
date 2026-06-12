@@ -12,9 +12,9 @@ import threading
 import anyio
 import numpy as np
 
-from anycam.camera.frame import FrameBuffer
-from anycam.camera.transforms import StreamTransform
-from anycam.streaming.mjpeg import MJPEGBackend
+from tailcam.camera.frame import FrameBuffer
+from tailcam.camera.transforms import StreamTransform
+from tailcam.streaming.mjpeg import MJPEGBackend
 
 
 def _producer(buffer: FrameBuffer, stop: threading.Event):

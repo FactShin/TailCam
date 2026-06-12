@@ -1,4 +1,4 @@
-from anycam.camera.enumerate import _caps_has_capture
+from tailcam.camera.enumerate import _caps_has_capture
 
 # V4L2 capability bit-parsing. On a Raspberry Pi, only the real webcam node
 # advertises VIDEO_CAPTURE; the codec/ISP nodes (video10-23) do not, and must

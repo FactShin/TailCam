@@ -1,4 +1,4 @@
-// Same-origin fetch client + URL builders for AnyCam.
+// Same-origin fetch client + URL builders for TailCam.
 //
 // Camera ids may contain slashes (e.g. "/dev/video0"); we never url-encode the
 // slashes — the backend uses a path matcher. Remote cameras carry a

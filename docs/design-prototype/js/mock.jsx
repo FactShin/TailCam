@@ -1,4 +1,4 @@
-// mock.jsx — mock AnyCam API, in-memory store, polling hooks, and synthetic feed renderer.
+// mock.jsx — mock TailCam API, in-memory store, polling hooks, and synthetic feed renderer.
 // Mirrors the documented endpoints. No network — everything is local + self-contained.
 
 const { useState, useEffect, useRef, useCallback } = React;
@@ -101,7 +101,7 @@ let _system = {
   version: "1.4.2",
   tailscale_installed: true,
   tailscale_running: true,
-  access_url: "http://anycam-pi.tail9c2f.ts.net",
+  access_url: "http://tailcam-pi.tail9c2f.ts.net",
   local_url: "http://192.168.1.42:8088",
   media_bytes: 0,
 };

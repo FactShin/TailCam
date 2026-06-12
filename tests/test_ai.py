@@ -1,8 +1,8 @@
 import httpx
 import numpy as np
 
-from anycam.ai import analyzer as ai
-from anycam.config import AIConfig
+from tailcam.ai import analyzer as ai
+from tailcam.config import AIConfig
 
 
 def _frame():

@@ -19,7 +19,7 @@ const Icon = ({ children, size = 22, className = "", viewBox = "0 0 24 24", stro
   </svg>
 );
 
-// AnyCam logo — camera aperture / eye glyph
+// TailCam logo — camera aperture / eye glyph
 const Logo = ({ size = 28, className = "" }) => (
   <svg width={size} height={size} viewBox="0 0 32 32" fill="none" className={className} aria-hidden="true">
     <defs>

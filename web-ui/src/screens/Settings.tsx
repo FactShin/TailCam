@@ -28,12 +28,18 @@ export function Settings() {
 
   return (
     <div className="screen">
-      <div className="screen-head"><div><h1 className="screen-title">Settings</h1><p className="screen-sub">System &amp; access</p></div></div>
+      <div className="screen-head">
+        <div>
+          <div className="kicker"><span className="kicker-rule" /><span className="microlabel lit">System Console</span></div>
+          <h1 className="screen-title">Settings</h1>
+          <p className="screen-sub">System &amp; access</p>
+        </div>
+      </div>
 
       <div className="settings-grid">
         <div className="panel">
           <div className="panel-title"><IconInfo size={16} /> System</div>
-          <div className="kv"><span className="kv-k">Version</span><span className="kv-v mono">AnyCam {sys.version}</span></div>
+          <div className="kv"><span className="kv-k">Version</span><span className="kv-v mono">TailCam {sys.version}</span></div>
           <div className="kv"><span className="kv-k">This device</span><span className="kv-v mono">{sys.host}</span></div>
           <div className="kv"><span className="kv-k">Cameras (all hosts)</span><span className="kv-v mono">{cameras.length} connected</span></div>
           <div className="kv"><span className="kv-k">Storage used (local)</span><span className="kv-v mono">{fmtBytes(sys.media_bytes)}</span></div>
@@ -124,7 +130,7 @@ export function Settings() {
           <ol className="help-list">
             <li>Install <span className="mono">Tailscale</span> on your phone or laptop and sign in to the same tailnet.</li>
             <li>Open the private access URL above in any browser — no password, the network is the boundary.</li>
-            <li>Add AnyCam to your home screen to install it as an app (fullscreen, offline app-shell).</li>
+            <li>Add TailCam to your home screen to install it as an app (fullscreen, offline app-shell).</li>
           </ol>
           <p className="help-foot mono">No accounts · no tokens · no telemetry. Security is handled by Tailscale.</p>
         </div>

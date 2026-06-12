@@ -3,13 +3,13 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "anycam"
+name = "tailcam"
 dynamic = ["version"]
-description = "View any webcam from anywhere over Tailscale, with a web UI."
+description = "TailCam — view any webcam from anywhere over Tailscale, with a web UI."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "AnyCam contributors" }]
+authors = [{ name = "TailCam contributors" }]
 keywords = ["webcam", "tailscale", "streaming", "mjpeg", "monitoring", "camera"]
 classifiers = [
     "Environment :: Web Environment",
@@ -34,7 +34,7 @@ dependencies = [
     "tomli~=2.0; python_version < '3.11'",
     "httpx~=0.28",
     # Windows only: friendly DirectShow camera names (import is guarded, so
-    # AnyCam still works if it's unavailable).
+    # TailCam still works if it's unavailable).
     "pygrabber~=0.2; sys_platform == 'win32'",
 ]
 
@@ -54,13 +54,16 @@ Homepage = "https://github.com/factshin/anycam"
 Repository = "https://github.com/factshin/anycam"
 
 [project.scripts]
-anycam = "anycam.cli:main"
+tailcam = "tailcam.cli:main"
+# Legacy alias so pre-rename installs, docs, and muscle memory keep working.
+anycam = "tailcam.cli:main"
 
 [tool.hatch.version]
-path = "src/anycam/__init__.py"
+path = "src/tailcam/__init__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/anycam"]
+# "anycam" is a tiny forwarding shim for pre-rename installs.
+packages = ["src/tailcam", "src/anycam"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

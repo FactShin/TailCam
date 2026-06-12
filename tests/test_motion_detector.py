@@ -1,6 +1,6 @@
 import numpy as np
 
-from anycam.motion.detector import MotionDetector
+from tailcam.motion.detector import MotionDetector
 
 
 def _blank(h=240, w=320):

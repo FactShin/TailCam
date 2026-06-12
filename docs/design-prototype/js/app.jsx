@@ -53,9 +53,9 @@ function AppShell({ path, children }) {
     <div className="shell">
       {/* desktop sidebar */}
       <aside className="sidebar">
-        <button className="brand" onClick={() => nav("/")} aria-label="AnyCam home">
+        <button className="brand" onClick={() => nav("/")} aria-label="TailCam home">
           <Logo size={30} />
-          <span className="brand-name">AnyCam</span>
+          <span className="brand-name">TailCam</span>
         </button>
         <nav className="side-nav">
           {NAV.map((n) => {
@@ -72,8 +72,8 @@ function AppShell({ path, children }) {
 
       <div className="main">
         <header className="topbar">
-          <button className="brand brand-mobile" onClick={() => nav("/")} aria-label="AnyCam home">
-            <Logo size={26} /><span className="brand-name">AnyCam</span>
+          <button className="brand brand-mobile" onClick={() => nav("/")} aria-label="TailCam home">
+            <Logo size={26} /><span className="brand-name">TailCam</span>
           </button>
           <div className="topbar-right">
             <SystemChip onClick={() => nav("/settings")} />

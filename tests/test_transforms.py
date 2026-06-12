@@ -1,6 +1,6 @@
 import numpy as np
 
-from anycam.camera.transforms import (
+from tailcam.camera.transforms import (
     CameraTransform,
     StreamTransform,
     crop_zoom_pan,
