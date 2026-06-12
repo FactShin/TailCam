@@ -64,7 +64,6 @@ install_tailcam() {
     local spec="git+https://github.com/${REPO}.git@${REF}"
     # Stop a running agent so the upgrade actually takes effect.
     launchctl unload "$HOME/Library/LaunchAgents/com.tailcam.plist" 2>/dev/null || true
-    launchctl unload "$HOME/Library/LaunchAgents/com.anycam.plist" 2>/dev/null || true
     log "Creating virtualenv at ${VENV_DIR}"
     rm -rf "$VENV_DIR"
     "$PYTHON" -m venv "$VENV_DIR"
@@ -72,20 +71,26 @@ install_tailcam() {
     log "Installing TailCam ($spec)"
     "${VENV_DIR}/bin/pip" install "$spec"
     TAILCAM_BIN="${VENV_DIR}/bin/tailcam"
-    # A pre-rename AnyCam venv is fully replaced by this one; drop it.
-    if [ -d "$LEGACY_VENV_DIR" ]; then
-        log "Removing old AnyCam virtualenv at ${LEGACY_VENV_DIR}"
-        rm -rf "$LEGACY_VENV_DIR"
-        rmdir "$(dirname "$LEGACY_VENV_DIR")" 2>/dev/null || true
-    fi
+}
+
+# Remove a pre-rename AnyCam install if present: its launchd agent, venv, and
+# CLI symlink. Config/media/database are left in place — the first `tailcam`
+# run migrates them into the TailCam locations.
+remove_legacy_anycam() {
+    local plist="$HOME/Library/LaunchAgents/com.anycam.plist"
+    [ -d "$LEGACY_VENV_DIR" ] || [ -e "$plist" ] || [ -L "$HOME/.local/bin/anycam" ] || return 0
+    log "Removing old AnyCam install"
+    launchctl unload "$plist" 2>/dev/null || true
+    rm -f "$plist"
+    rm -rf "$LEGACY_VENV_DIR"
+    rmdir "$(dirname "$LEGACY_VENV_DIR")" 2>/dev/null || true  # only if no data remains
+    rm -f "$HOME/.local/bin/anycam"
 }
 
 link_cli() {
     # Put `tailcam` on PATH via ~/.local/bin.
     mkdir -p "$HOME/.local/bin"
     ln -sf "${VENV_DIR}/bin/tailcam" "$HOME/.local/bin/tailcam"
-    # Remove a stale `anycam` symlink from a pre-rename install.
-    rm -f "$HOME/.local/bin/anycam"
     case ":$PATH:" in
         *":$HOME/.local/bin:"*) ;;
         *) warn "Add ~/.local/bin to your PATH to use 'tailcam' directly (e.g. in ~/.zshrc): export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
@@ -114,6 +119,7 @@ ensure_tailscale() {
 log "Installing TailCam on macOS (ref=${REF}, port=${PORT})"
 ensure_python
 install_tailcam
+remove_legacy_anycam
 link_cli
 setup_service
 ensure_tailscale

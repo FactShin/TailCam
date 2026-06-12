@@ -78,6 +78,17 @@ foreach ($dir in @($VenvDir, $LegacyVenvDir)) {
     Remove-Item -Recurse -Force $dir
   }
 }
+
+# Remove the pre-rename AnyCam logon task if present (the old venv was wiped
+# above and the PATH entry is dropped below). Runs even with -NoService so a
+# stale task can't keep launching the old build. Config/media/database are left
+# for the first `tailcam` run to migrate.
+if (Get-ScheduledTask -TaskName "AnyCam" -ErrorAction SilentlyContinue) {
+  Info "Removing old AnyCam logon task"
+  Stop-ScheduledTask -TaskName "AnyCam" -ErrorAction SilentlyContinue
+  Unregister-ScheduledTask -TaskName "AnyCam" -Confirm:$false -ErrorAction SilentlyContinue
+}
+
 Info "Creating virtualenv at $VenvDir"
 New-Item -ItemType Directory -Force -Path (Split-Path $VenvDir) | Out-Null
 $PyArgs = $py.Args
