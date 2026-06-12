@@ -9,15 +9,19 @@ import { Spinner } from "./ui";
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 
-// iOS WebKit (every iPhone/iPad browser) fails to render long-running
+// WebKit (Safari on iOS *and* macOS) fails to render long-running
 // multipart/x-mixed-replace MJPEG streams, especially over HTTP/2 (the
 // Tailscale serve path). Fall back to polling snapshot.jpg there — lower fps,
-// but it renders everywhere. iPadOS masquerades as macOS, hence the touch check.
-const IS_IOS_WEBKIT =
-  typeof navigator !== "undefined" &&
-  (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
-    (navigator.userAgent.includes("Mac") && navigator.maxTouchPoints > 1));
+// but it renders everywhere. We also auto-switch ANY browser to polling after
+// repeated stream errors, so a renderer that can't do MJPEG never gets stuck.
+const _ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+const _isSafari = /^((?!chrome|chromium|crios|android|fxios|edg).)*safari/i.test(_ua);
+const IS_WEBKIT =
+  /iPad|iPhone|iPod/.test(_ua) ||
+  (_ua.includes("Mac") && navigator.maxTouchPoints > 1) ||
+  _isSafari;
 const SNAPSHOT_POLL_MAX_FPS = 3;
+const MJPEG_ERRORS_BEFORE_FALLBACK = 2;
 
 function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value);
@@ -77,19 +81,23 @@ export function LiveViewer({
   const active = (pageVisible && inView) || big;
   const shouldStream = active && cam.status !== "offline";
 
-  // iOS compatibility mode: poll single JPEG snapshots instead of MJPEG.
+  // Snapshot-polling mode: WebKit can't render MJPEG, and any browser that
+  // errors on the stream repeatedly is switched over automatically.
+  const [mjpegErrors, setMjpegErrors] = useState(0);
+  const usePolling = IS_WEBKIT || mjpegErrors >= MJPEG_ERRORS_BEFORE_FALLBACK;
+
   const [pollTick, setPollTick] = useState(0);
   useEffect(() => {
-    if (!IS_IOS_WEBKIT || !shouldStream) return;
+    if (!usePolling || !shouldStream) return;
     const fps = Math.max(0.5, Math.min(debouncedView.fps, SNAPSHOT_POLL_MAX_FPS));
     const t = setInterval(() => setPollTick(Date.now()), 1000 / fps);
     setPollTick(Date.now());
     return () => clearInterval(t);
-  }, [shouldStream, debouncedView.fps]);
+  }, [usePolling, shouldStream, debouncedView.fps]);
 
   let src: string | undefined;
   if (shouldStream) {
-    if (IS_IOS_WEBKIT) {
+    if (usePolling) {
       src = `${snapshotUrl(cam.proxy_prefix, cam.id)}?_=${pollTick}`;
     } else {
       const base = streamUrl(cam.proxy_prefix, cam.id, debouncedView);
@@ -123,18 +131,22 @@ export function LiveViewer({
 
   const onError = useCallback(() => {
     if (cam.status === "offline") return;
+    // Count MJPEG errors → after a couple, this browser can't render the stream
+    // (e.g. Safari), so switch to snapshot polling instead of looping forever.
+    if (!usePolling) setMjpegErrors((n) => n + 1);
     setReconnecting(true);
     if (retryTimer.current) clearTimeout(retryTimer.current);
     retryTimer.current = setTimeout(() => {
       setNonce(Date.now());
       setBackoff((b) => Math.min(30, b * 1.6));
     }, backoff * 1000);
-  }, [backoff, cam.status]);
+  }, [backoff, cam.status, usePolling]);
 
   const onLoad = useCallback(() => {
     setReconnecting(false);
     setBackoff(2);
-  }, []);
+    if (usePolling) setMjpegErrors(0);  // polling works; stop counting
+  }, [usePolling]);
 
   useEffect(() => () => { if (retryTimer.current) clearTimeout(retryTimer.current); }, []);
 
