@@ -82,7 +82,6 @@ install_tailcam() {
     # Stop a running service so the upgrade actually takes effect (an active
     # process would keep serving the old code from the deleted venv).
     systemctl --user stop tailcam.service 2>/dev/null || true
-    systemctl --user stop anycam.service 2>/dev/null || true
     log "Creating virtualenv at ${VENV_DIR}"
     rm -rf "$VENV_DIR"
     "$PYTHON" -m venv "$VENV_DIR"
@@ -90,20 +89,27 @@ install_tailcam() {
     log "Installing TailCam ($spec)"
     "${VENV_DIR}/bin/pip" install "$spec"
     TAILCAM_BIN="${VENV_DIR}/bin/tailcam"
-    # A pre-rename AnyCam venv is fully replaced by this one; drop it.
-    if [ -d "$LEGACY_VENV_DIR" ]; then
-        log "Removing old AnyCam virtualenv at ${LEGACY_VENV_DIR}"
-        rm -rf "$LEGACY_VENV_DIR"
-        rmdir "$(dirname "$LEGACY_VENV_DIR")" 2>/dev/null || true
-    fi
+}
+
+# Remove a pre-rename AnyCam install if present: its systemd service, venv, and
+# CLI symlink. Config/media/database are left in place — the first `tailcam`
+# run migrates them into the TailCam locations.
+remove_legacy_anycam() {
+    local unit="${HOME}/.config/systemd/user/anycam.service"
+    [ -d "$LEGACY_VENV_DIR" ] || [ -e "$unit" ] || [ -L "$HOME/.local/bin/anycam" ] || return 0
+    log "Removing old AnyCam install"
+    systemctl --user disable --now anycam.service 2>/dev/null || true
+    rm -f "$unit"
+    systemctl --user daemon-reload 2>/dev/null || true
+    rm -rf "$LEGACY_VENV_DIR"
+    rmdir "$(dirname "$LEGACY_VENV_DIR")" 2>/dev/null || true  # only if no data remains
+    rm -f "$HOME/.local/bin/anycam"
 }
 
 link_cli() {
     # Put `tailcam` on PATH via ~/.local/bin (on PATH for most shells).
     mkdir -p "$HOME/.local/bin"
     ln -sf "${VENV_DIR}/bin/tailcam" "$HOME/.local/bin/tailcam"
-    # Remove a stale `anycam` symlink from a pre-rename install.
-    rm -f "$HOME/.local/bin/anycam"
     case ":$PATH:" in
         *":$HOME/.local/bin:"*) ;;
         *) warn "Add ~/.local/bin to your PATH to use 'tailcam' directly (e.g. add to ~/.bashrc): export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
@@ -147,6 +153,7 @@ log "Installing TailCam on Linux (${DISTRO:-unknown}, ref=${REF}, port=${PORT})"
 ensure_system_deps
 ensure_python
 install_tailcam
+remove_legacy_anycam
 link_cli
 setup_service
 ensure_tailscale
