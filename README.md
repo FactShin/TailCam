@@ -1,4 +1,5 @@
 # AnyCam
+## Future releases will be renamed to TailCam. Repository whill be renamed as well. Version number will be bumped to 0.5.0 for this release 
 
 **View any webcam from anywhere over [Tailscale](https://tailscale.com), through a web UI.**
 
