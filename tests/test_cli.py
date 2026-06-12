@@ -1,7 +1,7 @@
 from typer.testing import CliRunner
 
-from anycam.cli import app
-from anycam.config import AppConfig
+from tailcam.cli import app
+from tailcam.config import AppConfig
 
 runner = CliRunner()
 
@@ -17,7 +17,7 @@ def test_config_sets_and_persists_port(isolated_env):
 def test_status_runs(isolated_env):
     result = runner.invoke(app, ["status"])
     assert result.exit_code == 0
-    assert "AnyCam" in result.stdout
+    assert "TailCam" in result.stdout
 
 
 def test_doctor_runs(isolated_env):
@@ -38,8 +38,8 @@ def test_version(isolated_env):
 
 
 def test_malformed_config_falls_back_to_defaults(isolated_env, tmp_path):
-    from anycam import paths
-    from anycam.config import AppConfig
+    from tailcam import paths
+    from tailcam.config import AppConfig
 
     cfg = paths.config_file()
     cfg.parent.mkdir(parents=True, exist_ok=True)

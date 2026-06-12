@@ -1,4 +1,4 @@
-// Mirrors AnyCam's FastAPI schemas (src/anycam/web/schemas.py).
+// Mirrors TailCam's FastAPI schemas (src/tailcam/web/schemas.py).
 
 export type CameraStatus = "online" | "degraded" | "offline";
 

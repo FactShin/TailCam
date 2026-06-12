@@ -1,14 +1,14 @@
-# AnyCam Web UI
+# TailCam Web UI
 
-The AnyCam dashboard — a responsive React + TypeScript + Vite PWA, served by the
-AnyCam FastAPI backend over Tailscale.
+The TailCam dashboard — a responsive React + TypeScript + Vite PWA, served by the
+TailCam FastAPI backend over Tailscale.
 
 ## How it ships
 
 `npm run build` outputs the bundle into the Python package at
-**`../src/anycam/web/spa/`**, which is committed and included in the wheel. So a
-`pip install` of AnyCam ships the built dashboard — **no Node needed on the host.**
-FastAPI serves it at `/` (see `src/anycam/web/app.py`); if the `spa/` dir is
+**`../src/tailcam/web/spa/`**, which is committed and included in the wheel. So a
+`pip install` of TailCam ships the built dashboard — **no Node needed on the host.**
+FastAPI serves it at `/` (see `src/tailcam/web/app.py`); if the `spa/` dir is
 absent it falls back to the legacy Jinja pages.
 
 ## Develop
@@ -22,11 +22,11 @@ npm run dev        # Vite dev server on :5173, proxies /api /stream /media /prox
 Run a backend alongside it (synthetic camera = no webcam needed):
 
 ```bash
-ANYCAM_SYNTHETIC=1 anycam run            # :8088
-# point the dev proxy elsewhere with ANYCAM_DEV_TARGET=http://host:port
+TAILCAM_SYNTHETIC=1 tailcam run            # :8088
+# point the dev proxy elsewhere with TAILCAM_DEV_TARGET=http://host:port
 ```
 
-Then rebuild into the package and commit both the source and `src/anycam/web/spa/`:
+Then rebuild into the package and commit both the source and `src/tailcam/web/spa/`:
 
 ```bash
 npm run build

@@ -1,12 +1,48 @@
 import { useNavigate } from "react-router-dom";
 
-import { useCameras, useHosts, useRefreshCameras, useRestoreHidden, useSystem } from "../api/hooks";
+import { useCameras, useEvents, useHosts, useRefreshCameras, useRestoreHidden, useSystem } from "../api/hooks";
+import { openVideoWall } from "../app/AppShell";
+import { ActivityFeed } from "../components/ActivityFeed";
 import { CameraTile } from "../components/CameraTile";
 import { Button } from "../components/ui";
 import { useToast } from "../components/toast";
-import { IconCamera, IconFps, IconRefresh, IconServer } from "../icons";
+import { IconCamera, IconFps, IconRefresh, IconServer, IconWall } from "../icons";
+import { fmtBytes } from "../lib/format";
 import { cameraPath } from "../lib/nav";
 import type { CameraInfo, HostInfo } from "../types";
+
+function StatStrip() {
+  const cameras = useCameras().data ?? [];
+  const system = useSystem().data;
+  const events = useEvents({ limit: 200 }).data ?? [];
+
+  const online = cameras.filter((c) => c.status !== "offline").length;
+  const recording = cameras.filter((c) => c.recording).length;
+  const dayAgo = Date.now() / 1000 - 86400;
+  const ev24 = events.filter((e) => e.start_ts > dayAgo).length;
+
+  return (
+    <div className="statstrip">
+      <div className="stat">
+        <span className="microlabel">Cameras</span>
+        <span className="stat-v"><span className="up">{online}</span><small>/ {cameras.length} online</small></span>
+      </div>
+      <div className="stat">
+        <span className="microlabel">Recording</span>
+        <span className="stat-v">{recording}<small>active</small></span>
+        {recording > 0 && <span className="led err blink stat-led" />}
+      </div>
+      <div className="stat">
+        <span className="microlabel">Events · 24h</span>
+        <span className="stat-v">{ev24}<small>motion</small></span>
+      </div>
+      <div className="stat">
+        <span className="microlabel">Storage</span>
+        <span className="stat-v">{system ? fmtBytes(system.media_bytes) : "—"}<small>local</small></span>
+      </div>
+    </div>
+  );
+}
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -47,9 +83,9 @@ export function Dashboard() {
       <div className="screen">
         <div className="empty">
           <div className="empty-ic"><IconCamera size={40} /></div>
-          <div className="empty-title">Can't reach AnyCam</div>
+          <div className="empty-title">Can't reach TailCam</div>
           <div className="empty-sub">
-            The server isn't responding. Check that AnyCam is running and you're connected to your tailnet.
+            The server isn't responding. Check that TailCam is running and you're connected to your tailnet.
           </div>
           <Button variant="primary" icon={<IconRefresh size={16} />} onClick={() => camerasQ.refetch()}>
             Retry
@@ -72,6 +108,7 @@ export function Dashboard() {
     <div className="screen">
       <div className="screen-head">
         <div>
+          <div className="kicker"><span className="kicker-rule" /><span className="microlabel lit">Grid Overview</span></div>
           <h1 className="screen-title">Cameras</h1>
           <p className="screen-sub">
             {cameras.length} camera{cameras.length !== 1 ? "s" : ""}
@@ -100,50 +137,62 @@ export function Dashboard() {
               Restore hidden ({system.hidden_count})
             </Button>
           )}
+          <Button variant="outline" icon={<IconWall size={15} />} onClick={openVideoWall}>
+            Video wall
+          </Button>
           <Button
-            variant="outline"
+            variant="ghost"
             icon={<IconRefresh size={16} className={refresh.isPending ? "spin" : ""} />}
             onClick={doRefresh}
             disabled={refresh.isPending}
           >
-            {refresh.isPending ? "Scanning…" : "Refresh devices"}
+            {refresh.isPending ? "Scanning…" : "Re-scan"}
           </Button>
         </div>
       </div>
+
+      <StatStrip />
 
       {cameras.length === 0 ? (
         <div className="empty">
           <div className="empty-ic"><IconCamera size={40} /></div>
           <div className="empty-title">No cameras found</div>
-          <div className="empty-sub">Plug in a USB camera on any AnyCam device on your tailnet, then re-scan.</div>
+          <div className="empty-sub">Plug in a USB camera on any TailCam device on your tailnet, then re-scan.</div>
           <Button variant="primary" icon={<IconRefresh size={16} />} onClick={doRefresh}>Refresh devices</Button>
         </div>
       ) : (
-        orderedHosts.map((h) => {
-          const cams = byHost(h.host);
-          if (!cams.length && h.online) return null;
-          const liveCount = cams.filter((c) => c.status === "online").length;
-          return (
-            <section key={h.host} className="host-group">
-              {multiHost && (
-                <header className="host-head">
-                  <span className="host-name">
-                    <IconServer size={15} /> {h.host}
-                    {h.kind === "local" && <span className="host-tag">this device</span>}
-                  </span>
-                  <span className={`host-status ${h.online && liveCount ? "ok" : "off"}`}>
-                    {h.online ? `${liveCount}/${cams.length} online` : "node offline"}
-                  </span>
-                </header>
-              )}
-              <div className="grid" data-tile="cinematic">
-                {cams.map((c: CameraInfo) => (
-                  <CameraTile key={`${c.host}/${c.id}`} cam={c} onOpen={() => navigate(cameraPath(c))} />
-                ))}
-              </div>
-            </section>
-          );
-        })
+        <div className="dash-cols has-feed">
+          <div>
+            {orderedHosts.map((h) => {
+              const cams = byHost(h.host);
+              if (!cams.length && h.online) return null;
+              const liveCount = cams.filter((c) => c.status === "online").length;
+              return (
+                <section key={h.host} className="host-group">
+                  {multiHost && (
+                    <header className="host-head">
+                      <span className="host-name">
+                        <IconServer size={13} /> {h.host}
+                        {h.kind === "local" && <span className="host-tag">local</span>}
+                      </span>
+                      <span className="host-rule" />
+                      <span className={`host-status ${h.online && liveCount ? "ok" : "off"}`}>
+                        <span className={`led ${h.online && liveCount ? "ok" : "err"}`} />
+                        {h.online ? `${liveCount}/${cams.length} online` : "node offline"}
+                      </span>
+                    </header>
+                  )}
+                  <div className="grid" data-tile="cinematic">
+                    {cams.map((c: CameraInfo) => (
+                      <CameraTile key={`${c.host}/${c.id}`} cam={c} onOpen={() => navigate(cameraPath(c))} />
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+          <ActivityFeed />
+        </div>
       )}
     </div>
   );

@@ -1,7 +1,7 @@
-# AnyCam — AI Detection Roadmap (Phase: "Smart Motion")
+# TailCam — AI Detection Roadmap (Phase: "Smart Motion")
 
 > Status: PLANNED. Prereq fix shipped in v0.2.7 (motion events no longer leak
-> "ongoing"). This phase turns AnyCam's pixel-diff motion into a Blink/Ring-style
+> "ongoing"). This phase turns TailCam's pixel-diff motion into a Blink/Ring-style
 > smart detection system, with a path to custom detectors (3D-printer failure).
 
 ## Vision (user's words)

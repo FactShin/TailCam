@@ -1,11 +1,11 @@
-# AnyCam Web-UI — Porting the Design Prototype into a Functional Dashboard
+# TailCam Web-UI — Porting the Design Prototype into a Functional Dashboard
 
 > **Status: NOT STARTED.** This is the saved plan for "Stage 2". Stage 1 (backend
 > multi-host aggregation) is **done and merged** (PR #4). Resume here.
 
 ## Context
 
-Claude Design produced a near-complete **interactive prototype** for the AnyCam dashboard.
+Claude Design produced a near-complete **interactive prototype** for the TailCam dashboard.
 It nails the visual design and all interaction logic, but it is **not** a wirable codebase:
 - Plain JS via in-browser Babel + `window.*` globals (no TypeScript, no module imports).
 - Driven by a **mock API**; the live "video" is a `<canvas>` drawing a fake scene via
@@ -19,7 +19,7 @@ nothing external):
 - `DESIGN-README.md` (handoff notes), `design-chat.md` (the full design conversation + the
   original spec/prompt that drove it).
 
-Goal: port this into a real **React + TS + Vite + PWA** app under `web-ui/`, wired to AnyCam's
+Goal: port this into a real **React + TS + Vite + PWA** app under `web-ui/`, wired to TailCam's
 FastAPI API, with FastAPI serving the built bundle at the same Tailscale URL. ~70% of the work
 (design, CSS, interaction logic) is already in the prototype; the rest is a mechanical port plus
 one real rewrite (the viewer).
@@ -98,7 +98,7 @@ web-ui/
    by `host` using `/api/hosts`** (section per device, show online/offline + camera count). *(medium)*
 8. **Port AppShell + router** from `app.jsx`, switch hash router → **React Router `BrowserRouter`**.
    **Remove** the Tweaks panel, device-frame stage, and `tweaks-panel.jsx`. *(small/medium)*
-9. **FastAPI glue (backend)** — serve the SPA. In `src/anycam/web/app.py`, mount `web-ui/dist` at
+9. **FastAPI glue (backend)** — serve the SPA. In `src/tailcam/web/app.py`, mount `web-ui/dist` at
    `/` with `StaticFiles(html=True)` + a catch-all returning `index.html` for non-API paths
    (exclude `/api`, `/stream`, `/media`, `/proxy`, `/static`). Likely retire the Jinja pages
    (`routes_pages.py` + `templates/`). Bundle/ship `dist/` with the package. *(small)*
@@ -107,8 +107,8 @@ web-ui/
 ## Critical files
 - Port FROM (in-repo reference): `docs/design-prototype/js/{viewer,ui,screens1,screens2,app,mock,icons}.jsx`, `docs/design-prototype/styles.css`
 - Create: everything under `web-ui/`
-- Modify (backend): `src/anycam/web/app.py` (serve dist + SPA catch-all); likely retire
-  `src/anycam/web/routes_pages.py` + `templates/`. Reuse `routes_api.py`, `routes_stream.py`,
+- Modify (backend): `src/tailcam/web/app.py` (serve dist + SPA catch-all); likely retire
+  `src/tailcam/web/routes_pages.py` + `templates/`. Reuse `routes_api.py`, `routes_stream.py`,
   `routes_proxy.py` unchanged.
 
 ## Effort summary
@@ -120,15 +120,15 @@ node carries that bandwidth — keep grid tiles low-fps.
 
 ## Verification (end-to-end)
 1. `cd web-ui && npm install && npm run build` — clean, no runtime CDN deps.
-2. Dev: `npm run dev` (Vite proxy) + `ANYCAM_SYNTHETIC=1 anycam run` on :8088 — synthetic camera
+2. Dev: `npm run dev` (Vite proxy) + `TAILCAM_SYNTHETIC=1 tailcam run` on :8088 — synthetic camera
    exercises the whole UI headless.
-3. **Multi-host check:** run a 2nd instance (`ANYCAM_HOST=pi ANYCAM_DATA_DIR=/tmp/nodeB anycam run
-   --port 9090 --no-tailscale`) and point node A at it (`ANYCAM_PEERS=http://127.0.0.1:9090`).
+3. **Multi-host check:** run a 2nd instance (`TAILCAM_HOST=pi TAILCAM_DATA_DIR=/tmp/nodeB tailcam run
+   --port 9090 --no-tailscale`) and point node A at it (`TAILCAM_PEERS=http://127.0.0.1:9090`).
    Confirm the dashboard groups cameras under `mac` and `pi`, and the remote tile streams + its
    controls work (all via `/proxy/pi/...`).
 4. Confirm: status pills reflect online/degraded/offline; detail streams; per-tab fps/zoom/pan/
    quality change the `<img>` src; camera settings PATCH + persist; snapshot/record create media;
    gallery + events; offline tile shows reconnect overlay.
-5. Prod: `anycam run`, open `http://localhost:8088/` — SPA served by FastAPI, deep links work, PWA
+5. Prod: `tailcam run`, open `http://localhost:8088/` — SPA served by FastAPI, deep links work, PWA
    installable. Then over Tailscale at `https://<host>.ts.net:8443/`.
 6. Backend regression: existing `pytest` green; `ruff` + `mypy` clean.

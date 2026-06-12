@@ -7,22 +7,22 @@ _Started 2026-06-02 21:08 UTC_
 ## User
 
 <system-info comment="Only acknowledge these if relevant">
-Project title is now "AnyCam"
+Project title is now "TailCam"
 Project is currently empty (no files)
 Current date is now June 2, 2026
 </system-info>
 
 <pasted_text name="Pasted text (168 lines)">
-# Build the AnyCam Dashboard — a responsive web / PWA front-end (standalone handoff)
+# Build the TailCam Dashboard — a responsive web / PWA front-end (standalone handoff)
 
 You are a senior front-end engineer + product designer. Build a polished, production-quality
-**responsive web dashboard (installable PWA)** for **AnyCam**, an open-source app that streams
+**responsive web dashboard (installable PWA)** for **TailCam**, an open-source app that streams
 USB/webcam feeds from a host (Raspberry Pi, Mac, Linux) and is accessed over a Tailscale private
 network. It runs on phones and desktops in the browser and will be served **same-origin** by
-AnyCam's FastAPI backend (no auth/tokens/CORS in production — security is at the network layer via
+TailCam's FastAPI backend (no auth/tokens/CORS in production — security is at the network layer via
 Tailscale).
 
-**This is a standalone deliverable that another engineer will drop into the AnyCam repo under
+**This is a standalone deliverable that another engineer will drop into the TailCam repo under
 `web-ui/` and wire to FastAPI.** Therefore:
 - **Do NOT modify or assume access to any backend/Python code.** Produce only the front-end project.
 - Everything must be **self-contained**: no runtime CDN dependencies, no external font/script/CDN
@@ -41,7 +41,7 @@ Tailscale).
 - Pin exact versions in `package.json`; state the Node version used (e.g. Node 20).
 - Dev: Vite proxy forwarding `/api`, `/stream`, `/media` → `http://localhost:8088`.
 
-## The AnyCam API (consume exactly this — do not invent endpoints)
+## The TailCam API (consume exactly this — do not invent endpoints)
 Same-origin base. **Camera IDs may contain slashes** (Linux `/dev/video0`; macOS `0`; synthetic
 `synthetic-0`). Routes use a path matcher, so place the id directly in the path (e.g.
 `/api/cameras//dev/video0`) by string concatenation — **do NOT URL-encode the slashes**.
@@ -250,7 +250,7 @@ Questions answered:
 - **The global-vs-local control distinction** — make it visually unmistakable (different section styling + a small "affects everyone" / "this device only" label or icon). This is the #1 thing users get confused by.
 - **Smooth gesture zoom/pan** with debounced stream-URL updates; the viewer should feel responsive even though it's an MJPEG `<img>`.
 - **Low-bandwidth-aware grid** (small fps/width thumbnails) and pausing streams on hidden/offscreen tabs — call it out visibly as a design intent.
-- **Logo concept:** a minimal camera-aperture / eye glyph in the blue accent (`--accent:#4f8cff`) next to an "AnyCam" wordmark in a clean geometric sans; monospace for IDs/URLs/timestamps. Deliver it as **inline SVG** (no external asset).
+- **Logo concept:** a minimal camera-aperture / eye glyph in the blue accent (`--accent:#4f8cff`) next to an "TailCam" wordmark in a clean geometric sans; monospace for IDs/URLs/timestamps. Deliver it as **inline SVG** (no external asset).
 
 Avoid:
 - **No login / auth / account screens** — there is no auth; access is via Tailscale. Don't invent a sign-in flow.

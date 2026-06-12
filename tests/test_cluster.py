@@ -1,10 +1,10 @@
 import httpx
 
-from anycam.cluster.service import ClusterService, _key_for
-from anycam.config import PeersConfig
+from tailcam.cluster.service import ClusterService, _key_for
+from tailcam.config import PeersConfig
 
-PEER_URL = "https://anycam-pi.tailnet.ts.net:8443"
-PEER_HOST = "anycam-pi.tailnet.ts.net"
+PEER_URL = "https://tailcam-pi.tailnet.ts.net:8443"
+PEER_HOST = "tailcam-pi.tailnet.ts.net"
 LOCAL_HOST = "mymac.tailnet.ts.net"
 
 
@@ -58,7 +58,7 @@ def _peer_handler(host: str = PEER_HOST, cameras=None):
 
 
 def test_key_for_sanitizes_hostname():
-    assert _key_for("anycam-pi.tailnet.ts.net") == "anycam-pi"
+    assert _key_for("tailcam-pi.tailnet.ts.net") == "tailcam-pi"
     assert _key_for("My_Box.local") == "my-box"
 
 
@@ -67,9 +67,9 @@ async def test_discovers_peer_and_assigns_key():
     peers = await svc.peers()
     assert len(peers) == 1
     assert peers[0].host == PEER_HOST
-    assert peers[0].key == "anycam-pi"
+    assert peers[0].key == "tailcam-pi"
     assert peers[0].version == "0.1.0"
-    assert svc.peer_base("anycam-pi") == PEER_URL
+    assert svc.peer_base("tailcam-pi") == PEER_URL
     await svc.aclose()
 
 
@@ -87,7 +87,7 @@ async def test_remote_cameras_tagged_with_proxy_prefix():
     assert len(cams) == 2
     for c in cams:
         assert c["host"] == PEER_HOST
-        assert c["proxy_prefix"] == "/proxy/anycam-pi"
+        assert c["proxy_prefix"] == "/proxy/tailcam-pi"
     await svc.aclose()
 
 

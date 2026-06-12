@@ -55,7 +55,8 @@ export function Events() {
     <div className="screen">
       <div className="screen-head">
         <div>
-          <h1 className="screen-title">Motion events</h1>
+          <div className="kicker"><span className="kicker-rule" /><span className="microlabel lit">Motion Log</span></div>
+          <h1 className="screen-title">Events</h1>
           <p className="screen-sub">{events.length} event{events.length !== 1 ? "s" : ""} · newest first · all devices</p>
         </div>
       </div>

@@ -1,8 +1,8 @@
 import httpx
 from typer.testing import CliRunner
 
-from anycam import update as upd
-from anycam.cli import app
+from tailcam import update as upd
+from tailcam.cli import app
 
 runner = CliRunner()
 
@@ -15,7 +15,7 @@ def test_parse_version_ordering():
 
 
 def test_latest_version_parses_remote(monkeypatch):
-    body = '"""AnyCam."""\n\n__version__ = "9.9.9"\n'
+    body = '"""TailCam."""\n\n__version__ = "9.9.9"\n'
 
     def fake_get(url, **kw):
         return httpx.Response(200, text=body, request=httpx.Request("GET", url))
@@ -62,7 +62,7 @@ def test_cli_update_installs_and_restarts(monkeypatch, isolated_env):
     actions: list[str] = []
     monkeypatch.setattr(upd, "run_pip_upgrade", lambda: (actions.append("pip"), True)[1])
 
-    from anycam.service import installer
+    from tailcam.service import installer
 
     monkeypatch.setattr(installer, "restart", lambda: (actions.append("restart"), "Restarted")[1])
     result = runner.invoke(app, ["update"])

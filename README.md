@@ -1,13 +1,16 @@
-# AnyCam
-## Future releases will be renamed to TailCam. Repository whill be renamed as well. Version number will be bumped to 0.5.0 for this release 
+# TailCam
 
 **View any webcam from anywhere over [Tailscale](https://tailscale.com), through a web UI.**
 
-AnyCam turns any Debian/Linux or macOS machine with a webcam into a private,
-remotely-viewable camera. Plug in a webcam, open the web UI, and watch it from
-any device on your tailnet — with multi-camera support, resolution and zoom
-controls, snapshots, recording, and motion detection. Put those old webcams to
-good use as a monitoring system.
+TailCam turns any Debian/Linux, macOS, or Windows machine with a webcam into a
+private, remotely-viewable camera. Plug in a webcam, open the web UI, and watch
+it from any device on your tailnet — with multi-camera support, resolution and
+zoom controls, snapshots, recording, and motion detection. Put those old
+webcams to good use as a monitoring system.
+
+> **Renamed from AnyCam** (v0.5.0). The GitHub repo URL still says `anycam`
+> until the repo itself is renamed; existing installs migrate automatically the
+> next time they update, and the old `anycam` command keeps working as an alias.
 
 ## Install
 
@@ -34,8 +37,8 @@ irm https://raw.githubusercontent.com/factshin/anycam/main/install.ps1 | iex
 
 Each installer:
 - checks for Python 3.10+ (Linux also installs the system libraries numpy/OpenCV need),
-- installs AnyCam into an isolated virtualenv,
-- registers a background **user** service so AnyCam starts automatically —
+- installs TailCam into an isolated virtualenv,
+- registers a background **user** service so TailCam starts automatically —
   systemd `--user` + lingering (Linux), launchd agent (macOS), or a logon
   Scheduled Task (Windows),
 - detects Tailscale and, if it's running, exposes the UI over HTTPS with `tailscale serve`.
@@ -58,9 +61,9 @@ Linux/macOS flags: `--port`, `--ref <tag>`, `--no-service`, `--no-tailscale`.
 Windows: `-Port`, `-Ref`, `-NoService`, `-NoTailscale`.
 
 To uninstall: run `uninstall-linux.sh` / `uninstall-macos.sh` / `uninstall.ps1`, or
-`anycam uninstall-service` to just remove the background service.
+`tailcam uninstall-service` to just remove the background service.
 
-> **Windows note:** the logon Scheduled Task runs AnyCam in your user session (so the webcam is
+> **Windows note:** the logon Scheduled Task runs TailCam in your user session (so the webcam is
 > accessible) and starts after you log in — the same "user session" model as the Mac/Linux
 > services. Camera names need the optional `pygrabber` package (installed automatically); without
 > it cameras show as "Camera 0/1…".
@@ -71,24 +74,33 @@ To uninstall: run `uninstall-linux.sh` / `uninstall-macos.sh` / `uninstall.ps1`,
 pipx install git+https://github.com/factshin/anycam.git
 # or
 python3 -m venv .venv && .venv/bin/pip install git+https://github.com/factshin/anycam.git
-anycam run
+tailcam run
 ```
 
 ## Usage
 
 | Command | Description |
 | --- | --- |
-| `anycam run` | Start the web server |
-| `anycam status` | Cameras + tailnet nodes (Rich table) and the access URL |
-| `anycam doctor` | Diagnostics: Python, OpenCV, cameras, Tailscale, fleet reachability |
-| `anycam cameras` | List detected cameras |
-| `anycam update [--check]` | Update to the latest version (and restart the service) |
-| `anycam start` / `stop` / `restart` | Control the background service |
-| `anycam install-service` / `uninstall-service` | Register/remove the background service |
-| `anycam tailscale serve` / `serve-off` / `status` | Manage tailnet exposure |
-| `anycam config [--init] [--port N] [--serve-port N] [--host H]` | Show or update config |
+| `tailcam run` | Start the web server |
+| `tailcam status` | Cameras + tailnet nodes (Rich table) and the access URL |
+| `tailcam doctor` | Diagnostics: Python, OpenCV, cameras, Tailscale, fleet reachability |
+| `tailcam cameras` | List detected cameras |
+| `tailcam update [--check]` | Update to the latest version (and restart the service) |
+| `tailcam start` / `stop` / `restart` | Control the background service |
+| `tailcam install-service` / `uninstall-service` | Register/remove the background service |
+| `tailcam tailscale serve` / `serve-off` / `status` | Manage tailnet exposure |
+| `tailcam config [--init] [--port N] [--serve-port N] [--host H]` | Show or update config |
 
-Tab-completion: `anycam --install-completion`.
+Tab-completion: `tailcam --install-completion`. The old `anycam` command still
+works as an alias for everything above.
+
+## Upgrading from AnyCam
+
+Run `anycam update` (or re-run your OS installer one-liner). The update:
+- keeps your existing config, media, and event database where they are,
+- replaces the background service (`anycam.service` / `com.anycam` / task
+  "AnyCam") with the TailCam-named equivalent,
+- installs the `tailcam` command and keeps `anycam` as an alias.
 
 ## Ports & Tailscale
 
@@ -97,52 +109,52 @@ There are two separate ports:
 - **`server.port`** (default **8088**) — the local web UI: `http://localhost:8088/`.
 - **`tailscale.serve_port`** (default **8443**) — the tailnet-facing HTTPS port.
 
-AnyCam serves on **`https://<host>.<tailnet>.ts.net:8443/`** by default rather than the
+TailCam serves on **`https://<host>.<tailnet>.ts.net:8443/`** by default rather than the
 root (`:443`), so it won't clobber another app (e.g. OpenClaw) already served at the root
 URL. Tailscale permits `443`, `8443`, and `10000` for serve/funnel.
 
 To change the tailnet port:
 
 ```bash
-anycam tailscale serve --https-port 10000   # one-off + saved to config
-# or edit ~/.config/anycam/config.toml  ([tailscale] serve_port = 10000) and restart the service
+tailcam tailscale serve --https-port 10000   # one-off + saved to config
+# or edit ~/.config/tailcam/config.toml  ([tailscale] serve_port = 10000) and restart the service
 ```
 
-If AnyCam previously grabbed the root URL and you want it back for another app:
+If TailCam previously grabbed the root URL and you want it back for another app:
 
 ```bash
-anycam tailscale serve-off --https-port 443   # removes only AnyCam's :443 handler
+tailcam tailscale serve-off --https-port 443   # removes only TailCam's :443 handler
 ```
 
 ## Multi-host: every camera, from any device
 
-Install AnyCam on more than one machine on the same tailnet (a Raspberry Pi, a Mac, a Linux
+Install TailCam on more than one machine on the same tailnet (a Raspberry Pi, a Mac, a Linux
 box…) and **each node automatically discovers the others and shows all of their cameras**. Open
 the dashboard on any device and you see every camera across your tailnet in one place — no matter
 which machine the webcam is physically plugged into.
 
 How it works:
 
-- The node you're viewing becomes an **aggregator**: it finds the other AnyCam nodes, asks each
+- The node you're viewing becomes an **aggregator**: it finds the other TailCam nodes, asks each
   for its camera list, merges them, and **reverse-proxies** the remote video and controls — so
   your browser only ever talks to the node you opened (one origin, one Tailscale cert).
-- **Discovery is automatic** over Tailscale (it probes online tailnet peers for a running AnyCam).
+- **Discovery is automatic** over Tailscale (it probes online tailnet peers for a running TailCam).
   You can also list peers explicitly:
 
   ```toml
-  # ~/.config/anycam/config.toml
+  # ~/.config/tailcam/config.toml
   [peers]
   auto_discover = true
-  static = ["https://anycam-pi.your-tailnet.ts.net:8443"]   # optional explicit peers
+  static = ["https://tailcam-pi.your-tailnet.ts.net:8443"]   # optional explicit peers
   ```
 
-- Name a node with `ANYCAM_HOST` (otherwise its Tailscale MagicDNS name / hostname is used), e.g.
-  `ANYCAM_HOST=garage-pi`.
+- Name a node with `TAILCAM_HOST` (otherwise its Tailscale MagicDNS name / hostname is used), e.g.
+  `TAILCAM_HOST=garage-pi`.
 - `GET /api/hosts` lists every node (local + peers) and their camera counts.
 
 Notes & current limits:
 - Remote cameras are fully viewable **and** controllable (resolution, zoom/pan, snapshot, record).
-- This treats every AnyCam node on your tailnet as trusted — the intended model for a personal
+- This treats every TailCam node on your tailnet as trusted — the intended model for a personal
   tailnet (there is no separate auth; Tailscale is the security boundary).
 - For now, the **gallery and motion-event feed are per-host** (snapshots/recordings live on the
   node that captured them). Cross-host media aggregation is planned next.
@@ -150,24 +162,24 @@ Notes & current limits:
 
 ## Security model
 
-AnyCam's boundary is your **Tailscale network**: the server binds to `127.0.0.1` and is reached
-over your tailnet, with no per-request login. On top of that, AnyCam ships defense-in-depth:
+TailCam's boundary is your **Tailscale network**: the server binds to `127.0.0.1` and is reached
+over your tailnet, with no per-request login. On top of that, TailCam ships defense-in-depth:
 
 - **Cross-origin / drive-by protection** — state-changing requests (snapshot, record, delete,
   settings) from a foreign web origin are rejected; only localhost and your tailnet (`*.ts.net`)
-  may mutate. This stops a malicious site you visit from poking your local AnyCam (CSRF / DNS
+  may mutate. This stops a malicious site you visit from poking your local TailCam (CSRF / DNS
   rebinding).
 - **Security headers** on every response — `Content-Security-Policy` (same-origin only),
   `X-Frame-Options`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`.
 - **No SSRF amplification** — the peer reverse-proxy does not follow redirects.
 - No accounts, tokens, telemetry, or third-party calls (except checking GitHub for updates).
 
-Keep the default `127.0.0.1` bind — don't expose AnyCam directly to a public network; let
+Keep the default `127.0.0.1` bind — don't expose TailCam directly to a public network; let
 Tailscale handle access.
 
 ## AI motion analysis (local, optional)
 
-Motion detection is free pixel-diff; when it fires, AnyCam can ask a **local
+Motion detection is free pixel-diff; when it fires, TailCam can ask a **local
 [Ollama](https://ollama.com) vision model** to label the event (person / animal /
 vehicle / package / …) with a short description — no cloud. Because cheap motion
 *gates* the model, it's only consulted a frame or two per event, so one machine
@@ -178,7 +190,7 @@ Set up (e.g. on a Mac mini):
 ```bash
 # 1. Install Ollama and pull a vision model (moondream is small + fast):
 ollama pull moondream          # or: qwen2.5vl / llava for better labels
-# 2. In ~/.config/anycam/config.toml (or the macOS app-support path):
+# 2. In ~/.config/tailcam/config.toml (or the macOS app-support path):
 ```
 ```toml
 [ai]
@@ -187,7 +199,7 @@ base_url = "http://localhost:11434"   # or a tailnet host to analyze the fleet
 model = "moondream"
 ```
 ```bash
-anycam restart
+tailcam restart
 ```
 
 Then motion events show a label chip (🧍 person, 🚗 vehicle…) + the trigger
@@ -200,8 +212,9 @@ the roadmap (notifications, 3D-print failure detection).
 ## Features
 
 - **Polished dashboard (PWA)** — a responsive React web app (installable on phone or desktop) with
-  a live camera grid grouped by device, a mobile-first camera view with pinch/zoom, gallery, and
-  motion events. Built and shipped inside the package; see [`web-ui/`](web-ui/).
+  a live camera grid grouped by device, a video wall, a command palette (Cmd/Ctrl+K), a
+  mobile-first camera view with pinch/zoom, gallery, and motion events. Built and shipped inside
+  the package; see [`web-ui/`](web-ui/).
 - **Multi-host aggregation** — see every camera across all your tailnet devices from any one of them.
 - **Multi-camera** — auto-detects connected webcams; name them and view them in a grid.
 - **Resolution, zoom & pan** — set capture resolution; per-viewer digital zoom + pan;
@@ -225,23 +238,24 @@ events live in SQLite.
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-ANYCAM_SYNTHETIC=1 anycam run      # run without a physical webcam
+TAILCAM_SYNTHETIC=1 tailcam run    # run without a physical webcam
 pytest                             # tests use a synthetic camera, no hardware needed
 ruff check . && mypy src
 ```
 
-Set `ANYCAM_SYNTHETIC=1` to use a built-in synthetic camera source — useful on
+Set `TAILCAM_SYNTHETIC=1` to use a built-in synthetic camera source — useful on
 headless servers, in containers, and in CI where no webcam exists.
 
 The dashboard front-end lives in [`web-ui/`](web-ui/) (React + Vite). Its build
-output is committed to `src/anycam/web/spa/` and ships in the wheel, so end users
+output is committed to `src/tailcam/web/spa/` and ships in the wheel, so end users
 never need Node. To change the UI: `cd web-ui && npm install && npm run build`,
-then commit both the source and the regenerated `src/anycam/web/spa/`.
+then commit both the source and the regenerated `src/tailcam/web/spa/`.
 
-**Releases:** bump `__version__` in `src/anycam/__init__.py` with every change
-merged to `main`. The version is shown by `anycam version`, `anycam status`,
-`/api/system`, and the dashboard Settings page — it's how you confirm a node is
-actually running the build you think it is.
+**Releases:** bump `__version__` in **both** `src/tailcam/__init__.py` and the
+legacy shim `src/anycam/__init__.py` with every change merged to `main` (the
+shim is how pre-rename installs detect updates). The version is shown by
+`tailcam version`, `tailcam status`, `/api/system`, and the dashboard Settings
+page — it's how you confirm a node is actually running the build you think it is.
 
 ## License
 

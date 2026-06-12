@@ -84,6 +84,7 @@ export function Gallery() {
     <div className="screen">
       <div className="screen-head">
         <div>
+          <div className="kicker"><span className="kicker-rule" /><span className="microlabel lit">Media Archive</span></div>
           <h1 className="screen-title">Gallery</h1>
           <p className="screen-sub">{rows.length} item{rows.length !== 1 ? "s" : ""} · all devices</p>
         </div>

@@ -34,7 +34,7 @@ import { BottomSheet } from "../components/ui";
 
 function loadView(key: string): ViewParams {
   try {
-    return { ...VIEW_DEFAULT, ...JSON.parse(localStorage.getItem("anycam.view." + key) || "{}") };
+    return { ...VIEW_DEFAULT, ...JSON.parse(localStorage.getItem("tailcam.view." + key) || "{}") };
   } catch {
     return { ...VIEW_DEFAULT };
   }
@@ -80,7 +80,7 @@ export function CameraDetail() {
     (v: ViewParams) => {
       setViewState(v);
       try {
-        localStorage.setItem("anycam.view." + viewKey, JSON.stringify(v));
+        localStorage.setItem("tailcam.view." + viewKey, JSON.stringify(v));
       } catch {
         /* ignore */
       }

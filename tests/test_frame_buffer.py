@@ -3,7 +3,7 @@ import time
 
 import numpy as np
 
-from anycam.camera.frame import FrameBuffer
+from tailcam.camera.frame import FrameBuffer
 
 
 def _img():

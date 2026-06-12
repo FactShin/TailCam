@@ -9,17 +9,17 @@ import sys
 
 import cv2
 
-from anycam import paths
-from anycam.camera import enumerate as cam_enumerate
-from anycam.camera.properties import CameraProperties
-from anycam.camera.source import CameraDescriptor, OpenCVCameraSource
-from anycam.service import installer
-from anycam.tailscale.client import _KNOWN_BINARIES
+from tailcam import paths
+from tailcam.camera import enumerate as cam_enumerate
+from tailcam.camera.properties import CameraProperties
+from tailcam.camera.source import CameraDescriptor, OpenCVCameraSource
+from tailcam.service import installer
+from tailcam.tailscale.client import _KNOWN_BINARIES
 
 
 def _win(monkeypatch):
     monkeypatch.setattr(sys, "platform", "win32")
-    for var in ("ANYCAM_CONFIG_DIR", "ANYCAM_DATA_DIR", "ANYCAM_CONFIG", "ANYCAM_SYNTHETIC"):
+    for var in ("TAILCAM_CONFIG_DIR", "TAILCAM_DATA_DIR", "TAILCAM_CONFIG", "TAILCAM_SYNTHETIC"):
         monkeypatch.delenv(var, raising=False)
 
 
@@ -29,8 +29,8 @@ def test_paths_use_appdata(monkeypatch):
     # POSIX host (PurePosixPath doesn't treat "\\" as a separator).
     monkeypatch.setenv("APPDATA", "C:/Users/me/AppData/Roaming")
     monkeypatch.setenv("LOCALAPPDATA", "C:/Users/me/AppData/Local")
-    assert str(paths.config_dir()).replace("\\", "/").endswith("AppData/Roaming/AnyCam")
-    assert str(paths.data_dir()).replace("\\", "/").endswith("AppData/Local/AnyCam")
+    assert str(paths.config_dir()).replace("\\", "/").endswith("AppData/Roaming/TailCam")
+    assert str(paths.data_dir()).replace("\\", "/").endswith("AppData/Local/TailCam")
     assert paths.config_file().name == "config.toml"
 
 
@@ -86,13 +86,13 @@ def test_installer_windows_schtask(monkeypatch):
     monkeypatch.setattr(subprocess, "run", lambda args, **kw: calls.append(args))
 
     msg = installer.install()
-    assert "AnyCam" in msg
+    assert "TailCam" in msg
     # PowerShell Register-ScheduledTask (robust quoting), at logon.
     register = next(c for c in calls if any("Register-ScheduledTask" in str(a) for a in c))
     script = register[-1]
     assert "New-ScheduledTaskTrigger -AtLogOn" in script
-    assert "-m anycam run" in script
-    assert "AnyCam" in script
+    assert "-m tailcam run" in script
+    assert "TailCam" in script
 
     calls.clear()
     installer.uninstall()

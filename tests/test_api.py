@@ -155,7 +155,7 @@ def test_disabling_motion_closes_open_event(client, context):
 
 
 def test_startup_closes_stale_events(store):
-    from anycam.persistence.models import MotionEventRecord
+    from tailcam.persistence.models import MotionEventRecord
 
     store.add_motion_event(
         MotionEventRecord(id=None, camera_id="x", start_ts=123.0, end_ts=None,

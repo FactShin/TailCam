@@ -2,7 +2,7 @@ import json
 import subprocess
 from types import SimpleNamespace
 
-from anycam.tailscale.client import TailscaleClient
+from tailcam.tailscale.client import TailscaleClient
 
 _STATUS_RUNNING = {
     "BackendState": "Running",
@@ -22,8 +22,8 @@ def _fake_run(stdout="", returncode=0):
 
 def _force_absent(monkeypatch):
     # No CLI on PATH and none of the known absolute install paths exist.
-    monkeypatch.setattr("anycam.tailscale.client.shutil.which", lambda _b: None)
-    monkeypatch.setattr("anycam.tailscale.client.os.path.isfile", lambda _p: False)
+    monkeypatch.setattr("tailcam.tailscale.client.shutil.which", lambda _b: None)
+    monkeypatch.setattr("tailcam.tailscale.client.os.path.isfile", lambda _p: False)
 
 
 def test_not_installed(monkeypatch):
@@ -35,10 +35,10 @@ def test_not_installed(monkeypatch):
 
 def test_resolves_binary_from_known_path(monkeypatch):
     # Not on PATH (e.g. launchd's minimal PATH) but installed at a known location.
-    monkeypatch.setattr("anycam.tailscale.client.shutil.which", lambda _b: None)
+    monkeypatch.setattr("tailcam.tailscale.client.shutil.which", lambda _b: None)
     target = "/opt/homebrew/bin/tailscale"
-    monkeypatch.setattr("anycam.tailscale.client.os.path.isfile", lambda p: p == target)
-    monkeypatch.setattr("anycam.tailscale.client.os.access", lambda p, _m: p == target)
+    monkeypatch.setattr("tailcam.tailscale.client.os.path.isfile", lambda p: p == target)
+    monkeypatch.setattr("tailcam.tailscale.client.os.access", lambda p, _m: p == target)
     monkeypatch.setattr(subprocess, "run", _fake_run(json.dumps(_STATUS_RUNNING)))
     st = TailscaleClient().status()
     assert st.installed is True
@@ -46,7 +46,7 @@ def test_resolves_binary_from_known_path(monkeypatch):
 
 
 def test_status_running(monkeypatch):
-    monkeypatch.setattr("anycam.tailscale.client.shutil.which", lambda _b: "/usr/bin/tailscale")
+    monkeypatch.setattr("tailcam.tailscale.client.shutil.which", lambda _b: "/usr/bin/tailscale")
     monkeypatch.setattr(subprocess, "run", _fake_run(json.dumps(_STATUS_RUNNING)))
     st = TailscaleClient().status()
     assert st.running is True
@@ -55,7 +55,7 @@ def test_status_running(monkeypatch):
 
 
 def test_status_stopped(monkeypatch):
-    monkeypatch.setattr("anycam.tailscale.client.shutil.which", lambda _b: "/usr/bin/tailscale")
+    monkeypatch.setattr("tailcam.tailscale.client.shutil.which", lambda _b: "/usr/bin/tailscale")
     monkeypatch.setattr(
         subprocess, "run", _fake_run(json.dumps({"BackendState": "Stopped", "Self": {}}))
     )
@@ -65,7 +65,7 @@ def test_status_stopped(monkeypatch):
 
 
 def test_access_url_prefers_magicdns_when_served(monkeypatch):
-    monkeypatch.setattr("anycam.tailscale.client.shutil.which", lambda _b: "/usr/bin/tailscale")
+    monkeypatch.setattr("tailcam.tailscale.client.shutil.which", lambda _b: "/usr/bin/tailscale")
     monkeypatch.setattr(subprocess, "run", _fake_run(json.dumps(_STATUS_RUNNING)))
     client = TailscaleClient()
     # Port 443 -> root URL (no port shown).

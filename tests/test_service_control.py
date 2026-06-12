@@ -4,7 +4,7 @@ import subprocess
 import sys
 from types import SimpleNamespace
 
-from anycam.service import installer
+from tailcam.service import installer
 
 
 def _capture(monkeypatch):
@@ -31,13 +31,13 @@ def test_linux_systemctl_dispatch(monkeypatch):
     calls = _capture(monkeypatch)
 
     assert "Started" in installer.start()
-    assert ["systemctl", "--user", "start", "anycam.service"] in calls
+    assert ["systemctl", "--user", "start", "tailcam.service"] in calls
     calls.clear()
     assert "Stopped" in installer.stop()
-    assert ["systemctl", "--user", "stop", "anycam.service"] in calls
+    assert ["systemctl", "--user", "stop", "tailcam.service"] in calls
     calls.clear()
     assert "Restarted" in installer.restart()
-    assert ["systemctl", "--user", "restart", "anycam.service"] in calls
+    assert ["systemctl", "--user", "restart", "tailcam.service"] in calls
 
 
 def test_macos_launchctl_dispatch(monkeypatch):
