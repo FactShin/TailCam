@@ -63,3 +63,11 @@ def media_thumbnail(media_id: int, ctx: AppContext = Depends(get_context)) -> Fi
     if record is None or not record.thumbnail or not Path(record.thumbnail).exists():
         raise HTTPException(status_code=404, detail="thumbnail not found")
     return FileResponse(record.thumbnail)
+
+
+@router.get("/events/{event_id}/thumbnail")
+def event_thumbnail(event_id: int, ctx: AppContext = Depends(get_context)) -> FileResponse:
+    rec = ctx.store.get_motion_event(event_id)
+    if rec is None or not rec.thumb_path or not Path(rec.thumb_path).exists():
+        raise HTTPException(status_code=404, detail="event thumbnail not found")
+    return FileResponse(rec.thumb_path)

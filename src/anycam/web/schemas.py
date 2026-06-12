@@ -77,8 +77,19 @@ class MotionEventInfo(BaseModel):
     end_ts: float | None
     peak_score: float
     recording_id: int | None
+    label: str | None = None  # AI: person/animal/vehicle/… (None = not analyzed)
+    description: str | None = None
+    confidence: float | None = None
+    has_thumb: bool = False
     host: str = ""
     proxy_prefix: str = ""
+
+
+class AIInfo(BaseModel):
+    enabled: bool
+    reachable: bool
+    model: str
+    model_present: bool
 
 
 class SystemInfo(BaseModel):

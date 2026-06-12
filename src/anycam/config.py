@@ -71,6 +71,24 @@ class PeersConfig:
 
 
 @dataclass
+class AIConfig:
+    # Local vision-model analysis of motion events via Ollama. Cheap pixel
+    # motion gates this, so the model is only consulted a frame or two per event.
+    enabled: bool = False
+    # Ollama endpoint. localhost when AnyCam + Ollama run on the same box; point
+    # at a tailnet host (e.g. http://mac-mini.your-tailnet.ts.net:11434) to let
+    # one machine analyze the whole fleet's events.
+    base_url: str = "http://localhost:11434"
+    model: str = "moondream"  # small + fast; try qwen2.5vl or llava for better labels
+    timeout: float = 20.0
+    prompt: str = (
+        "You are a security camera analyst. Look at this single frame and respond ONLY "
+        "with JSON: {\"label\": one of [person, animal, vehicle, package, plant, nothing], "
+        "\"confidence\": a number 0-1, \"description\": a short phrase}. No other text."
+    )
+
+
+@dataclass
 class CamerasConfig:
     # Camera ids the user has deleted/forgotten; discovery skips these so
     # phantom devices (e.g. Raspberry Pi codec/ISP nodes) stay hidden.
@@ -86,6 +104,7 @@ class AppConfig:
     tailscale: TailscaleConfig = field(default_factory=TailscaleConfig)
     peers: PeersConfig = field(default_factory=PeersConfig)
     cameras: CamerasConfig = field(default_factory=CamerasConfig)
+    ai: AIConfig = field(default_factory=AIConfig)
 
     @classmethod
     def load(cls, path: Path | None = None) -> AppConfig:
@@ -106,6 +125,7 @@ class AppConfig:
             tailscale=TailscaleConfig(**raw.get("tailscale", {})),
             peers=PeersConfig(**raw.get("peers", {})),
             cameras=CamerasConfig(**raw.get("cameras", {})),
+            ai=AIConfig(**raw.get("ai", {})),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -117,6 +137,7 @@ class AppConfig:
             "tailscale": asdict(self.tailscale),
             "peers": asdict(self.peers),
             "cameras": asdict(self.cameras),
+            "ai": asdict(self.ai),
         }
 
     def save(self, path: Path | None = None) -> None:

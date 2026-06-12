@@ -164,6 +164,38 @@ over your tailnet, with no per-request login. On top of that, AnyCam ships defen
 Keep the default `127.0.0.1` bind — don't expose AnyCam directly to a public network; let
 Tailscale handle access.
 
+## AI motion analysis (local, optional)
+
+Motion detection is free pixel-diff; when it fires, AnyCam can ask a **local
+[Ollama](https://ollama.com) vision model** to label the event (person / animal /
+vehicle / package / …) with a short description — no cloud. Because cheap motion
+*gates* the model, it's only consulted a frame or two per event, so one machine
+can analyze the whole fleet.
+
+Set up (e.g. on a Mac mini):
+
+```bash
+# 1. Install Ollama and pull a vision model (moondream is small + fast):
+ollama pull moondream          # or: qwen2.5vl / llava for better labels
+# 2. In ~/.config/anycam/config.toml (or the macOS app-support path):
+```
+```toml
+[ai]
+enabled = true
+base_url = "http://localhost:11434"   # or a tailnet host to analyze the fleet
+model = "moondream"
+```
+```bash
+anycam restart
+```
+
+Then motion events show a label chip (🧍 person, 🚗 vehicle…) + the trigger
+thumbnail. Settings → **AI motion analysis** shows whether Ollama is reachable
+and the model is pulled. To let one node analyze another's events, point
+`base_url` at that node (and run Ollama with `OLLAMA_HOST=0.0.0.0` so the tailnet
+can reach it). See [`docs/ai-detection-plan.md`](docs/ai-detection-plan.md) for
+the roadmap (notifications, 3D-print failure detection).
+
 ## Features
 
 - **Polished dashboard (PWA)** — a responsive React web app (installable on phone or desktop) with

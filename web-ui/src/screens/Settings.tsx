@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { useCameras, useHosts, useSystem } from "../api/hooks";
+import { useAi, useCameras, useHosts, useSystem } from "../api/hooks";
 import { useToast } from "../components/toast";
 import { IconCheck, IconCopy, IconDevice, IconInfo, IconServer, IconWifi, IconWifiOff } from "../icons";
 import { fmtBytes } from "../lib/format";
@@ -9,6 +9,7 @@ export function Settings() {
   const sys = useSystem().data;
   const cameras = useCameras().data ?? [];
   const hosts = useHosts().data ?? [];
+  const ai = useAi().data;
   const toast = useToast();
   const [copied, setCopied] = useState(false);
 
@@ -52,6 +53,41 @@ export function Settings() {
               </span>
             </div>
           ))}
+        </div>
+
+        <div className="panel">
+          <div className="panel-title"><IconInfo size={16} /> AI motion analysis</div>
+          {!ai || !ai.enabled ? (
+            <div className="kv kv-stack">
+              <span className="kv-k">Status</span>
+              <span className="kv-v">
+                <span className="badge"><span className="pill-dot" style={{ background: "var(--muted)" }} /> Disabled</span>
+              </span>
+              <span className="help-foot mono">
+                Enable in config.toml [ai]: set enabled=true and point base_url at an Ollama host
+                (e.g. your Mac mini). Motion events then get labels (person/animal/vehicle…).
+              </span>
+            </div>
+          ) : (
+            <>
+              <div className="kv"><span className="kv-k">Model</span><span className="kv-v mono">{ai.model}</span></div>
+              <div className="kv">
+                <span className="kv-k">Ollama</span>
+                <span className="kv-v">
+                  {ai.reachable && ai.model_present ? (
+                    <span className="badge badge-ok"><span className="pill-dot" style={{ background: "var(--ok)" }} /> Ready</span>
+                  ) : ai.reachable ? (
+                    <span className="badge badge-warn"><span className="pill-dot" style={{ background: "var(--warn)" }} /> Model not pulled</span>
+                  ) : (
+                    <span className="badge badge-err"><span className="pill-dot" style={{ background: "var(--err)" }} /> Unreachable</span>
+                  )}
+                </span>
+              </div>
+              {ai.reachable && !ai.model_present && (
+                <span className="help-foot mono">Run on the Ollama host: ollama pull {ai.model}</span>
+              )}
+            </>
+          )}
         </div>
 
         <div className="panel">

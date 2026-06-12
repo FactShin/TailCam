@@ -1,11 +1,21 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { eventThumbUrl } from "../api/client";
 import { useCameras, useEvents } from "../api/hooks";
 import { Button } from "../components/ui";
 import { IconMotion, IconPlay } from "../icons";
 import { fmtDateTime, fmtDur } from "../lib/format";
 import type { CameraInfo } from "../types";
+
+const LABEL_ICON: Record<string, string> = {
+  person: "🧍",
+  animal: "🐾",
+  vehicle: "🚗",
+  package: "📦",
+  plant: "🌿",
+  nothing: "—",
+};
 
 function CamFilter({
   cameras,
@@ -64,19 +74,28 @@ export function Events() {
             const dur = ongoing ? now - e.start_ts : e.end_ts! - e.start_ts;
             const pct = Math.round(e.peak_score * 100);
             const sev = pct >= 75 ? "high" : pct >= 50 ? "mid" : "low";
+            const icon = LABEL_ICON[e.label ?? ""] ?? "•";
             return (
-              <div key={e.id} className={`event-row ${ongoing ? "is-live" : ""}`}>
-                <div className="event-score">
-                  <div className={`score-ring score-${sev}`} style={{ ["--p" as string]: pct }}>
-                    <span className="mono">{pct}%</span>
+              <div key={`${e.host}/${e.id}`} className={`event-row ${ongoing ? "is-live" : ""}`}>
+                {e.has_thumb ? (
+                  <img className="event-thumb" src={eventThumbUrl(e.proxy_prefix, e.id)} alt="" loading="lazy" />
+                ) : (
+                  <div className="event-score">
+                    <div className={`score-ring score-${sev}`} style={{ ["--p" as string]: pct }}>
+                      <span className="mono">{pct}%</span>
+                    </div>
                   </div>
-                </div>
+                )}
                 <div className="event-body">
                   <div className="event-l1">
                     <span className="event-cam">{camName(e.camera_id)}</span>
+                    {e.label && <span className={`event-label label-${e.label}`}>{icon} {e.label}</span>}
                     {ongoing && <span className="event-ongoing"><span className="rec-dot" /> ongoing</span>}
                   </div>
-                  <div className="event-l2 mono">{e.host} · {fmtDateTime(e.start_ts)} · {fmtDur(dur)} · peak {pct}%</div>
+                  <div className="event-l2 mono">
+                    {e.host} · {fmtDateTime(e.start_ts)} · {fmtDur(dur)} · peak {pct}%
+                  </div>
+                  {e.description && <div className="event-desc">{e.description}</div>}
                 </div>
                 <div className="event-actions">
                   {e.recording_id != null ? (

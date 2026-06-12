@@ -34,3 +34,7 @@ class MotionEventRecord:
     end_ts: float | None
     peak_score: float
     recording_id: int | None
+    label: str | None = None
+    description: str | None = None
+    confidence: float | None = None
+    thumb_path: str | None = None

@@ -70,8 +70,19 @@ export interface MotionEventInfo {
   end_ts: number | null;
   peak_score: number;
   recording_id: number | null;
+  label: string | null;
+  description: string | null;
+  confidence: number | null;
+  has_thumb: boolean;
   host: string;
   proxy_prefix: string;
+}
+
+export interface AIInfo {
+  enabled: boolean;
+  reachable: boolean;
+  model: string;
+  model_present: boolean;
 }
 
 export interface SystemInfo {

@@ -9,6 +9,7 @@ from anycam.camera.manager import ManagedCamera
 from anycam.web.context import AppContext
 from anycam.web.deps import get_context
 from anycam.web.schemas import (
+    AIInfo,
     CameraInfo,
     CameraSettingsUpdate,
     HostInfo,
@@ -245,6 +246,10 @@ def _event_info(ctx: AppContext, e) -> MotionEventInfo:
         end_ts=e.end_ts,
         peak_score=e.peak_score,
         recording_id=e.recording_id,
+        label=e.label,
+        description=e.description,
+        confidence=e.confidence,
+        has_thumb=bool(e.thumb_path),
         host=ctx.local_host,
         proxy_prefix="",
     )
@@ -292,6 +297,20 @@ async def system_reload(ctx: AppContext = Depends(get_context)) -> list[CameraIn
     ctx.manager.start_all()
     await ctx.cluster.refresh(force=True)
     return await _aggregate_cameras(ctx, "all")
+
+
+@router.get("/ai", response_model=AIInfo)
+async def ai_info(ctx: AppContext = Depends(get_context)) -> AIInfo:
+    """AI analyzer status for the dashboard (Ollama reachable? model present?)."""
+    import anyio
+
+    reachable, model = await anyio.to_thread.run_sync(ctx.analyzer.health)
+    return AIInfo(
+        enabled=ctx.config.ai.enabled,
+        reachable=reachable,
+        model=ctx.config.ai.model,
+        model_present=model is not None,
+    )
 
 
 @router.get("/update", response_model=UpdateInfo)

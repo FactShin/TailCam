@@ -27,5 +27,13 @@ class EventLog:
     ) -> None:
         self._store.update_motion_event(event_id, end_ts, peak_score, recording_id)
 
+    def set_thumb(self, event_id: int, thumb_path: str) -> None:
+        self._store.set_event_thumb(event_id, thumb_path)
+
+    def set_analysis(
+        self, event_id: int, label: str, description: str | None, confidence: float | None
+    ) -> None:
+        self._store.set_event_analysis(event_id, label, description, confidence)
+
     def list(self, camera_id: str | None = None, limit: int = 50, offset: int = 0):
         return self._store.list_motion_events(camera_id, limit, offset)

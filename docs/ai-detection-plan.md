@@ -43,7 +43,7 @@ the whole tailnet. Analyzer failures degrade gracefully to plain motion events.
   motion zones (ignore regions — UI draws rectangles) and sensitivity already exists.
 - UI: event cards show thumbnail of the triggering frame (store a snapshot per event).
 
-### Step 2 — Ollama analyzer
+### Step 2 — Ollama analyzer  ✅ DONE (v0.3.0)
 - `config [ai]`: `enabled`, `base_url` (default `http://localhost:11434`),
   `model` (default `qwen2.5-vl` or `moondream` for small machines), `prompt`
   (default person/animal/vehicle classification), `timeout`.

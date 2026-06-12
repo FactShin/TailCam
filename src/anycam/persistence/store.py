@@ -47,14 +47,26 @@ _SCHEMA = [
         start_ts REAL NOT NULL,
         end_ts REAL,
         peak_score REAL NOT NULL DEFAULT 0,
-        recording_id INTEGER
+        recording_id INTEGER,
+        label TEXT,
+        description TEXT,
+        confidence REAL,
+        thumb_path TEXT
     );
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_events_camera_ts ON motion_events (camera_id, start_ts DESC);
     """,
 ]
-_CURRENT_VERSION = 1
+_CURRENT_VERSION = 2
+
+# Columns added after v1 — applied to existing DBs via ALTER TABLE on migrate().
+_EVENT_COLUMNS = {
+    "label": "TEXT",
+    "description": "TEXT",
+    "confidence": "REAL",
+    "thumb_path": "TEXT",
+}
 
 
 class Store:
@@ -79,9 +91,16 @@ class Store:
         with conn:
             for stmt in _SCHEMA:
                 conn.execute(stmt)
+            # Add columns introduced after v1 to a pre-existing motion_events table.
+            existing = {r["name"] for r in conn.execute("PRAGMA table_info(motion_events)")}
+            for col, col_type in _EVENT_COLUMNS.items():
+                if col not in existing:
+                    conn.execute(f"ALTER TABLE motion_events ADD COLUMN {col} {col_type}")
             row = conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
             if row is None:
                 conn.execute("INSERT INTO schema_version (version) VALUES (?)", (_CURRENT_VERSION,))
+            else:
+                conn.execute("UPDATE schema_version SET version=?", (_CURRENT_VERSION,))
 
     # -- cameras -----------------------------------------------------------
     def upsert_camera(self, record: CameraRecord) -> None:
@@ -204,6 +223,27 @@ class Store:
                 (end_ts, peak_score, recording_id, event_id),
             )
 
+    def set_event_thumb(self, event_id: int, thumb_path: str) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE motion_events SET thumb_path=? WHERE id=?", (thumb_path, event_id)
+            )
+
+    def set_event_analysis(
+        self, event_id: int, label: str, description: str | None, confidence: float | None
+    ) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE motion_events SET label=?, description=?, confidence=? WHERE id=?",
+                (label, description, confidence, event_id),
+            )
+
+    def get_motion_event(self, event_id: int) -> MotionEventRecord | None:
+        row = self._conn().execute(
+            "SELECT * FROM motion_events WHERE id=?", (event_id,)
+        ).fetchone()
+        return _event_from_row(row) if row else None
+
     def close_stale_motion_events(self) -> int:
         """Close any event still marked ongoing (end_ts IS NULL).
 
@@ -265,6 +305,10 @@ def _event_from_row(row: sqlite3.Row) -> MotionEventRecord:
         end_ts=row["end_ts"],
         peak_score=row["peak_score"],
         recording_id=row["recording_id"],
+        label=row["label"],
+        description=row["description"],
+        confidence=row["confidence"],
+        thumb_path=row["thumb_path"],
     )
 
 

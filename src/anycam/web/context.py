@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 
+from anycam.ai.analyzer import OllamaAnalyzer
 from anycam.camera.manager import CameraManager
 from anycam.cluster.service import ClusterService, resolve_local_host
 from anycam.config import AppConfig
@@ -29,6 +30,7 @@ class AppContext:
         self.recorder = RecordingService(self.manager, self.store)
         self.gallery = MediaGallery(self.store)
         self.event_log = EventLog(self.store)
+        self.analyzer = OllamaAnalyzer(config.ai)
         self.tailscale = TailscaleClient()
         self.mjpeg = MJPEGBackend()
         self.local_host = resolve_local_host(self.tailscale)
@@ -79,7 +81,8 @@ class AppContext:
             if buffer is None:
                 return False
             worker = MotionWorker(
-                camera_id, buffer, self.config.motion, self.event_log, self.recorder
+                camera_id, buffer, self.config.motion, self.event_log, self.recorder,
+                analyzer=self.analyzer,
             )
             worker.start()
             self._motion_workers[camera_id] = worker

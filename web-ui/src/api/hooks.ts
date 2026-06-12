@@ -46,6 +46,10 @@ export function useUpdate() {
   return useQuery({ queryKey: ["update"], queryFn: api.getUpdate, refetchInterval: 3600_000 });
 }
 
+export function useAi() {
+  return useQuery({ queryKey: ["ai"], queryFn: api.getAi, refetchInterval: 30_000 });
+}
+
 export function useRefreshCameras() {
   const qc = useQueryClient();
   return useMutation({

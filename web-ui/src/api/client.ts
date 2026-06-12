@@ -70,6 +70,9 @@ export const getHosts = () => jsonFetch<HostInfo[]>("/api/hosts");
 export const getSystem = () => jsonFetch<SystemInfo>("/api/system");
 export const getUpdate = () =>
   jsonFetch<{ current: string; latest: string | null; available: boolean }>("/api/update");
+export const getAi = () => jsonFetch<import("../types").AIInfo>("/api/ai");
+export const eventThumbUrl = (prefix: string, eventId: number) =>
+  `${prefix}/events/${eventId}/thumbnail`;
 export const reloadSystem = () =>
   jsonFetch<CameraInfo[]>("/api/system/reload", { method: "POST" });
 export const restoreHidden = () =>

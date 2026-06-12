@@ -504,3 +504,20 @@ input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border-radius: 
 }
 .update-banner code { background: var(--panel-2); padding: 1px 6px; border-radius: 5px; }
 .head-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+/* AI motion-event labels + thumbnails (Smart Motion phase) */
+.event-thumb {
+  width: 72px; height: 54px; flex: 0 0 auto;
+  object-fit: cover; border-radius: 8px; background: #000;
+}
+.event-label {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-left: 8px; padding: 1px 8px; border-radius: 999px;
+  font-size: .72rem; text-transform: capitalize;
+  background: var(--panel-2); color: var(--text);
+}
+.event-label.label-person { background: rgba(79,140,255,0.22); color: #9cc0ff; }
+.event-label.label-vehicle { background: rgba(245,166,35,0.20); color: #f5c172; }
+.event-label.label-animal { background: rgba(62,207,142,0.20); color: #7ee0b0; }
+.event-label.label-nothing { background: var(--panel-2); color: var(--muted); }
+.event-desc { margin-top: 3px; font-size: .8rem; color: var(--muted); }

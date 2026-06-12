@@ -6,7 +6,12 @@ from __future__ import annotations
 
 import threading
 import time
+from datetime import datetime
 
+import cv2
+
+from anycam import paths
+from anycam.ai.analyzer import OllamaAnalyzer
 from anycam.config import MotionConfig
 from anycam.logging_setup import get_logger
 from anycam.media.recorder import RecordingService
@@ -24,12 +29,14 @@ class MotionWorker:
         config: MotionConfig,
         event_log: EventLog,
         recorder: RecordingService | None = None,
+        analyzer: OllamaAnalyzer | None = None,
     ) -> None:
         self.camera_id = camera_id
         self.buffer = buffer
         self.config = config
         self._event_log = event_log
         self._recorder = recorder
+        self._analyzer = analyzer
         self._detector = MotionDetector(config.sensitivity, config.min_area)
         self._stop = threading.Event()
         self._thread = threading.Thread(
@@ -38,6 +45,31 @@ class MotionWorker:
         # Latest boxes for the UI overlay (read by stream/API threads).
         self.boxes: list[tuple[int, int, int, int]] = []
         self.active = False
+
+    def _enrich_event(self, event_id: int, image) -> None:
+        """Save the trigger frame as the event thumbnail and (if AI is enabled)
+        label it with the vision model. Runs in its own thread — never blocks
+        the detection loop, and tolerates any failure."""
+        try:
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
+            safe = self.camera_id.replace("/", "_")
+            thumb = paths.thumbnails_dir() / f"event_{safe}_{stamp}.jpg"
+            thumb.parent.mkdir(parents=True, exist_ok=True)
+            h, w = image.shape[:2]
+            scale = 320 / max(1, w)
+            small = cv2.resize(image, (320, max(1, int(h * scale))))
+            ok, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 75])
+            if ok:
+                thumb.write_bytes(buf.tobytes())
+                self._event_log.set_thumb(event_id, str(thumb))
+        except Exception as exc:  # pragma: no cover - defensive
+            log.debug("event thumbnail failed: %s", exc)
+        if self._analyzer and self._analyzer.enabled:
+            result = self._analyzer.analyze(image)
+            if result is not None:
+                self._event_log.set_analysis(
+                    event_id, result.label, result.description, result.confidence
+                )
 
     def start(self) -> None:
         self._thread.start()
@@ -70,6 +102,12 @@ class MotionWorker:
                     if not self.active:
                         self.active = True
                         event_id = self._event_log.open_event(self.camera_id, now, result.score)
+                        # Thumbnail + AI labeling off-thread so the loop keeps sampling.
+                        threading.Thread(
+                            target=self._enrich_event,
+                            args=(event_id, frame.image.copy()),
+                            daemon=True,
+                        ).start()
                         if self.config.auto_record and self._recorder:
                             recording_triggered = self._recorder.start(
                                 self.camera_id, trigger="motion"
