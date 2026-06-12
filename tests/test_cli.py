@@ -35,3 +35,17 @@ def test_cameras_lists_synthetic(isolated_env):
 def test_version(isolated_env):
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
+
+
+def test_malformed_config_falls_back_to_defaults(isolated_env, tmp_path):
+    from anycam import paths
+    from anycam.config import AppConfig
+
+    cfg = paths.config_file()
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text('[ai]\nbase_url = "http://oops\n')  # unterminated string
+
+    loaded = AppConfig.load()  # must NOT raise
+    assert loaded.server.port == 8088  # defaults
+    assert cfg.with_suffix(".toml.bad").exists()  # bad file preserved
+    assert not cfg.exists()
