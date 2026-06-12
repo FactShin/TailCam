@@ -27,6 +27,37 @@ console = Console()
 _STATUS_COLOR = {"online": "green", "degraded": "yellow", "offline": "red"}
 
 
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(__version__)
+        raise typer.Exit()
+
+
+@app.callback()
+def _root(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        "-V",
+        help="Show the TailCam version and exit.",
+        callback=_version_callback,
+        is_eager=True,
+    ),
+) -> None:
+    """TailCam — view any webcam from anywhere over Tailscale.
+
+    Run [bold]tailcam run[/bold] to start the server, or [bold]tailcam status[/bold]
+    to see your cameras and tailnet nodes.
+    """
+    # First run after a clean reinstall from the old AnyCam build: pull the old
+    # config/media/database across. Cheap marker check, then a one-time move.
+    from tailcam import migrate
+
+    if migrate.needs_migration():
+        for line in migrate.migrate():
+            console.print(f"[dim]· {line}[/dim]")
+
+
 @app.command()
 def run(
     host: str | None = typer.Option(None, help="Bind address (default from config)."),
@@ -53,7 +84,7 @@ def run(
     config = AppConfig.load()
     if host:
         config.server.host = host
-    env_port = os.environ.get("TAILCAM_PORT") or os.environ.get("ANYCAM_PORT")
+    env_port = os.environ.get("TAILCAM_PORT")
     if port:
         config.server.port = port
     elif env_port and env_port.isdigit():
@@ -453,6 +484,28 @@ def update(
     # the legacy anycam.service/com.anycam names, and it restarts either way.
     typer.echo(installer.install() if installer.is_installed() else installer.restart())
     typer.echo(f"Updated to {latest}.")
+
+
+@app.command()
+def migrate() -> None:
+    """Move data from a pre-rename AnyCam install into the TailCam locations.
+
+    Runs automatically on the first command after a reinstall; use this to
+    re-run it or to migrate explicitly.
+    """
+    from tailcam import migrate as mig
+
+    if not mig.needs_migration():
+        legacy = paths.legacy_config_dir()
+        if legacy.exists() or paths.legacy_data_dir().exists():
+            typer.echo("Nothing to migrate (TailCam already has its data).")
+        else:
+            typer.echo("No pre-rename AnyCam install found.")
+        return
+    actions = mig.migrate()
+    for line in actions:
+        typer.echo(line)
+    typer.echo(f"Migrated {len(actions)} item(s) from AnyCam to TailCam.")
 
 
 @app.command()

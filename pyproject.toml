@@ -55,15 +55,12 @@ Repository = "https://github.com/factshin/anycam"
 
 [project.scripts]
 tailcam = "tailcam.cli:main"
-# Legacy alias so pre-rename installs, docs, and muscle memory keep working.
-anycam = "tailcam.cli:main"
 
 [tool.hatch.version]
 path = "src/tailcam/__init__.py"
 
 [tool.hatch.build.targets.wheel]
-# "anycam" is a tiny forwarding shim for pre-rename installs.
-packages = ["src/tailcam", "src/anycam"]
+packages = ["src/tailcam"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

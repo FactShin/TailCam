@@ -469,6 +469,8 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .tile-media .viewer-canvas { object-fit: cover; }
 .osd { position: absolute; right: 9px; bottom: 8px; font-size: 11px; color: rgba(255, 255, 255, 0.82); text-shadow: 0 1px 3px #000; letter-spacing: 0.02em; z-index: 3; pointer-events: none; }
 .viewer-tl { position: absolute; top: 10px; left: 10px; display: flex; gap: 7px; z-index: 3; }
+/* Grid tiles draw their own status pill in that corner — avoid doubled chips. */
+.tile .viewer-tl { display: none; }
 .chip-live { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: rgba(6, 8, 26, 0.6); backdrop-filter: blur(5px); font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 0.12em; }
 .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent); }
 .chip-rec { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: color-mix(in srgb, var(--err) 26%, rgba(6, 8, 26, 0.6)); backdrop-filter: blur(5px); font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 0.06em; }

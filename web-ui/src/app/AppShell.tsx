@@ -163,7 +163,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [onKey]);
 
   return (
-    <div className="shell">
+    // .app-frame is the named CSS container ("appframe") that every desktop
+    // @container rule (side rail, activity feed, grid columns) is gated on.
+    <div className="app-frame">
+      <div className="shell">
       <aside className={`sidebar ${collapsed ? "is-collapsed" : ""}`}>
         <Brand onClick={() => navigate("/")} />
         <nav className="side-nav">
@@ -239,9 +242,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         })}
       </nav>
 
-      <CommandPalette open={palOpen} onClose={() => setPalOpen(false)} onOpenWall={() => setWallOpen(true)} />
-      {wallOpen && <VideoWall onClose={() => setWallOpen(false)} />}
-      <BootOverlay />
+        <CommandPalette open={palOpen} onClose={() => setPalOpen(false)} onOpenWall={() => setWallOpen(true)} />
+        {wallOpen && <VideoWall onClose={() => setWallOpen(false)} />}
+        <BootOverlay />
+      </div>
     </div>
   );
 }

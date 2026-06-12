@@ -172,7 +172,7 @@ class SyntheticCameraSource(CameraSource):
 
 
 def use_synthetic() -> bool:
-    return (os.environ.get("TAILCAM_SYNTHETIC") or os.environ.get("ANYCAM_SYNTHETIC")) == "1"
+    return os.environ.get("TAILCAM_SYNTHETIC") == "1"
 
 
 def create_source(descriptor: CameraDescriptor, props: CameraProperties) -> CameraSource:

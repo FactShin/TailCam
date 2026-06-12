@@ -103,10 +103,10 @@ install_tailcam() {
 
 link_cli() {
     # Put `tailcam` on PATH via ~/.local/bin (on PATH for most shells).
-    # Keep an `anycam` alias for muscle memory / old docs.
     mkdir -p "$HOME/.local/bin"
     ln -sf "${VENV_DIR}/bin/tailcam" "$HOME/.local/bin/tailcam"
-    ln -sf "${VENV_DIR}/bin/tailcam" "$HOME/.local/bin/anycam"
+    # Remove a stale `anycam` symlink from a pre-rename install.
+    rm -f "$HOME/.local/bin/anycam"
     case ":$PATH:" in
         *":$HOME/.local/bin:"*) ;;
         *) warn "Add ~/.local/bin to your PATH to use 'tailcam' directly (e.g. add to ~/.bashrc): export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;

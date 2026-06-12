@@ -2,12 +2,12 @@
 
 All paths can be overridden with ``TAILCAM_DATA_DIR`` and ``TAILCAM_CONFIG`` so
 that the systemd/launchd service and the test suite can point TailCam at an
-isolated directory. The old ``ANYCAM_*`` variables are still honored so
-pre-rename service units keep working.
+isolated directory.
 
-Rename migration: installs made under the AnyCam name keep their existing
-config/data directories (and anycam.db) — we fall back to the legacy location
-whenever it exists and the TailCam one doesn't.
+Data from a pre-rename *AnyCam* install is brought across by an explicit,
+one-time migration (see :mod:`tailcam.migrate`) — these functions always return
+the TailCam location. The ``legacy_*`` helpers expose the old AnyCam paths so
+the migration can find what to move.
 """
 
 from __future__ import annotations
@@ -30,64 +30,45 @@ def _is_windows() -> bool:
     return sys.platform == "win32"
 
 
-def _env(*names: str) -> str | None:
-    for name in names:
-        value = os.environ.get(name)
-        if value:
-            return value
-    return None
+def _config_base() -> Path:
+    if _is_windows():
+        return Path(os.environ.get("APPDATA") or (Path.home() / "AppData" / "Roaming"))
+    if _is_macos():
+        return Path.home() / "Library" / "Application Support"
+    return Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config"))
 
 
-# Markers that prove a directory is actually in use (mere existence isn't
-# enough: the installers create e.g. ~/.local/share/tailcam/ for the venv,
-# which must not steal the data dir away from a legacy AnyCam install).
-_CONFIG_MARKERS = ("config.toml", "config.toml.bad")
-_DATA_MARKERS = ("tailcam.db", "anycam.db", "media")
+def _data_base() -> Path:
+    if _is_windows():
+        return Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
+    if _is_macos():
+        return Path.home() / "Library" / "Application Support"
+    return Path(os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share"))
 
 
-def _prefer_existing(new: Path, legacy: Path, markers: tuple[str, ...]) -> Path:
-    """Use the TailCam dir if it holds real content, else a populated
-    pre-rename AnyCam dir, else default to the TailCam dir."""
-    if any((new / m).exists() for m in markers):
-        return new
-    if any((legacy / m).exists() for m in markers):
-        return legacy
-    return new
+def _app_name() -> str:
+    return APP_NAME_MAC if (_is_windows() or _is_macos()) else APP_NAME
 
 
 def config_dir() -> Path:
-    override = _env("TAILCAM_CONFIG_DIR", "ANYCAM_CONFIG_DIR")
+    override = os.environ.get("TAILCAM_CONFIG_DIR")
     if override:
         return Path(override).expanduser()
-    if _is_windows():
-        base = Path(os.environ.get("APPDATA") or (Path.home() / "AppData" / "Roaming"))
-        return _prefer_existing(base / APP_NAME_MAC, base / LEGACY_APP_NAME_MAC, _CONFIG_MARKERS)
-    if _is_macos():
-        base = Path.home() / "Library" / "Application Support"
-        return _prefer_existing(base / APP_NAME_MAC, base / LEGACY_APP_NAME_MAC, _CONFIG_MARKERS)
-    base = Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config"))
-    return _prefer_existing(base / APP_NAME, base / LEGACY_APP_NAME, _CONFIG_MARKERS)
+    return _config_base() / _app_name()
 
 
 def config_file() -> Path:
-    override = _env("TAILCAM_CONFIG", "ANYCAM_CONFIG")
+    override = os.environ.get("TAILCAM_CONFIG")
     if override:
         return Path(override).expanduser()
     return config_dir() / "config.toml"
 
 
 def data_dir() -> Path:
-    override = _env("TAILCAM_DATA_DIR", "ANYCAM_DATA_DIR")
+    override = os.environ.get("TAILCAM_DATA_DIR")
     if override:
         return Path(override).expanduser()
-    if _is_windows():
-        base = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
-        return _prefer_existing(base / APP_NAME_MAC, base / LEGACY_APP_NAME_MAC, _DATA_MARKERS)
-    if _is_macos():
-        base = Path.home() / "Library" / "Application Support"
-        return _prefer_existing(base / APP_NAME_MAC, base / LEGACY_APP_NAME_MAC, _DATA_MARKERS)
-    base = Path(os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share"))
-    return _prefer_existing(base / APP_NAME, base / LEGACY_APP_NAME, _DATA_MARKERS)
+    return _data_base() / _app_name()
 
 
 def media_dir() -> Path:
@@ -99,15 +80,30 @@ def thumbnails_dir() -> Path:
 
 
 def database_file() -> Path:
-    # Pre-rename installs keep their database (don't orphan media/event history).
-    legacy = data_dir() / "anycam.db"
-    if legacy.exists():
-        return legacy
     return data_dir() / "tailcam.db"
 
 
 def pid_file() -> Path:
     return data_dir() / "tailcam.pid"
+
+
+# --- pre-rename AnyCam locations (used only by the migration) ---------------
+
+
+def _legacy_app_name() -> str:
+    return LEGACY_APP_NAME_MAC if (_is_windows() or _is_macos()) else LEGACY_APP_NAME
+
+
+def legacy_config_dir() -> Path:
+    return _config_base() / _legacy_app_name()
+
+
+def legacy_data_dir() -> Path:
+    return _data_base() / _legacy_app_name()
+
+
+def legacy_database_file() -> Path:
+    return legacy_data_dir() / "anycam.db"
 
 
 def ensure_dirs() -> None:

@@ -42,7 +42,7 @@ class Peer:
 
 def resolve_local_host(tailscale: TailscaleClient) -> str:
     """This node's identity — TAILCAM_HOST override, else MagicDNS name, else hostname."""
-    override = os.environ.get("TAILCAM_HOST") or os.environ.get("ANYCAM_HOST")
+    override = os.environ.get("TAILCAM_HOST")
     if override:
         return override
     try:
@@ -60,7 +60,7 @@ def _key_for(host: str) -> str:
 
 
 def _env_static_peers() -> list[str]:
-    raw = os.environ.get("TAILCAM_PEERS") or os.environ.get("ANYCAM_PEERS", "")
+    raw = os.environ.get("TAILCAM_PEERS", "")
     return [p.strip() for p in raw.split(",") if p.strip()]
 
 
