@@ -2,13 +2,10 @@
   TailCam installer for Windows.
 
   Run:
-    irm https://raw.githubusercontent.com/factshin/anycam/main/install.ps1 | iex
+    irm https://raw.githubusercontent.com/factshin/tailcam/main/install.ps1 | iex
 
   Installs TailCam into a per-user virtualenv, registers a logon Scheduled Task,
   and (when Tailscale is running) exposes the dashboard over your tailnet.
-
-  (The GitHub repo is still named "anycam" — rename pending; the URL above will
-  redirect once it changes.)
 #>
 [CmdletBinding()]
 param(
@@ -19,7 +16,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Repo = "factshin/anycam"
+$Repo = "factshin/tailcam"
 $VenvDir = Join-Path $env:LOCALAPPDATA "TailCam\venv"
 $LegacyVenvDir = Join-Path $env:LOCALAPPDATA "AnyCam\venv"
 

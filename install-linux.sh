@@ -1,19 +1,16 @@
 #!/usr/bin/env bash
 # TailCam installer for Linux (Debian/Ubuntu/Raspberry Pi OS and friends).
 #
-#   curl -fsSL https://raw.githubusercontent.com/factshin/anycam/main/install-linux.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/factshin/tailcam/main/install-linux.sh | bash
 #
 # Installs TailCam into a per-user virtualenv, installs the libraries numpy/OpenCV
 # need, registers a systemd --user service (with lingering so it survives reboot),
 # and exposes the dashboard over Tailscale when available.
-#
-# (The GitHub repo is still named "anycam" — rename pending; the URL above will
-# redirect once it changes.)
 set -eu
 
-REPO="${TAILCAM_REPO:-${ANYCAM_REPO:-factshin/anycam}}"
-REF="${TAILCAM_REF:-${ANYCAM_REF:-main}}"
-PORT="${TAILCAM_PORT:-${ANYCAM_PORT:-8088}}"
+REPO="${TAILCAM_REPO:-factshin/tailcam}"
+REF="${TAILCAM_REF:-main}"
+PORT="${TAILCAM_PORT:-8088}"
 DO_SERVICE=1
 DO_TAILSCALE=1
 VENV_DIR="${HOME}/.local/share/tailcam/venv"
