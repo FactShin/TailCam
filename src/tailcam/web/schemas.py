@@ -116,10 +116,11 @@ class TimelapseInfo(BaseModel):
     height: int = 0
     has_video: bool = False
     has_thumb: bool = False
-    # Smoothed (ffmpeg-interpolated) variant.
+    # Smoothed (interpolated) variant.
     smooth_state: str = "none"  # none | processing | complete | error
     has_smooth: bool = False
     smooth_size_bytes: int = 0
+    smooth_engine: str = ""  # ffmpeg | rife
     host: str = ""
     proxy_prefix: str = ""
 
@@ -128,13 +129,26 @@ class TimelapseSmoothRequest(BaseModel):
     target_fps: int | None = None
     interpolate: bool | None = None
     deflicker: bool | None = None
+    engine: str | None = None  # ffmpeg | rife (default from config)
 
 
-class PostprocessInfo(BaseModel):
+class EngineInfo(BaseModel):
+    id: str  # ffmpeg | rife
+    label: str
     available: bool
     source: str  # system | bundled | missing
     version: str | None = None
+
+
+class PostprocessInfo(BaseModel):
+    available: bool  # at least one engine usable (ffmpeg is always there)
+    default_engine: str  # ffmpeg | rife
     default_target_fps: int = 60
+    engines: list[EngineInfo] = []
+
+
+class PostprocessSettings(BaseModel):
+    default_engine: str | None = None  # ffmpeg | rife
 
 
 class SystemInfo(BaseModel):

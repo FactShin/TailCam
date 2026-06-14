@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useCameras } from "../api/hooks";
-import { IconCamera, IconFilm, IconGrid, IconMotion, IconSearch, IconSettings, IconTimelapse, IconWall } from "../icons";
+import { IconCamera, IconChip, IconFilm, IconGrid, IconMotion, IconSearch, IconSettings, IconTimelapse, IconWall } from "../icons";
 import { cameraPath } from "../lib/nav";
 
 interface PalItem {
@@ -35,6 +35,7 @@ export function CommandPalette({
       { kind: "screen", id: "/gallery", label: "Gallery", icon: IconFilm, meta: "screen", to: "/gallery" },
       { kind: "screen", id: "/events", label: "Events", icon: IconMotion, meta: "screen", to: "/events" },
       { kind: "screen", id: "/timelapse", label: "Timelapse", icon: IconTimelapse, meta: "screen", to: "/timelapse" },
+      { kind: "screen", id: "/models", label: "Models", icon: IconChip, meta: "screen", to: "/models" },
       { kind: "screen", id: "/settings", label: "Settings", icon: IconSettings, meta: "screen", to: "/settings" },
     ];
     const cams: PalItem[] = cameras.map((c) => ({

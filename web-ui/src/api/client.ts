@@ -154,6 +154,9 @@ export const smoothTimelapse = (prefix: string, tlId: number, body: TimelapseSmo
 
 export const getPostprocess = () => jsonFetch<PostprocessInfo>("/api/postprocess");
 
+export const setPostprocess = (body: { default_engine?: string }) =>
+  jsonFetch<PostprocessInfo>("/api/postprocess", { method: "POST", body: JSON.stringify(body) });
+
 export const timelapseFileUrl = (prefix: string, tlId: number) => `${prefix}/timelapse/${tlId}/file`;
 export const timelapseSmoothUrl = (prefix: string, tlId: number) =>
   `${prefix}/timelapse/${tlId}/smooth`;

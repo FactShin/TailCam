@@ -22,7 +22,13 @@ from tailcam.logging_setup import get_logger
 from tailcam.persistence.models import TimelapseRecord
 from tailcam.persistence.store import Store
 from tailcam.streaming.encoder import encode_jpeg
-from tailcam.timelapse.ffmpeg import build_smooth_command, ffmpeg_path, run_ffmpeg
+from tailcam.timelapse.ffmpeg import (
+    build_encode_command,
+    build_smooth_command,
+    ffmpeg_path,
+    run_ffmpeg,
+)
+from tailcam.timelapse.rife import build_rife_command, rife_available, rife_path, run_rife
 from tailcam.timelapse.worker import TimelapseCaptureWorker
 
 log = get_logger(__name__)
@@ -168,9 +174,11 @@ class TimelapseService:
         target_fps: int | None = None,
         interpolate: bool | None = None,
         deflicker: bool | None = None,
+        engine: str | None = None,
     ) -> TimelapseRecord | None:
-        """Kick off a background ffmpeg pass that turns the captured frames into
-        smooth, flowing motion. Re-runnable; the source frames are kept."""
+        """Kick off a background pass that turns the captured frames into smooth,
+        flowing motion. ``engine`` is "ffmpeg" or "rife"; a failed RIFE run falls
+        back to ffmpeg. Re-runnable; the source frames are kept."""
         record = self._store.get_timelapse(tl_id)
         if record is None:
             return None
@@ -185,16 +193,21 @@ class TimelapseService:
         tfps = target_fps or cfg.smooth_target_fps
         interp = cfg.smooth_interpolate if interpolate is None else interpolate
         defl = cfg.smooth_deflicker if deflicker is None else deflicker
+        chosen = engine or cfg.smooth_engine
+        if chosen == "rife" and not rife_available(cfg.rife_path):
+            chosen = "ffmpeg"  # not installed → fall back before we even start
         self._store.update_timelapse(tl_id, smooth_state="processing", smooth_path=None)
         threading.Thread(
             target=self._smooth_job,
-            args=(tl_id, tfps, interp, defl),
+            args=(tl_id, tfps, interp, defl, chosen),
             name=f"timelapse-smooth-{tl_id}",
             daemon=True,
         ).start()
         return self.get(tl_id)
 
-    def _smooth_job(self, tl_id: int, target_fps: int, interpolate: bool, deflicker: bool) -> None:
+    def _smooth_job(
+        self, tl_id: int, target_fps: int, interpolate: bool, deflicker: bool, engine: str
+    ) -> None:
         try:
             record = self._store.get_timelapse(tl_id)
             exe = ffmpeg_path()
@@ -203,25 +216,72 @@ class TimelapseService:
                 return
             frames_dir = Path(record.frames_dir)
             out = frames_dir.parent / "smooth.mp4"
-            cmd = build_smooth_command(
-                exe, frames_dir, record.output_fps, out, target_fps, interpolate, deflicker
-            )
-            if run_ffmpeg(cmd) and out.exists():
+
+            used = "ffmpeg"
+            ok = False
+            if engine == "rife":
+                ok = self._smooth_with_rife(record, frames_dir, out, target_fps, deflicker, exe)
+                if ok:
+                    used = "rife"
+                else:
+                    log.warning("timelapse %s: RIFE failed, falling back to ffmpeg", tl_id)
+            if not ok:
+                cmd = build_smooth_command(
+                    exe, frames_dir, record.output_fps, out, target_fps, interpolate, deflicker
+                )
+                ok = run_ffmpeg(cmd) and out.exists()
+
+            if ok and out.exists():
                 self._store.update_timelapse(
                     tl_id,
                     smooth_state="complete",
                     smooth_path=str(out),
                     smooth_size_bytes=out.stat().st_size,
+                    smooth_engine=used,
                 )
-                log.info("timelapse %s smoothed -> %s", tl_id, out.name)
+                log.info("timelapse %s smoothed via %s -> %s", tl_id, used, out.name)
             else:
                 self._store.update_timelapse(tl_id, smooth_state="error")
-        except Exception as exc:  # pragma: no cover - ffmpeg failure
+        except Exception as exc:  # pragma: no cover - encoder failure
             log.exception("timelapse %s smoothing failed: %s", tl_id, exc)
             self._store.update_timelapse(tl_id, smooth_state="error")
         finally:
             with self._lock:
                 self._smoothing.discard(tl_id)
+
+    def _smooth_with_rife(
+        self, record, frames_dir: Path, out: Path, target_fps: int, deflicker: bool, ffmpeg: str
+    ) -> bool:
+        """RIFE pipeline: interpolate frames with rife-ncnn-vulkan, then encode.
+        Keeps the original cadence's wall-clock duration by scaling fps with the
+        interpolation multiplier. Returns False (→ ffmpeg fallback) on any error."""
+        rife = rife_path(self._config.rife_path)
+        if rife is None:
+            return False
+        src_count = len(list(frames_dir.glob("*.jpg")))
+        if src_count < 2:
+            return False
+        multiplier = max(2, round(target_fps / max(1, record.output_fps)))
+        target_frames = src_count * multiplier
+        encode_fps = record.output_fps * multiplier
+        interp_dir = frames_dir.parent / "interp"
+        if interp_dir.exists():
+            shutil.rmtree(interp_dir, ignore_errors=True)
+        interp_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            cmd = build_rife_command(
+                rife, frames_dir, interp_dir, target_frames, self._config.rife_model
+            )
+            if not run_rife(cmd, cwd=Path(rife).parent):
+                return False
+            if not any(interp_dir.iterdir()):
+                return False
+            # RIFE writes PNGs; encode them at the multiplied fps.
+            glob = str(interp_dir / "*.png")
+            enc = build_encode_command(ffmpeg, glob, encode_fps, out, deflicker)
+            return run_ffmpeg(enc) and out.exists()
+        finally:
+            shutil.rmtree(interp_dir, ignore_errors=True)
 
     # -- queries -----------------------------------------------------------
     def get(self, tl_id: int) -> TimelapseRecord | None:

@@ -12,12 +12,14 @@ from tailcam.web.schemas import (
     AIInfo,
     CameraInfo,
     CameraSettingsUpdate,
+    EngineInfo,
     HostInfo,
     MediaCreatedResponse,
     MediaInfo,
     MotionEventInfo,
     OkResponse,
     PostprocessInfo,
+    PostprocessSettings,
     SystemInfo,
     TimelapseInfo,
     TimelapseSmoothRequest,
@@ -300,6 +302,7 @@ def _timelapse_info(ctx: AppContext, r) -> TimelapseInfo:
         smooth_state=r.smooth_state,
         has_smooth=bool(r.smooth_path),
         smooth_size_bytes=r.smooth_size_bytes,
+        smooth_engine=r.smooth_engine,
         host=ctx.local_host,
         proxy_prefix="",
     )
@@ -371,7 +374,11 @@ def smooth_timelapse(
         raise HTTPException(status_code=503, detail="ffmpeg not available")
     req = req or TimelapseSmoothRequest()
     record = ctx.timelapse.smooth(
-        tl_id, target_fps=req.target_fps, interpolate=req.interpolate, deflicker=req.deflicker
+        tl_id,
+        target_fps=req.target_fps,
+        interpolate=req.interpolate,
+        deflicker=req.deflicker,
+        engine=req.engine,
     )
     if record is None:
         raise HTTPException(status_code=404, detail="timelapse not found or has no frames")
@@ -385,18 +392,54 @@ def delete_timelapse(tl_id: int, ctx: AppContext = Depends(get_context)) -> OkRe
     return OkResponse(detail="deleted")
 
 
+def _postprocess_info(ctx: AppContext) -> PostprocessInfo:
+    from tailcam.timelapse.ffmpeg import ffmpeg_source, ffmpeg_version
+    from tailcam.timelapse.rife import rife_available
+
+    tl = ctx.config.timelapse
+    ff_source = ffmpeg_source()
+    rife_ok = rife_available(tl.rife_path)
+    engines = [
+        EngineInfo(
+            id="ffmpeg",
+            label="ffmpeg (minterpolate)",
+            available=ff_source != "missing",
+            source=ff_source,
+            version=ffmpeg_version(),
+        ),
+        EngineInfo(
+            id="rife",
+            label="RIFE (rife-ncnn-vulkan)",
+            available=rife_ok,
+            source="system" if rife_ok else "missing",
+            version=None,
+        ),
+    ]
+    return PostprocessInfo(
+        available=any(e.available for e in engines),
+        default_engine=tl.smooth_engine,
+        default_target_fps=tl.smooth_target_fps,
+        engines=engines,
+    )
+
+
 @router.get("/postprocess", response_model=PostprocessInfo)
 def postprocess_info(ctx: AppContext = Depends(get_context)) -> PostprocessInfo:
-    """ffmpeg availability for the smoothing feature (dashboard status panel)."""
-    from tailcam.timelapse.ffmpeg import ffmpeg_source, ffmpeg_version
+    """Interpolation engines available for timelapse smoothing (status page)."""
+    return _postprocess_info(ctx)
 
-    source = ffmpeg_source()
-    return PostprocessInfo(
-        available=source != "missing",
-        source=source,
-        version=ffmpeg_version(),
-        default_target_fps=ctx.config.timelapse.smooth_target_fps,
-    )
+
+@router.post("/postprocess", response_model=PostprocessInfo)
+def set_postprocess(
+    settings: PostprocessSettings, ctx: AppContext = Depends(get_context)
+) -> PostprocessInfo:
+    """Set the default smoothing engine (persisted to config)."""
+    if settings.default_engine is not None:
+        if settings.default_engine not in ("ffmpeg", "rife"):
+            raise HTTPException(status_code=400, detail="engine must be ffmpeg or rife")
+        ctx.config.timelapse.smooth_engine = settings.default_engine
+        ctx.config.save()
+    return _postprocess_info(ctx)
 
 
 @router.get("/system", response_model=SystemInfo)
