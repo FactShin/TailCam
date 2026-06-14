@@ -68,4 +68,5 @@ class TimelapseRecord:
     smooth_state: str = "none"  # none | processing | complete | error
     smooth_path: str | None = None
     smooth_size_bytes: int = 0
+    smooth_engine: str = ""  # "ffmpeg" | "rife" — which engine produced it
 

@@ -228,4 +228,126 @@ def test_smooth_api(client, context):
     )
     info = client.get(f"/api/timelapse/{tl_id}").json()
     assert info["has_smooth"]
+    assert info["smooth_engine"] == "ffmpeg"
     assert client.get(f"/timelapse/{tl_id}/smooth").status_code == 200
+
+
+# -- RIFE engine -----------------------------------------------------------
+
+
+def test_rife_locator(monkeypatch, tmp_path):
+    from tailcam.timelapse import rife
+
+    monkeypatch.delenv("TAILCAM_RIFE", raising=False)
+    monkeypatch.setattr(rife.shutil, "which", lambda _: None)
+    monkeypatch.setattr(rife.sys, "platform", "linux")
+    monkeypatch.setattr(rife.Path, "home", classmethod(lambda cls: tmp_path))
+    assert rife.rife_path() is None
+    assert rife.rife_available() is False
+
+    # explicit env override wins
+    fake = tmp_path / "rife-ncnn-vulkan"
+    fake.write_text("")
+    monkeypatch.setenv("TAILCAM_RIFE", str(fake))
+    assert rife.rife_path() == str(fake)
+    assert rife.rife_available() is True
+
+
+def test_build_rife_command():
+    from pathlib import Path
+
+    from tailcam.timelapse.rife import build_rife_command
+
+    cmd = build_rife_command("/bin/rife", Path("/in"), Path("/out"), 64, model="rife-v4.6")
+    assert cmd[cmd.index("-i") + 1] == "/in"
+    assert cmd[cmd.index("-o") + 1] == "/out"
+    assert cmd[cmd.index("-n") + 1] == "64"
+    assert cmd[cmd.index("-m") + 1] == "rife-v4.6"
+
+
+def test_build_encode_command_globs_pngs():
+    from pathlib import Path
+
+    from tailcam.timelapse.ffmpeg import build_encode_command
+
+    cmd = build_encode_command("ffmpeg", "/interp/*.png", 32, Path("/o.mp4"), deflicker=True)
+    assert "glob" in cmd
+    assert "/interp/*.png" in cmd
+    assert "deflicker=mode=pm:size=10" in cmd
+    assert "minterpolate" not in " ".join(cmd)
+
+
+def _capture_complete(service, context):
+    cam_id = _synthetic_id(context)
+    rec = service.start(cam_id, interval_seconds=0.1, output_fps=8)
+    assert _wait(lambda: service.get(rec.id).frames_captured >= 4)
+    service.stop(rec.id)
+    assert _wait(lambda: service.get(rec.id).state == "complete")
+    return rec.id
+
+
+def test_smooth_rife_pipeline(service, context, monkeypatch):
+    from pathlib import Path
+
+    import cv2
+    import numpy as np
+
+    from tailcam.timelapse import service as svc_mod
+
+    tl_id = _capture_complete(service, context)
+
+    monkeypatch.setattr(svc_mod, "rife_available", lambda *_: True)
+    monkeypatch.setattr(svc_mod, "rife_path", lambda *_: "/usr/bin/rife-ncnn-vulkan")
+
+    def fake_run_rife(cmd, cwd=None, timeout=3600.0):
+        out_dir = Path(cmd[cmd.index("-o") + 1])
+        n = int(cmd[cmd.index("-n") + 1])
+        for i in range(min(n, 16)):
+            img = (np.random.rand(120, 160, 3) * 255).astype("uint8")
+            cv2.imwrite(str(out_dir / f"{i:08d}.png"), img)
+        return True
+
+    monkeypatch.setattr(svc_mod, "run_rife", fake_run_rife)
+
+    service.smooth(tl_id, engine="rife", target_fps=24)
+    assert _wait(lambda: service.get(tl_id).smooth_state == "complete", timeout=40)
+    done = service.get(tl_id)
+    assert done.smooth_engine == "rife"
+    assert done.smooth_path and Path(done.smooth_path).exists()
+
+
+def test_smooth_rife_unavailable_falls_back(service, context, monkeypatch):
+    from tailcam.timelapse import service as svc_mod
+
+    tl_id = _capture_complete(service, context)
+    monkeypatch.setattr(svc_mod, "rife_available", lambda *_: False)
+    service.smooth(tl_id, engine="rife")
+    assert _wait(lambda: service.get(tl_id).smooth_state == "complete", timeout=40)
+    assert service.get(tl_id).smooth_engine == "ffmpeg"
+
+
+def test_smooth_rife_run_failure_falls_back(service, context, monkeypatch):
+    from tailcam.timelapse import service as svc_mod
+
+    tl_id = _capture_complete(service, context)
+    monkeypatch.setattr(svc_mod, "rife_available", lambda *_: True)
+    monkeypatch.setattr(svc_mod, "rife_path", lambda *_: "/usr/bin/rife-ncnn-vulkan")
+    monkeypatch.setattr(svc_mod, "run_rife", lambda *a, **k: False)  # RIFE crashes
+    service.smooth(tl_id, engine="rife")
+    assert _wait(lambda: service.get(tl_id).smooth_state == "complete", timeout=40)
+    assert service.get(tl_id).smooth_engine == "ffmpeg"
+
+
+def test_postprocess_engines_and_default(client, context):
+    pp = client.get("/api/postprocess").json()
+    ids = {e["id"] for e in pp["engines"]}
+    assert ids == {"ffmpeg", "rife"}
+    assert next(e for e in pp["engines"] if e["id"] == "ffmpeg")["available"] is True
+    assert pp["default_engine"] == "ffmpeg"
+
+    # switch the default engine; persists to config
+    r = client.post("/api/postprocess", json={"default_engine": "rife"})
+    assert r.status_code == 200
+    assert r.json()["default_engine"] == "rife"
+    assert context.config.timelapse.smooth_engine == "rife"
+    assert client.post("/api/postprocess", json={"default_engine": "bogus"}).status_code == 400

@@ -101,6 +101,30 @@ def build_smooth_command(
     ]
 
 
+def build_encode_command(
+    ffmpeg: str,
+    input_glob: str,
+    fps: int,
+    out_path: Path,
+    deflicker: bool,
+) -> list[str]:
+    """Encode an already-prepared frame sequence (e.g. RIFE output) to mp4 at
+    ``fps``. No interpolation here — the frames are the final cadence."""
+    cmd = [
+        ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+        "-framerate", str(max(1, fps)),
+        "-pattern_type", "glob", "-i", input_glob,
+    ]
+    if deflicker:
+        cmd += ["-vf", "deflicker=mode=pm:size=10"]
+    cmd += [
+        "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+        "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+        str(out_path),
+    ]
+    return cmd
+
+
 def run_ffmpeg(cmd: list[str], timeout: float = 1800.0) -> bool:
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)

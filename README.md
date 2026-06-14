@@ -221,6 +221,10 @@ the roadmap (notifications, 3D-print failure detection).
   a live camera grid grouped by device, a video wall, a command palette (Cmd/Ctrl+K), a
   mobile-first camera view with pinch/zoom, gallery, and motion events. Built and shipped inside
   the package; see [`web-ui/`](web-ui/).
+- **Timelapse + smoothing** — capture a timelapse (great for 3D prints), then "Smooth" it into
+  flowing motion. The interpolation engine is selectable on the **Models** page: a bundled **ffmpeg**
+  (works everywhere) or an optional GPU **RIFE** model (`rife-ncnn-vulkan`) for higher quality, with
+  automatic fallback to ffmpeg.
 - **Multi-host aggregation** — see every camera across all your tailnet devices from any one of them.
 - **Multi-camera** — auto-detects connected webcams; name them and view them in a grid.
 - **Resolution, zoom & pan** — set capture resolution; per-viewer digital zoom + pan;
