@@ -1,21 +1,24 @@
 import { useEffect, useState } from "react";
 
-import { timelapseFileUrl, timelapseThumbUrl } from "../api/client";
+import { timelapseFileUrl, timelapseSmoothUrl, timelapseThumbUrl } from "../api/client";
 import {
   useCameras,
   useDeleteTimelapse,
   useEncodeTimelapse,
+  usePostprocess,
+  useSmoothTimelapse,
   useStartTimelapse,
   useStopTimelapse,
   useTimelapses,
 } from "../api/hooks";
 import { useToast } from "../components/toast";
-import { Button, ConfirmDialog, Spinner } from "../components/ui";
+import { Button, ConfirmDialog, Segmented, Spinner } from "../components/ui";
 import {
   IconBolt,
   IconClose,
   IconDownload,
   IconPlay,
+  IconSparkle,
   IconStop,
   IconTimelapse,
   IconTrash,
@@ -41,14 +44,22 @@ export function Timelapse() {
   const start = useStartTimelapse();
   const stop = useStopTimelapse();
   const encode = useEncodeTimelapse();
+  const smooth = useSmoothTimelapse();
   const del = useDeleteTimelapse();
+  const postprocess = usePostprocess().data;
 
   const [camId, setCamId] = useState("");
   const [interval, setIntervalSec] = useState(2);
   const [fps, setFps] = useState(30);
   const [name, setName] = useState("");
   const [play, setPlay] = useState<TimelapseInfo | null>(null);
+  const [playSmooth, setPlaySmooth] = useState(true);
   const [confirm, setConfirm] = useState<TimelapseInfo | null>(null);
+
+  // Default the player to the smoothed cut when one exists.
+  useEffect(() => {
+    if (play) setPlaySmooth(play.has_smooth);
+  }, [play]);
 
   // tick so live "capturing" durations advance each second between refetches
   const [, setTick] = useState(0);
@@ -97,6 +108,15 @@ export function Timelapse() {
       toast.ok("Encoding…");
     } catch {
       toast.err("Could not encode");
+    }
+  };
+
+  const onSmooth = async (t: TimelapseInfo) => {
+    try {
+      await smooth.mutateAsync({ prefix: t.proxy_prefix, id: t.id, params: {} });
+      toast.ok("Smoothing — interpolating frames…");
+    } catch {
+      toast.err("Could not start smoothing");
     }
   };
 
@@ -244,6 +264,9 @@ export function Timelapse() {
                   )}
                   {playable && <span className="media-play"><IconPlay size={20} /></span>}
                   <span className={`badge tl-thumb-badge ${b.cls}`}>{b.label}</span>
+                  {t.smooth_state === "complete" && (
+                    <span className="badge badge-accent tl-smooth-badge"><IconSparkle size={11} /> Smooth</span>
+                  )}
                 </div>
                 <div className="tl-body">
                   <span className="tl-name">{t.name}</span>
@@ -264,6 +287,20 @@ export function Timelapse() {
                       Encode
                     </Button>
                   )}
+                  {playable && t.smooth_state === "processing" && (
+                    <span className="tl-encoding mono"><Spinner size={13} /> smoothing…</span>
+                  )}
+                  {playable && postprocess?.available && t.smooth_state !== "processing" && t.smooth_state !== "complete" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      icon={<IconSparkle size={14} />}
+                      title="Interpolate frames into smooth motion"
+                      onClick={() => onSmooth(t)}
+                    >
+                      {t.smooth_state === "error" ? "Retry smooth" : "Smooth"}
+                    </Button>
+                  )}
                   <Button variant="danger" size="sm" icon={<IconTrash size={14} />} onClick={() => setConfirm(t)}>
                     Delete
                   </Button>
@@ -274,39 +311,56 @@ export function Timelapse() {
         </div>
       )}
 
-      {play && (
-        <div className="lb-root" role="dialog" aria-modal="true" aria-label="Timelapse player">
-          <div className="lb-backdrop" onClick={() => setPlay(null)} />
-          <button className="lb-x" onClick={() => setPlay(null)} aria-label="Close"><IconClose size={20} /></button>
-          <div className="lb-stage">
-            <div className="lb-media">
-              <video
-                className="lb-canvas"
-                src={timelapseFileUrl(play.proxy_prefix, play.id)}
-                poster={play.has_thumb ? timelapseThumbUrl(play.proxy_prefix, play.id) : undefined}
-                controls
-                autoPlay
-                loop
-                playsInline
-              />
-            </div>
-            <div className="lb-info">
-              <div className="lb-info-l">
-                <span className="lb-cam">{play.name}</span>
-                <span className="lb-sub mono">
-                  {camName(play.camera_id)} · {play.frames_captured} frames · {videoSeconds(play).toFixed(1)}s @ {play.output_fps}fps · {fmtBytes(play.size_bytes)}
-                </span>
+      {play && (() => {
+        const showSmooth = playSmooth && play.has_smooth;
+        const videoUrl = showSmooth
+          ? timelapseSmoothUrl(play.proxy_prefix, play.id)
+          : timelapseFileUrl(play.proxy_prefix, play.id);
+        return (
+          <div className="lb-root" role="dialog" aria-modal="true" aria-label="Timelapse player">
+            <div className="lb-backdrop" onClick={() => setPlay(null)} />
+            <button className="lb-x" onClick={() => setPlay(null)} aria-label="Close"><IconClose size={20} /></button>
+            <div className="lb-stage">
+              <div className="lb-media">
+                <video
+                  key={videoUrl}
+                  className="lb-canvas"
+                  src={videoUrl}
+                  poster={play.has_thumb ? timelapseThumbUrl(play.proxy_prefix, play.id) : undefined}
+                  controls
+                  autoPlay
+                  loop
+                  playsInline
+                />
               </div>
-              <div className="lb-actions">
-                <a className="btn btn-outline btn-sm" href={timelapseFileUrl(play.proxy_prefix, play.id)} download>
-                  <span className="btn-ic"><IconDownload size={15} /></span><span>Download</span>
-                </a>
-                <Button variant="danger" size="sm" icon={<IconTrash size={15} />} onClick={() => setConfirm(play)}>Delete</Button>
+              <div className="lb-info">
+                <div className="lb-info-l">
+                  <span className="lb-cam">{play.name}</span>
+                  <span className="lb-sub mono">
+                    {camName(play.camera_id)} · {play.frames_captured} frames · {videoSeconds(play).toFixed(1)}s @ {play.output_fps}fps · {fmtBytes(showSmooth ? play.smooth_size_bytes : play.size_bytes)}
+                  </span>
+                  {play.has_smooth && (
+                    <div className="tl-player-toggle">
+                      <Segmented
+                        ariaLabel="Playback version"
+                        value={showSmooth ? "smooth" : "original"}
+                        options={[{ value: "original", label: "Original" }, { value: "smooth", label: "Smooth" }]}
+                        onChange={(v) => setPlaySmooth(v === "smooth")}
+                      />
+                    </div>
+                  )}
+                </div>
+                <div className="lb-actions">
+                  <a className="btn btn-outline btn-sm" href={videoUrl} download>
+                    <span className="btn-ic"><IconDownload size={15} /></span><span>Download</span>
+                  </a>
+                  <Button variant="danger" size="sm" icon={<IconTrash size={15} />} onClick={() => setConfirm(play)}>Delete</Button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       <ConfirmDialog
         open={!!confirm}

@@ -80,7 +80,10 @@ _SCHEMA = [
         thumb_path TEXT,
         size_bytes INTEGER NOT NULL DEFAULT 0,
         width INTEGER NOT NULL DEFAULT 0,
-        height INTEGER NOT NULL DEFAULT 0
+        height INTEGER NOT NULL DEFAULT 0,
+        smooth_state TEXT NOT NULL DEFAULT 'none',
+        smooth_path TEXT,
+        smooth_size_bytes INTEGER NOT NULL DEFAULT 0
     );
     """,
     """
@@ -88,7 +91,7 @@ _SCHEMA = [
         ON timelapses (camera_id, created_ts DESC);
     """,
 ]
-_CURRENT_VERSION = 3
+_CURRENT_VERSION = 4
 
 # Columns added after v1 — applied to existing DBs via ALTER TABLE on migrate().
 _EVENT_COLUMNS = {
@@ -96,6 +99,13 @@ _EVENT_COLUMNS = {
     "description": "TEXT",
     "confidence": "REAL",
     "thumb_path": "TEXT",
+}
+
+# Smoothing columns added to the v3 timelapses table (applied to v3 DBs).
+_TIMELAPSE_COLUMNS = {
+    "smooth_state": "TEXT NOT NULL DEFAULT 'none'",
+    "smooth_path": "TEXT",
+    "smooth_size_bytes": "INTEGER NOT NULL DEFAULT 0",
 }
 
 
@@ -126,6 +136,11 @@ class Store:
             for col, col_type in _EVENT_COLUMNS.items():
                 if col not in existing:
                     conn.execute(f"ALTER TABLE motion_events ADD COLUMN {col} {col_type}")
+            # Smoothing columns added to a pre-existing (v3) timelapses table.
+            tl_cols = {r["name"] for r in conn.execute("PRAGMA table_info(timelapses)")}
+            for col, col_type in _TIMELAPSE_COLUMNS.items():
+                if col not in tl_cols:
+                    conn.execute(f"ALTER TABLE timelapses ADD COLUMN {col} {col_type}")
             row = conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
             if row is None:
                 conn.execute("INSERT INTO schema_version (version) VALUES (?)", (_CURRENT_VERSION,))
@@ -360,17 +375,22 @@ class Store:
 
     def interrupt_active_timelapses(self) -> int:
         """Mark non-terminal timelapses as interrupted at startup (their worker
-        is gone). Frames stay on disk, so they can still be encoded."""
+        is gone). Frames stay on disk, so they can still be encoded. A smoothing
+        pass cut short by the restart is reset to 'error' so it isn't stuck."""
         with self._conn() as conn:
             cur = conn.execute(
                 "UPDATE timelapses SET state='interrupted' "
                 "WHERE state IN ('capturing', 'encoding')"
             )
+            conn.execute(
+                "UPDATE timelapses SET smooth_state='error' WHERE smooth_state='processing'"
+            )
             return cur.rowcount
 
     def total_timelapse_bytes(self) -> int:
         row = self._conn().execute(
-            "SELECT COALESCE(SUM(size_bytes), 0) AS total FROM timelapses"
+            "SELECT COALESCE(SUM(size_bytes), 0) + COALESCE(SUM(smooth_size_bytes), 0) AS total "
+            "FROM timelapses"
         ).fetchone()
         return int(row["total"])
 
@@ -432,6 +452,9 @@ def _timelapse_from_row(row: sqlite3.Row) -> TimelapseRecord:
         size_bytes=row["size_bytes"],
         width=row["width"],
         height=row["height"],
+        smooth_state=row["smooth_state"],
+        smooth_path=row["smooth_path"],
+        smooth_size_bytes=row["smooth_size_bytes"],
     )
 
 

@@ -33,6 +33,9 @@ dependencies = [
     "tomli-w~=1.0",
     "tomli~=2.0; python_version < '3.11'",
     "httpx~=0.28",
+    # Static ffmpeg for timelapse post-processing (smoothing/interpolation), so
+    # it works out of the box; a system ffmpeg is preferred when present.
+    "imageio-ffmpeg~=0.5",
     # Windows only: friendly DirectShow camera names (import is guarded, so
     # TailCam still works if it's unavailable).
     "pygrabber~=0.2; sys_platform == 'win32'",

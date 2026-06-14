@@ -104,6 +104,9 @@ export interface TimelapseInfo {
   height: number;
   has_video: boolean;
   has_thumb: boolean;
+  smooth_state: "none" | "processing" | "complete" | "error";
+  has_smooth: boolean;
+  smooth_size_bytes: number;
   host: string;
   proxy_prefix: string;
 }
@@ -113,6 +116,19 @@ export interface TimelapseStartParams {
   interval_seconds?: number;
   output_fps?: number;
   duration_seconds?: number;
+}
+
+export interface TimelapseSmoothParams {
+  target_fps?: number;
+  interpolate?: boolean;
+  deflicker?: boolean;
+}
+
+export interface PostprocessInfo {
+  available: boolean;
+  source: "system" | "bundled" | "missing";
+  version: string | null;
+  default_target_fps: number;
 }
 
 export interface SystemInfo {

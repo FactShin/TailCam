@@ -22,6 +22,7 @@ from tailcam.logging_setup import get_logger
 from tailcam.persistence.models import TimelapseRecord
 from tailcam.persistence.store import Store
 from tailcam.streaming.encoder import encode_jpeg
+from tailcam.timelapse.ffmpeg import build_smooth_command, ffmpeg_path, run_ffmpeg
 from tailcam.timelapse.worker import TimelapseCaptureWorker
 
 log = get_logger(__name__)
@@ -37,6 +38,7 @@ class TimelapseService:
         self._config = config
         self._workers: dict[int, TimelapseCaptureWorker] = {}
         self._encoding: set[int] = set()
+        self._smoothing: set[int] = set()
         self._lock = threading.Lock()
 
     # -- start -------------------------------------------------------------
@@ -158,6 +160,68 @@ class TimelapseService:
         finally:
             with self._lock:
                 self._encoding.discard(tl_id)
+
+    # -- smoothing (ffmpeg post-processing) --------------------------------
+    def smooth(
+        self,
+        tl_id: int,
+        target_fps: int | None = None,
+        interpolate: bool | None = None,
+        deflicker: bool | None = None,
+    ) -> TimelapseRecord | None:
+        """Kick off a background ffmpeg pass that turns the captured frames into
+        smooth, flowing motion. Re-runnable; the source frames are kept."""
+        record = self._store.get_timelapse(tl_id)
+        if record is None:
+            return None
+        frames_dir = Path(record.frames_dir)
+        if not frames_dir.exists() or not any(frames_dir.glob("*.jpg")):
+            return None
+        with self._lock:
+            if tl_id in self._smoothing:
+                return self.get(tl_id)
+            self._smoothing.add(tl_id)
+        cfg = self._config
+        tfps = target_fps or cfg.smooth_target_fps
+        interp = cfg.smooth_interpolate if interpolate is None else interpolate
+        defl = cfg.smooth_deflicker if deflicker is None else deflicker
+        self._store.update_timelapse(tl_id, smooth_state="processing", smooth_path=None)
+        threading.Thread(
+            target=self._smooth_job,
+            args=(tl_id, tfps, interp, defl),
+            name=f"timelapse-smooth-{tl_id}",
+            daemon=True,
+        ).start()
+        return self.get(tl_id)
+
+    def _smooth_job(self, tl_id: int, target_fps: int, interpolate: bool, deflicker: bool) -> None:
+        try:
+            record = self._store.get_timelapse(tl_id)
+            exe = ffmpeg_path()
+            if record is None or exe is None:
+                self._store.update_timelapse(tl_id, smooth_state="error")
+                return
+            frames_dir = Path(record.frames_dir)
+            out = frames_dir.parent / "smooth.mp4"
+            cmd = build_smooth_command(
+                exe, frames_dir, record.output_fps, out, target_fps, interpolate, deflicker
+            )
+            if run_ffmpeg(cmd) and out.exists():
+                self._store.update_timelapse(
+                    tl_id,
+                    smooth_state="complete",
+                    smooth_path=str(out),
+                    smooth_size_bytes=out.stat().st_size,
+                )
+                log.info("timelapse %s smoothed -> %s", tl_id, out.name)
+            else:
+                self._store.update_timelapse(tl_id, smooth_state="error")
+        except Exception as exc:  # pragma: no cover - ffmpeg failure
+            log.exception("timelapse %s smoothing failed: %s", tl_id, exc)
+            self._store.update_timelapse(tl_id, smooth_state="error")
+        finally:
+            with self._lock:
+                self._smoothing.discard(tl_id)
 
     # -- queries -----------------------------------------------------------
     def get(self, tl_id: int) -> TimelapseRecord | None:

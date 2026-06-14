@@ -63,4 +63,9 @@ class TimelapseRecord:
     size_bytes: int = 0
     width: int = 0
     height: int = 0
+    # Smoothed/interpolated variant (ffmpeg post-processing). The raw frames are
+    # kept, so this can be (re)generated at any time without re-capturing.
+    smooth_state: str = "none"  # none | processing | complete | error
+    smooth_path: str | None = None
+    smooth_size_bytes: int = 0
 

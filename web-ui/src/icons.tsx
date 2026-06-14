@@ -124,3 +124,7 @@ export const IconPause = (p: IconProps) => <Icon {...p} fill="currentColor" stro
 export const IconTimelapse = (p: IconProps) => (
   <Icon {...p}><rect x="2.5" y="6.5" width="13" height="11" rx="2" /><path d="M15.5 10l6-2.5v9L15.5 14" /><path d="M9 9.7v2.6l1.8 1.1" /></Icon>
 );
+// Sparkle — post-processing / "smooth" enhancement.
+export const IconSparkle = (p: IconProps) => (
+  <Icon {...p}><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" /><path d="M19 15.5l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z" /></Icon>
+);
