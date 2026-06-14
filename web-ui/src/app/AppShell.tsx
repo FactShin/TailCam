@@ -9,6 +9,7 @@ import { fmtBytes } from "../lib/format";
 import {
   IconChevL,
   IconChevR,
+  IconChip,
   IconFilm,
   IconGrid,
   IconMotion,
@@ -25,7 +26,8 @@ const NAV: { to: string; label: string; icon: (p: IconProps) => JSX.Element; key
   { to: "/gallery", label: "Gallery", icon: IconFilm, key: "2" },
   { to: "/events", label: "Events", icon: IconMotion, key: "3" },
   { to: "/timelapse", label: "Timelapse", icon: IconTimelapse, key: "4" },
-  { to: "/settings", label: "Settings", icon: IconSettings, key: "5" },
+  { to: "/models", label: "Models", icon: IconChip, key: "5" },
+  { to: "/settings", label: "Settings", icon: IconSettings, key: "6" },
 ];
 
 const isActive = (path: string, to: string) =>

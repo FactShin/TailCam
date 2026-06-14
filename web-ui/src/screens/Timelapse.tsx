@@ -265,7 +265,9 @@ export function Timelapse() {
                   {playable && <span className="media-play"><IconPlay size={20} /></span>}
                   <span className={`badge tl-thumb-badge ${b.cls}`}>{b.label}</span>
                   {t.smooth_state === "complete" && (
-                    <span className="badge badge-accent tl-smooth-badge"><IconSparkle size={11} /> Smooth</span>
+                    <span className="badge badge-accent tl-smooth-badge">
+                      <IconSparkle size={11} /> {t.smooth_engine === "rife" ? "RIFE" : "Smooth"}
+                    </span>
                   )}
                 </div>
                 <div className="tl-body">
@@ -337,7 +339,7 @@ export function Timelapse() {
                 <div className="lb-info-l">
                   <span className="lb-cam">{play.name}</span>
                   <span className="lb-sub mono">
-                    {camName(play.camera_id)} · {play.frames_captured} frames · {videoSeconds(play).toFixed(1)}s @ {play.output_fps}fps · {fmtBytes(showSmooth ? play.smooth_size_bytes : play.size_bytes)}
+                    {camName(play.camera_id)} · {play.frames_captured} frames · {videoSeconds(play).toFixed(1)}s @ {play.output_fps}fps · {fmtBytes(showSmooth ? play.smooth_size_bytes : play.size_bytes)}{showSmooth && play.smooth_engine ? ` · ${play.smooth_engine}` : ""}
                   </span>
                   {play.has_smooth && (
                     <div className="tl-player-toggle">

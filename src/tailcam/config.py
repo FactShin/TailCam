@@ -111,6 +111,12 @@ class TimelapseConfig:
     smooth_target_fps: int = 60
     smooth_interpolate: bool = True
     smooth_deflicker: bool = True
+    # Interpolation engine: "ffmpeg" (minterpolate, bundled, works everywhere) or
+    # "rife" (rife-ncnn-vulkan, higher quality, GPU, must be installed). A failed
+    # RIFE run automatically falls back to ffmpeg.
+    smooth_engine: str = "ffmpeg"
+    rife_path: str = ""  # explicit path to rife-ncnn-vulkan (else auto-detect)
+    rife_model: str = "rife-v4.6"  # model folder name in the RIFE distribution
 
 
 @dataclass

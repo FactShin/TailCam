@@ -83,7 +83,8 @@ _SCHEMA = [
         height INTEGER NOT NULL DEFAULT 0,
         smooth_state TEXT NOT NULL DEFAULT 'none',
         smooth_path TEXT,
-        smooth_size_bytes INTEGER NOT NULL DEFAULT 0
+        smooth_size_bytes INTEGER NOT NULL DEFAULT 0,
+        smooth_engine TEXT NOT NULL DEFAULT ''
     );
     """,
     """
@@ -91,7 +92,7 @@ _SCHEMA = [
         ON timelapses (camera_id, created_ts DESC);
     """,
 ]
-_CURRENT_VERSION = 4
+_CURRENT_VERSION = 5
 
 # Columns added after v1 — applied to existing DBs via ALTER TABLE on migrate().
 _EVENT_COLUMNS = {
@@ -101,11 +102,12 @@ _EVENT_COLUMNS = {
     "thumb_path": "TEXT",
 }
 
-# Smoothing columns added to the v3 timelapses table (applied to v3 DBs).
+# Smoothing columns added after the v3 timelapses table (applied to older DBs).
 _TIMELAPSE_COLUMNS = {
     "smooth_state": "TEXT NOT NULL DEFAULT 'none'",
     "smooth_path": "TEXT",
     "smooth_size_bytes": "INTEGER NOT NULL DEFAULT 0",
+    "smooth_engine": "TEXT NOT NULL DEFAULT ''",
 }
 
 
@@ -455,6 +457,7 @@ def _timelapse_from_row(row: sqlite3.Row) -> TimelapseRecord:
         smooth_state=row["smooth_state"],
         smooth_path=row["smooth_path"],
         smooth_size_bytes=row["smooth_size_bytes"],
+        smooth_engine=row["smooth_engine"],
     )
 
 

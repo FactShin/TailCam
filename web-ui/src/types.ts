@@ -107,6 +107,7 @@ export interface TimelapseInfo {
   smooth_state: "none" | "processing" | "complete" | "error";
   has_smooth: boolean;
   smooth_size_bytes: number;
+  smooth_engine: string; // "ffmpeg" | "rife"
   host: string;
   proxy_prefix: string;
 }
@@ -122,13 +123,22 @@ export interface TimelapseSmoothParams {
   target_fps?: number;
   interpolate?: boolean;
   deflicker?: boolean;
+  engine?: string; // "ffmpeg" | "rife"
+}
+
+export interface EngineInfo {
+  id: "ffmpeg" | "rife";
+  label: string;
+  available: boolean;
+  source: "system" | "bundled" | "missing";
+  version: string | null;
 }
 
 export interface PostprocessInfo {
   available: boolean;
-  source: "system" | "bundled" | "missing";
-  version: string | null;
+  default_engine: "ffmpeg" | "rife";
   default_target_fps: number;
+  engines: EngineInfo[];
 }
 
 export interface SystemInfo {

@@ -230,6 +230,14 @@ export function usePostprocess() {
   return useQuery({ queryKey: ["postprocess"], queryFn: api.getPostprocess, refetchInterval: 60_000 });
 }
 
+export function useSetPostprocess() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { default_engine?: string }) => api.setPostprocess(body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["postprocess"] }),
+  });
+}
+
 // Pause live streams when the tab is hidden.
 export function usePageVisible() {
   const [vis, setVis] = useState(!document.hidden);
