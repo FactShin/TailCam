@@ -11,8 +11,10 @@ import type {
   HostInfo,
   MediaInfo,
   MotionEventInfo,
+  PostprocessInfo,
   SystemInfo,
   TimelapseInfo,
+  TimelapseSmoothParams,
   TimelapseStartParams,
   ViewParams,
 } from "../types";
@@ -144,6 +146,16 @@ export const encodeTimelapse = (prefix: string, tlId: number) =>
 export const deleteTimelapse = (prefix: string, tlId: number) =>
   jsonFetch<{ ok: boolean }>(`${prefix}/api/timelapse/${tlId}`, { method: "DELETE" });
 
+export const smoothTimelapse = (prefix: string, tlId: number, body: TimelapseSmoothParams = {}) =>
+  jsonFetch<TimelapseInfo>(`${prefix}/api/timelapse/${tlId}/smooth`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const getPostprocess = () => jsonFetch<PostprocessInfo>("/api/postprocess");
+
 export const timelapseFileUrl = (prefix: string, tlId: number) => `${prefix}/timelapse/${tlId}/file`;
+export const timelapseSmoothUrl = (prefix: string, tlId: number) =>
+  `${prefix}/timelapse/${tlId}/smooth`;
 export const timelapseThumbUrl = (prefix: string, tlId: number) =>
   `${prefix}/timelapse/${tlId}/thumbnail`;

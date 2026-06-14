@@ -87,3 +87,11 @@ def timelapse_thumbnail(tl_id: int, ctx: AppContext = Depends(get_context)) -> F
     if rec is None or not rec.thumb_path or not Path(rec.thumb_path).exists():
         raise HTTPException(status_code=404, detail="timelapse thumbnail not found")
     return FileResponse(rec.thumb_path)
+
+
+@router.get("/timelapse/{tl_id}/smooth")
+def timelapse_smooth(tl_id: int, ctx: AppContext = Depends(get_context)) -> FileResponse:
+    rec = ctx.store.get_timelapse(tl_id)
+    if rec is None or not rec.smooth_path or not Path(rec.smooth_path).exists():
+        raise HTTPException(status_code=404, detail="smoothed timelapse not found")
+    return FileResponse(rec.smooth_path, media_type="video/mp4")

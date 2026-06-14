@@ -5,7 +5,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import * as api from "./client";
-import type { CameraInfo, CameraSettingsUpdate, TimelapseStartParams } from "../types";
+import type {
+  CameraInfo,
+  CameraSettingsUpdate,
+  TimelapseSmoothParams,
+  TimelapseStartParams,
+} from "../types";
 
 export function useCameras() {
   return useQuery({ queryKey: ["cameras"], queryFn: api.getCameras, refetchInterval: 2500 });
@@ -210,6 +215,19 @@ export function useDeleteTimelapse() {
     mutationFn: ({ prefix, id }: { prefix: string; id: number }) => api.deleteTimelapse(prefix, id),
     onSuccess: () => _invalidateTimelapse(qc),
   });
+}
+
+export function useSmoothTimelapse() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ prefix, id, params }: { prefix: string; id: number; params?: TimelapseSmoothParams }) =>
+      api.smoothTimelapse(prefix, id, params),
+    onSuccess: () => _invalidateTimelapse(qc),
+  });
+}
+
+export function usePostprocess() {
+  return useQuery({ queryKey: ["postprocess"], queryFn: api.getPostprocess, refetchInterval: 60_000 });
 }
 
 // Pause live streams when the tab is hidden.

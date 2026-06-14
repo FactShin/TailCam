@@ -1,8 +1,8 @@
 import { useState } from "react";
 
-import { useAi, useCameras, useHosts, useSystem } from "../api/hooks";
+import { useAi, useCameras, useHosts, usePostprocess, useSystem } from "../api/hooks";
 import { useToast } from "../components/toast";
-import { IconCheck, IconCopy, IconDevice, IconInfo, IconServer, IconWifi, IconWifiOff } from "../icons";
+import { IconCheck, IconCopy, IconDevice, IconInfo, IconServer, IconSparkle, IconWifi, IconWifiOff } from "../icons";
 import { fmtBytes } from "../lib/format";
 
 export function Settings() {
@@ -10,6 +10,7 @@ export function Settings() {
   const cameras = useCameras().data ?? [];
   const hosts = useHosts().data ?? [];
   const ai = useAi().data;
+  const pp = usePostprocess().data;
   const toast = useToast();
   const [copied, setCopied] = useState(false);
 
@@ -94,6 +95,27 @@ export function Settings() {
               )}
             </>
           )}
+        </div>
+
+        <div className="panel">
+          <div className="panel-title"><IconSparkle size={16} /> Timelapse post-processing</div>
+          <div className="kv">
+            <span className="kv-k">ffmpeg</span>
+            <span className="kv-v">
+              {pp?.available ? (
+                <span className="badge badge-ok"><span className="pill-dot" style={{ background: "var(--ok)" }} /> Ready</span>
+              ) : (
+                <span className="badge badge-err"><span className="pill-dot" style={{ background: "var(--err)" }} /> Not found</span>
+              )}
+            </span>
+          </div>
+          {pp?.available && (
+            <div className="kv"><span className="kv-k">Engine</span><span className="kv-v mono">{pp.source}{pp.version ? ` · ${pp.version}` : ""}</span></div>
+          )}
+          <span className="help-foot mono">
+            Powers “Smooth” on the Timelapse page — motion interpolation + deflicker for flowing
+            playback. A bundled ffmpeg is used if the system has none.
+          </span>
         </div>
 
         <div className="panel">

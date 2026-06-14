@@ -17,8 +17,10 @@ from tailcam.web.schemas import (
     MediaInfo,
     MotionEventInfo,
     OkResponse,
+    PostprocessInfo,
     SystemInfo,
     TimelapseInfo,
+    TimelapseSmoothRequest,
     TimelapseStartRequest,
     TransformModel,
     UpdateInfo,
@@ -295,6 +297,9 @@ def _timelapse_info(ctx: AppContext, r) -> TimelapseInfo:
         height=r.height,
         has_video=bool(r.video_path),
         has_thumb=bool(r.thumb_path),
+        smooth_state=r.smooth_state,
+        has_smooth=bool(r.smooth_path),
+        smooth_size_bytes=r.smooth_size_bytes,
         host=ctx.local_host,
         proxy_prefix="",
     )
@@ -353,11 +358,45 @@ def encode_timelapse(tl_id: int, ctx: AppContext = Depends(get_context)) -> Time
     return _timelapse_info(ctx, record)
 
 
+@router.post("/timelapse/{tl_id}/smooth", response_model=TimelapseInfo)
+def smooth_timelapse(
+    tl_id: int,
+    req: TimelapseSmoothRequest | None = None,
+    ctx: AppContext = Depends(get_context),
+) -> TimelapseInfo:
+    """Post-process a timelapse into smooth motion (ffmpeg interpolation)."""
+    from tailcam.timelapse.ffmpeg import ffmpeg_available
+
+    if not ffmpeg_available():
+        raise HTTPException(status_code=503, detail="ffmpeg not available")
+    req = req or TimelapseSmoothRequest()
+    record = ctx.timelapse.smooth(
+        tl_id, target_fps=req.target_fps, interpolate=req.interpolate, deflicker=req.deflicker
+    )
+    if record is None:
+        raise HTTPException(status_code=404, detail="timelapse not found or has no frames")
+    return _timelapse_info(ctx, record)
+
+
 @router.delete("/timelapse/{tl_id}", response_model=OkResponse)
 def delete_timelapse(tl_id: int, ctx: AppContext = Depends(get_context)) -> OkResponse:
     if not ctx.timelapse.delete(tl_id):
         raise HTTPException(status_code=404, detail="timelapse not found")
     return OkResponse(detail="deleted")
+
+
+@router.get("/postprocess", response_model=PostprocessInfo)
+def postprocess_info(ctx: AppContext = Depends(get_context)) -> PostprocessInfo:
+    """ffmpeg availability for the smoothing feature (dashboard status panel)."""
+    from tailcam.timelapse.ffmpeg import ffmpeg_source, ffmpeg_version
+
+    source = ffmpeg_source()
+    return PostprocessInfo(
+        available=source != "missing",
+        source=source,
+        version=ffmpeg_version(),
+        default_target_fps=ctx.config.timelapse.smooth_target_fps,
+    )
 
 
 @router.get("/system", response_model=SystemInfo)

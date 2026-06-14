@@ -106,6 +106,11 @@ class TimelapseConfig:
     jpeg_quality: int = 90  # quality of the stored source frames
     # Safety cap so a forgotten capture can't fill the disk (0 = unlimited).
     max_frames: int = 0
+    # Post-processing ("Smooth"): motion-interpolate the captured frames up to
+    # smooth_target_fps for flowing motion, and even out exposure flicker.
+    smooth_target_fps: int = 60
+    smooth_interpolate: bool = True
+    smooth_deflicker: bool = True
 
 
 @dataclass

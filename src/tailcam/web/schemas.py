@@ -116,8 +116,25 @@ class TimelapseInfo(BaseModel):
     height: int = 0
     has_video: bool = False
     has_thumb: bool = False
+    # Smoothed (ffmpeg-interpolated) variant.
+    smooth_state: str = "none"  # none | processing | complete | error
+    has_smooth: bool = False
+    smooth_size_bytes: int = 0
     host: str = ""
     proxy_prefix: str = ""
+
+
+class TimelapseSmoothRequest(BaseModel):
+    target_fps: int | None = None
+    interpolate: bool | None = None
+    deflicker: bool | None = None
+
+
+class PostprocessInfo(BaseModel):
+    available: bool
+    source: str  # system | bundled | missing
+    version: str | None = None
+    default_target_fps: int = 60
 
 
 class SystemInfo(BaseModel):
