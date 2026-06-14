@@ -257,10 +257,12 @@ output is committed to `src/tailcam/web/spa/` and ships in the wheel, so end use
 never need Node. To change the UI: `cd web-ui && npm install && npm run build`,
 then commit both the source and the regenerated `src/tailcam/web/spa/`.
 
-**Releases:** bump `__version__` in `src/tailcam/__init__.py` with every change
-merged to `main`. The version is shown by `tailcam version` (and `tailcam
---version`), `tailcam status`, `/api/system`, and the dashboard Settings page —
-it's how you confirm a node is actually running the build you think it is.
+**Releases:** bump `__version__` in `src/tailcam/__init__.py` **and** the
+`version` in `web-ui/package.json` (keep them identical) with every change
+merged to `main`; a test enforces they match. The version is shown by `tailcam
+version` (and `tailcam --version`), `tailcam status`, `/api/system`, and the
+dashboard Settings page — it's how you confirm a node is actually running the
+build you think it is.
 
 ## License
 
