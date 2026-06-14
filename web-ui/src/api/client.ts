@@ -12,6 +12,8 @@ import type {
   MediaInfo,
   MotionEventInfo,
   SystemInfo,
+  TimelapseInfo,
+  TimelapseStartParams,
   ViewParams,
 } from "../types";
 
@@ -119,3 +121,29 @@ export const getEvents = (params: { camera_id?: string; limit?: number }) =>
   jsonFetch<MotionEventInfo[]>(
     `/api/events${qs({ camera_id: params.camera_id, limit: params.limit ?? 50 })}`,
   );
+
+// ---- timelapse ----
+
+export const getTimelapses = (params: { camera_id?: string; limit?: number } = {}) =>
+  jsonFetch<TimelapseInfo[]>(
+    `/api/timelapse${qs({ camera_id: params.camera_id, limit: params.limit ?? 100 })}`,
+  );
+
+export const startTimelapse = (prefix: string, id: string, body: TimelapseStartParams) =>
+  jsonFetch<TimelapseInfo>(`${prefix}/api/cameras/${id}/timelapse/start`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const stopTimelapse = (prefix: string, tlId: number) =>
+  jsonFetch<TimelapseInfo>(`${prefix}/api/timelapse/${tlId}/stop`, { method: "POST" });
+
+export const encodeTimelapse = (prefix: string, tlId: number) =>
+  jsonFetch<TimelapseInfo>(`${prefix}/api/timelapse/${tlId}/encode`, { method: "POST" });
+
+export const deleteTimelapse = (prefix: string, tlId: number) =>
+  jsonFetch<{ ok: boolean }>(`${prefix}/api/timelapse/${tlId}`, { method: "DELETE" });
+
+export const timelapseFileUrl = (prefix: string, tlId: number) => `${prefix}/timelapse/${tlId}/file`;
+export const timelapseThumbUrl = (prefix: string, tlId: number) =>
+  `${prefix}/timelapse/${tlId}/thumbnail`;

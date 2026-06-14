@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import * as api from "./client";
-import type { CameraInfo, CameraSettingsUpdate } from "../types";
+import type { CameraInfo, CameraSettingsUpdate, TimelapseStartParams } from "../types";
 
 export function useCameras() {
   return useQuery({ queryKey: ["cameras"], queryFn: api.getCameras, refetchInterval: 2500 });
@@ -161,6 +161,54 @@ export function useDeleteMedia() {
       qc.invalidateQueries({ queryKey: ["media"] });
       qc.invalidateQueries({ queryKey: ["system"] });
     },
+  });
+}
+
+// -- timelapse ---------------------------------------------------------------
+
+export function useTimelapses(params: { camera_id?: string; limit?: number } = {}) {
+  return useQuery({
+    queryKey: ["timelapse", params],
+    queryFn: () => api.getTimelapses(params),
+    refetchInterval: 3000, // reflect capture progress + encode → complete
+  });
+}
+
+function _invalidateTimelapse(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ["timelapse"] });
+  qc.invalidateQueries({ queryKey: ["system"] });
+}
+
+export function useStartTimelapse() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ prefix, id, params }: { prefix: string; id: string; params: TimelapseStartParams }) =>
+      api.startTimelapse(prefix, id, params),
+    onSuccess: () => _invalidateTimelapse(qc),
+  });
+}
+
+export function useStopTimelapse() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ prefix, id }: { prefix: string; id: number }) => api.stopTimelapse(prefix, id),
+    onSuccess: () => _invalidateTimelapse(qc),
+  });
+}
+
+export function useEncodeTimelapse() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ prefix, id }: { prefix: string; id: number }) => api.encodeTimelapse(prefix, id),
+    onSuccess: () => _invalidateTimelapse(qc),
+  });
+}
+
+export function useDeleteTimelapse() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ prefix, id }: { prefix: string; id: number }) => api.deleteTimelapse(prefix, id),
+    onSuccess: () => _invalidateTimelapse(qc),
   });
 }
 

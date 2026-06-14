@@ -97,6 +97,18 @@ class CamerasConfig:
 
 
 @dataclass
+class TimelapseConfig:
+    # Timelapse capture + encoding. Tailored for long captures (e.g. 3D prints):
+    # raw frames are kept on disk so post-processing (frame interpolation,
+    # deflicker) can later stitch them into smooth, flowing motion.
+    default_interval_seconds: float = 2.0  # seconds between captured frames
+    default_output_fps: int = 30  # playback rate of the encoded video
+    jpeg_quality: int = 90  # quality of the stored source frames
+    # Safety cap so a forgotten capture can't fill the disk (0 = unlimited).
+    max_frames: int = 0
+
+
+@dataclass
 class AppConfig:
     server: ServerConfig = field(default_factory=ServerConfig)
     stream: StreamConfig = field(default_factory=StreamConfig)
@@ -106,6 +118,7 @@ class AppConfig:
     peers: PeersConfig = field(default_factory=PeersConfig)
     cameras: CamerasConfig = field(default_factory=CamerasConfig)
     ai: AIConfig = field(default_factory=AIConfig)
+    timelapse: TimelapseConfig = field(default_factory=TimelapseConfig)
 
     @classmethod
     def load(cls, path: Path | None = None) -> AppConfig:
@@ -141,6 +154,7 @@ class AppConfig:
             peers=PeersConfig(**raw.get("peers", {})),
             cameras=CamerasConfig(**raw.get("cameras", {})),
             ai=AIConfig(**raw.get("ai", {})),
+            timelapse=TimelapseConfig(**raw.get("timelapse", {})),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -153,6 +167,7 @@ class AppConfig:
             "peers": asdict(self.peers),
             "cameras": asdict(self.cameras),
             "ai": asdict(self.ai),
+            "timelapse": asdict(self.timelapse),
         }
 
     def save(self, path: Path | None = None) -> None:

@@ -85,6 +85,36 @@ export interface AIInfo {
   model_present: boolean;
 }
 
+export type TimelapseState = "capturing" | "encoding" | "complete" | "interrupted" | "error";
+
+export interface TimelapseInfo {
+  id: number;
+  camera_id: string;
+  name: string;
+  state: TimelapseState;
+  mode: string; // "interval" (future: "layer")
+  interval_seconds: number;
+  output_fps: number;
+  frames_captured: number;
+  created_ts: number;
+  start_ts: number;
+  end_ts: number | null;
+  size_bytes: number;
+  width: number;
+  height: number;
+  has_video: boolean;
+  has_thumb: boolean;
+  host: string;
+  proxy_prefix: string;
+}
+
+export interface TimelapseStartParams {
+  name?: string;
+  interval_seconds?: number;
+  output_fps?: number;
+  duration_seconds?: number;
+}
+
 export interface SystemInfo {
   version: string;
   host: string;

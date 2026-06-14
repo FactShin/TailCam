@@ -71,3 +71,19 @@ def event_thumbnail(event_id: int, ctx: AppContext = Depends(get_context)) -> Fi
     if rec is None or not rec.thumb_path or not Path(rec.thumb_path).exists():
         raise HTTPException(status_code=404, detail="event thumbnail not found")
     return FileResponse(rec.thumb_path)
+
+
+@router.get("/timelapse/{tl_id}/file")
+def timelapse_file(tl_id: int, ctx: AppContext = Depends(get_context)) -> FileResponse:
+    rec = ctx.store.get_timelapse(tl_id)
+    if rec is None or not rec.video_path or not Path(rec.video_path).exists():
+        raise HTTPException(status_code=404, detail="timelapse video not found")
+    return FileResponse(rec.video_path, media_type="video/mp4")
+
+
+@router.get("/timelapse/{tl_id}/thumbnail")
+def timelapse_thumbnail(tl_id: int, ctx: AppContext = Depends(get_context)) -> FileResponse:
+    rec = ctx.store.get_timelapse(tl_id)
+    if rec is None or not rec.thumb_path or not Path(rec.thumb_path).exists():
+        raise HTTPException(status_code=404, detail="timelapse thumbnail not found")
+    return FileResponse(rec.thumb_path)

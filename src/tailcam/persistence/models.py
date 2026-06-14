@@ -38,3 +38,29 @@ class MotionEventRecord:
     description: str | None = None
     confidence: float | None = None
     thumb_path: str | None = None
+
+
+@dataclass
+class TimelapseRecord:
+    id: int | None
+    camera_id: str
+    name: str
+    # capturing | encoding | complete | interrupted | error
+    state: str
+    # "interval" today; "layer" once printer (Moonraker/OctoPrint) sync lands.
+    mode: str
+    interval_seconds: float
+    output_fps: int
+    frames_captured: int
+    created_ts: float
+    start_ts: float
+    end_ts: float | None
+    # Raw captured JPEGs are kept (not just the encoded mp4) so post-processing
+    # — frame interpolation, deflicker — can re-stitch them into smooth motion.
+    frames_dir: str
+    video_path: str | None = None
+    thumb_path: str | None = None
+    size_bytes: int = 0
+    width: int = 0
+    height: int = 0
+

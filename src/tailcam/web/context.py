@@ -17,6 +17,7 @@ from tailcam.motion.worker import MotionWorker
 from tailcam.persistence.store import Store
 from tailcam.streaming.mjpeg import MJPEGBackend
 from tailcam.tailscale.client import TailscaleClient
+from tailcam.timelapse.service import TimelapseService
 
 log = get_logger(__name__)
 
@@ -28,6 +29,7 @@ class AppContext:
         self.manager = CameraManager(self.store, config)
         self.snapshots = SnapshotService(self.manager, self.store)
         self.recorder = RecordingService(self.manager, self.store)
+        self.timelapse = TimelapseService(self.manager, self.store, config.timelapse)
         self.gallery = MediaGallery(self.store)
         self.event_log = EventLog(self.store)
         self.analyzer = OllamaAnalyzer(config.ai)
@@ -45,6 +47,9 @@ class AppContext:
         stale = self.store.close_stale_motion_events()
         if stale:
             log.info("Closed %d orphaned motion event(s) from a previous run", stale)
+        interrupted = self.store.interrupt_active_timelapses()
+        if interrupted:
+            log.info("Marked %d timelapse(s) interrupted (encode them to finish)", interrupted)
         self.manager.discover()
         # Eager-start workers so status reflects reality from the first poll
         # (the UI only streams cameras that report online).
@@ -64,6 +69,7 @@ class AppContext:
             worker.stop()
         self._motion_workers.clear()
         self.recorder.stop_all()
+        self.timelapse.shutdown()
         self.manager.stop_all()
 
     async def aclose(self) -> None:

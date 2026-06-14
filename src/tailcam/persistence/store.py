@@ -10,7 +10,12 @@ from pathlib import Path
 from typing import Any
 
 from tailcam import paths
-from tailcam.persistence.models import CameraRecord, MediaRecord, MotionEventRecord
+from tailcam.persistence.models import (
+    CameraRecord,
+    MediaRecord,
+    MotionEventRecord,
+    TimelapseRecord,
+)
 
 _SCHEMA = [
     """
@@ -57,8 +62,33 @@ _SCHEMA = [
     """
     CREATE INDEX IF NOT EXISTS idx_events_camera_ts ON motion_events (camera_id, start_ts DESC);
     """,
+    """
+    CREATE TABLE IF NOT EXISTS timelapses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        camera_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'capturing',
+        mode TEXT NOT NULL DEFAULT 'interval',
+        interval_seconds REAL NOT NULL,
+        output_fps INTEGER NOT NULL,
+        frames_captured INTEGER NOT NULL DEFAULT 0,
+        created_ts REAL NOT NULL,
+        start_ts REAL NOT NULL,
+        end_ts REAL,
+        frames_dir TEXT NOT NULL,
+        video_path TEXT,
+        thumb_path TEXT,
+        size_bytes INTEGER NOT NULL DEFAULT 0,
+        width INTEGER NOT NULL DEFAULT 0,
+        height INTEGER NOT NULL DEFAULT 0
+    );
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_timelapses_camera_ts
+        ON timelapses (camera_id, created_ts DESC);
+    """,
 ]
-_CURRENT_VERSION = 2
+_CURRENT_VERSION = 3
 
 # Columns added after v1 — applied to existing DBs via ALTER TABLE on migrate().
 _EVENT_COLUMNS = {
@@ -273,6 +303,77 @@ class Store:
         ).fetchall()
         return [_event_from_row(r) for r in rows]
 
+    # -- timelapses --------------------------------------------------------
+    def add_timelapse(self, record: TimelapseRecord) -> int:
+        conn = self._conn()
+        with conn:
+            cur = conn.execute(
+                """
+                INSERT INTO timelapses
+                    (camera_id, name, state, mode, interval_seconds, output_fps,
+                     frames_captured, created_ts, start_ts, end_ts, frames_dir,
+                     video_path, thumb_path, size_bytes, width, height)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.camera_id, record.name, record.state, record.mode,
+                    record.interval_seconds, record.output_fps, record.frames_captured,
+                    record.created_ts, record.start_ts, record.end_ts, record.frames_dir,
+                    record.video_path, record.thumb_path, record.size_bytes,
+                    record.width, record.height,
+                ),
+            )
+            return int(cur.lastrowid or 0)
+
+    def update_timelapse(self, tl_id: int, **fields: Any) -> None:
+        """Patch arbitrary columns. Keys are code-controlled (never user input)."""
+        if not fields:
+            return
+        cols = ", ".join(f"{k}=?" for k in fields)
+        with self._conn() as conn:
+            conn.execute(
+                f"UPDATE timelapses SET {cols} WHERE id=?", (*fields.values(), tl_id)
+            )
+
+    def get_timelapse(self, tl_id: int) -> TimelapseRecord | None:
+        row = self._conn().execute("SELECT * FROM timelapses WHERE id=?", (tl_id,)).fetchone()
+        return _timelapse_from_row(row) if row else None
+
+    def list_timelapses(
+        self, camera_id: str | None = None, limit: int = 100, offset: int = 0
+    ) -> list[TimelapseRecord]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if camera_id:
+            clauses.append("camera_id=?")
+            params.append(camera_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.extend([limit, offset])
+        rows = self._conn().execute(
+            f"SELECT * FROM timelapses {where} ORDER BY created_ts DESC LIMIT ? OFFSET ?", params
+        ).fetchall()
+        return [_timelapse_from_row(r) for r in rows]
+
+    def delete_timelapse(self, tl_id: int) -> None:
+        with self._conn() as conn:
+            conn.execute("DELETE FROM timelapses WHERE id=?", (tl_id,))
+
+    def interrupt_active_timelapses(self) -> int:
+        """Mark non-terminal timelapses as interrupted at startup (their worker
+        is gone). Frames stay on disk, so they can still be encoded."""
+        with self._conn() as conn:
+            cur = conn.execute(
+                "UPDATE timelapses SET state='interrupted' "
+                "WHERE state IN ('capturing', 'encoding')"
+            )
+            return cur.rowcount
+
+    def total_timelapse_bytes(self) -> int:
+        row = self._conn().execute(
+            "SELECT COALESCE(SUM(size_bytes), 0) AS total FROM timelapses"
+        ).fetchone()
+        return int(row["total"])
+
 
 def _camera_from_row(row: sqlite3.Row) -> CameraRecord:
     return CameraRecord(
@@ -309,6 +410,28 @@ def _event_from_row(row: sqlite3.Row) -> MotionEventRecord:
         description=row["description"],
         confidence=row["confidence"],
         thumb_path=row["thumb_path"],
+    )
+
+
+def _timelapse_from_row(row: sqlite3.Row) -> TimelapseRecord:
+    return TimelapseRecord(
+        id=row["id"],
+        camera_id=row["camera_id"],
+        name=row["name"],
+        state=row["state"],
+        mode=row["mode"],
+        interval_seconds=row["interval_seconds"],
+        output_fps=row["output_fps"],
+        frames_captured=row["frames_captured"],
+        created_ts=row["created_ts"],
+        start_ts=row["start_ts"],
+        end_ts=row["end_ts"],
+        frames_dir=row["frames_dir"],
+        video_path=row["video_path"],
+        thumb_path=row["thumb_path"],
+        size_bytes=row["size_bytes"],
+        width=row["width"],
+        height=row["height"],
     )
 
 

@@ -92,6 +92,34 @@ class AIInfo(BaseModel):
     model_present: bool
 
 
+class TimelapseStartRequest(BaseModel):
+    name: str | None = None
+    interval_seconds: float | None = None
+    output_fps: int | None = None
+    duration_seconds: float = 0.0  # 0 = until stopped
+
+
+class TimelapseInfo(BaseModel):
+    id: int
+    camera_id: str
+    name: str
+    state: str  # capturing | encoding | complete | interrupted | error
+    mode: str
+    interval_seconds: float
+    output_fps: int
+    frames_captured: int
+    created_ts: float
+    start_ts: float
+    end_ts: float | None = None
+    size_bytes: int = 0
+    width: int = 0
+    height: int = 0
+    has_video: bool = False
+    has_thumb: bool = False
+    host: str = ""
+    proxy_prefix: str = ""
+
+
 class SystemInfo(BaseModel):
     version: str
     host: str = ""  # this node's identity (used for peer discovery)

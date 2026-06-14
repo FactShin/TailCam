@@ -18,6 +18,8 @@ from tailcam.web.schemas import (
     MotionEventInfo,
     OkResponse,
     SystemInfo,
+    TimelapseInfo,
+    TimelapseStartRequest,
     TransformModel,
     UpdateInfo,
 )
@@ -272,6 +274,92 @@ async def list_events(
     return merged[offset : offset + limit]
 
 
+# -- timelapse -------------------------------------------------------------
+
+
+def _timelapse_info(ctx: AppContext, r) -> TimelapseInfo:
+    return TimelapseInfo(
+        id=r.id,
+        camera_id=r.camera_id,
+        name=r.name,
+        state=r.state,
+        mode=r.mode,
+        interval_seconds=r.interval_seconds,
+        output_fps=r.output_fps,
+        frames_captured=r.frames_captured,
+        created_ts=r.created_ts,
+        start_ts=r.start_ts,
+        end_ts=r.end_ts,
+        size_bytes=r.size_bytes,
+        width=r.width,
+        height=r.height,
+        has_video=bool(r.video_path),
+        has_thumb=bool(r.thumb_path),
+        host=ctx.local_host,
+        proxy_prefix="",
+    )
+
+
+@router.get("/timelapse", response_model=list[TimelapseInfo])
+def list_timelapses(
+    camera_id: str | None = None,
+    limit: int = 100,
+    ctx: AppContext = Depends(get_context),
+) -> list[TimelapseInfo]:
+    return [_timelapse_info(ctx, r) for r in ctx.timelapse.list(camera_id, limit)]
+
+
+@router.post("/cameras/{camera_id:path}/timelapse/start", response_model=TimelapseInfo)
+def start_timelapse(
+    camera_id: str,
+    req: TimelapseStartRequest | None = None,
+    ctx: AppContext = Depends(get_context),
+) -> TimelapseInfo:
+    req = req or TimelapseStartRequest()
+    record = ctx.timelapse.start(
+        camera_id,
+        name=req.name,
+        interval_seconds=req.interval_seconds,
+        output_fps=req.output_fps,
+        duration_seconds=req.duration_seconds,
+    )
+    if record is None:
+        raise HTTPException(status_code=503, detail="camera unavailable")
+    return _timelapse_info(ctx, record)
+
+
+@router.get("/timelapse/{tl_id}", response_model=TimelapseInfo)
+def get_timelapse(tl_id: int, ctx: AppContext = Depends(get_context)) -> TimelapseInfo:
+    record = ctx.timelapse.get(tl_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="timelapse not found")
+    return _timelapse_info(ctx, record)
+
+
+@router.post("/timelapse/{tl_id}/stop", response_model=TimelapseInfo)
+def stop_timelapse(tl_id: int, ctx: AppContext = Depends(get_context)) -> TimelapseInfo:
+    record = ctx.timelapse.stop(tl_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="timelapse not found")
+    return _timelapse_info(ctx, record)
+
+
+@router.post("/timelapse/{tl_id}/encode", response_model=TimelapseInfo)
+def encode_timelapse(tl_id: int, ctx: AppContext = Depends(get_context)) -> TimelapseInfo:
+    """(Re)encode a stopped or interrupted timelapse from its stored frames."""
+    record = ctx.timelapse.encode(tl_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="timelapse not found")
+    return _timelapse_info(ctx, record)
+
+
+@router.delete("/timelapse/{tl_id}", response_model=OkResponse)
+def delete_timelapse(tl_id: int, ctx: AppContext = Depends(get_context)) -> OkResponse:
+    if not ctx.timelapse.delete(tl_id):
+        raise HTTPException(status_code=404, detail="timelapse not found")
+    return OkResponse(detail="deleted")
+
+
 @router.get("/system", response_model=SystemInfo)
 def system_info(ctx: AppContext = Depends(get_context)) -> SystemInfo:
     status = ctx.tailscale.status()
@@ -283,7 +371,7 @@ def system_info(ctx: AppContext = Depends(get_context)) -> SystemInfo:
         tailscale_running=status.running,
         access_url=ctx.tailscale.access_url(port, ctx.served, ctx.config.tailscale.serve_port),
         local_url=f"http://localhost:{port}/",
-        media_bytes=ctx.gallery.total_bytes(),
+        media_bytes=ctx.gallery.total_bytes() + ctx.store.total_timelapse_bytes(),
         hidden_count=len(ctx.config.cameras.hidden),
     )
 

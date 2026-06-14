@@ -79,6 +79,11 @@ def thumbnails_dir() -> Path:
     return media_dir() / "thumbnails"
 
 
+def timelapse_dir() -> Path:
+    # Each timelapse gets <timelapse_dir>/<id>/ holding frames/ + the encoded mp4.
+    return data_dir() / "timelapse"
+
+
 def database_file() -> Path:
     return data_dir() / "tailcam.db"
 

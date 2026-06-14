@@ -10,6 +10,7 @@ import { Dashboard } from "./screens/Dashboard";
 import { Events } from "./screens/Events";
 import { Gallery } from "./screens/Gallery";
 import { Settings } from "./screens/Settings";
+import { Timelapse } from "./screens/Timelapse";
 import "./styles.css";
 
 const queryClient = new QueryClient({
@@ -29,6 +30,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/camera/:host/:cid" element={<CameraDetail />} />
               <Route path="/gallery" element={<Gallery />} />
               <Route path="/events" element={<Events />} />
+              <Route path="/timelapse" element={<Timelapse />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

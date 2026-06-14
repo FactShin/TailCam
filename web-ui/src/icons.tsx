@@ -120,3 +120,7 @@ export const IconClock = (p: IconProps) => <Icon {...p}><circle cx="12" cy="12" 
 export const IconBolt = (p: IconProps) => <Icon {...p}><path d="M13 2 4.5 13.5h6L10.5 22 19 10.5h-6L13 2Z" /></Icon>;
 export const IconChip = (p: IconProps) => <Icon {...p}><rect x="6" y="6" width="12" height="12" rx="1.5" /><rect x="9.5" y="9.5" width="5" height="5" rx="0.8" /><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4" /></Icon>;
 export const IconPause = (p: IconProps) => <Icon {...p} fill="currentColor" stroke={false}><path d="M7 4h3.5v16H7zM13.5 4H17v16h-3.5z" /></Icon>;
+// Timelapse — a camcorder body with a clock hand (sped-up video over time).
+export const IconTimelapse = (p: IconProps) => (
+  <Icon {...p}><rect x="2.5" y="6.5" width="13" height="11" rx="2" /><path d="M15.5 10l6-2.5v9L15.5 14" /><path d="M9 9.7v2.6l1.8 1.1" /></Icon>
+);
