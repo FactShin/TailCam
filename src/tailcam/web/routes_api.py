@@ -35,6 +35,8 @@ from tailcam.web.schemas import (
     TimelapseSmoothRequest,
     TimelapseStartRequest,
     TrainingInfo,
+    TrainingRunInfo,
+    TrainRequest,
     TransformModel,
     UpdateInfo,
 )
@@ -665,6 +667,62 @@ def delete_model(model_id: int, ctx: AppContext = Depends(get_context)) -> OkRes
         raise HTTPException(status_code=400, detail="cannot delete (not found or base model)")
     ctx.config.save()
     return OkResponse(detail="deleted")
+
+
+def _run_info(r) -> TrainingRunInfo:
+    try:
+        metrics = json.loads(r.metrics_json) or {}
+    except (ValueError, TypeError):
+        metrics = {}
+    return TrainingRunInfo(
+        id=r.id,
+        dataset_id=r.dataset_id,
+        model_id=r.model_id,
+        base_model=r.base_model,
+        status=r.status,
+        epochs=r.epochs,
+        epoch=r.epoch,
+        metrics=metrics,
+        log=r.log,
+        created_ts=r.created_ts,
+        started_ts=r.started_ts,
+        ended_ts=r.ended_ts,
+    )
+
+
+@router.post("/training/runs", response_model=TrainingRunInfo)
+def start_run(body: TrainRequest, ctx: AppContext = Depends(get_context)) -> TrainingRunInfo:
+    """Fine-tune a model on a dataset (needs the training engine installed)."""
+    from tailcam.training.engine import engine_available
+
+    if not engine_available():
+        raise HTTPException(status_code=503, detail="training engine not installed")
+    run = ctx.training.train(body.dataset_id, body.base_model, body.epochs, body.image_size)
+    if run is None:
+        raise HTTPException(status_code=404, detail="dataset not found")
+    return _run_info(run)
+
+
+@router.get("/training/runs", response_model=list[TrainingRunInfo])
+def list_runs(ctx: AppContext = Depends(get_context)) -> list[TrainingRunInfo]:
+    return [_run_info(r) for r in ctx.store.list_runs()]
+
+
+@router.get("/training/runs/{run_id}", response_model=TrainingRunInfo)
+def get_run(run_id: int, ctx: AppContext = Depends(get_context)) -> TrainingRunInfo:
+    r = ctx.store.get_run(run_id)
+    if r is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    return _run_info(r)
+
+
+@router.post("/training/runs/{run_id}/stop", response_model=TrainingRunInfo)
+def stop_run(run_id: int, ctx: AppContext = Depends(get_context)) -> TrainingRunInfo:
+    r = ctx.store.get_run(run_id)
+    if r is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    ctx.training.stop_run(run_id)
+    return _run_info(ctx.store.get_run(run_id))
 
 
 @router.get("/system", response_model=SystemInfo)

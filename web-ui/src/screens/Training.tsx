@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { sampleThumbUrl } from "../api/client";
 import {
+  useActivateModel,
   useCameras,
   useCreateDataset,
   useDatasets,
@@ -11,18 +12,20 @@ import {
   useDeleteSample,
   useImportEvents,
   useModels,
-  useActivateModel,
   useRegisterModel,
   useRelabelSample,
+  useRuns,
   useSamples,
+  useStartRun,
+  useStopRun,
   useTraining,
   useUpdateCollection,
 } from "../api/hooks";
 import { useToast } from "../components/toast";
 import { Button, ConfirmDialog, Spinner, Toggle } from "../components/ui";
-import { IconBrain, IconChip, IconInfo, IconMotion, IconTrash } from "../icons";
+import { IconBolt, IconBrain, IconChip, IconInfo, IconMotion, IconStop, IconTrash } from "../icons";
 import { fmtAgo } from "../lib/format";
-import type { DatasetInfo, ModelInfo } from "../types";
+import type { DatasetInfo, ModelInfo, TrainingRunInfo } from "../types";
 
 export function Training() {
   const training = useTraining().data;
@@ -48,7 +51,132 @@ export function Training() {
       <EnginePanel />
       <CollectionPanel onlineCams={onlineCams} datasets={datasets} />
       <DatasetsPanel datasets={datasets} classes={classes} activeId={training?.active_dataset_id ?? 0} />
+      <TrainPanel datasets={datasets} engineOk={!!training?.engine_available} />
+      <RunsPanel datasets={datasets} />
       <ModelsPanel activeModelId={training?.active_model_id ?? 0} />
+    </div>
+  );
+}
+
+function labeledClassCount(d: DatasetInfo | undefined): number {
+  if (!d) return 0;
+  return Object.keys(d.label_counts).filter((k) => k !== "__unlabeled__").length;
+}
+
+function TrainPanel({ datasets, engineOk }: { datasets: DatasetInfo[]; engineOk: boolean }) {
+  const start = useStartRun();
+  const toast = useToast();
+  const [did, setDid] = useState(0);
+  const [epochs, setEpochs] = useState(30);
+
+  useEffect(() => {
+    if (!did && datasets.length) setDid(datasets[0].id);
+  }, [datasets, did]);
+
+  const ds = datasets.find((d) => d.id === did);
+  const classes = labeledClassCount(ds);
+  const canTrain = engineOk && classes >= 2 && !start.isPending;
+
+  const onTrain = async () => {
+    try {
+      await start.mutateAsync({ dataset_id: did, epochs });
+      toast.ok("Training started");
+    } catch (e) {
+      toast.err(e instanceof Error ? e.message : "Could not start training");
+    }
+  };
+
+  return (
+    <div className="panel">
+      <div className="panel-title"><IconBolt size={16} /> Train a model</div>
+      <p className="engine-intro">
+        Fine-tune a model on a labeled dataset. It trains on this machine's GPU and, when done, is
+        added to your registry below — activate it to analyze your cameras with your own model.
+      </p>
+      <div className="ai-form" style={{ gridTemplateColumns: "1.4fr 1fr auto" }}>
+        <label className="tl-field">
+          <span className="microlabel">Dataset</span>
+          <select className="tl-select" value={did} onChange={(e) => setDid(Number(e.target.value))}>
+            {datasets.length === 0 && <option value={0}>— no datasets —</option>}
+            {datasets.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name} · {labeledClassCount(d)} labeled classes
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="tl-field">
+          <span className="microlabel">Epochs</span>
+          <input className="tl-input" type="number" min={1} max={300} value={epochs}
+            onChange={(e) => setEpochs(Math.max(1, Math.min(300, Number(e.target.value) || 1)))} />
+        </label>
+        <div className="tl-field tl-field-action">
+          <Button variant="primary" icon={<IconBrain size={15} />} disabled={!canTrain} onClick={onTrain}>
+            Train
+          </Button>
+        </div>
+      </div>
+      {!engineOk ? (
+        <span className="help-foot mono">Install the training engine on this machine to enable training.</span>
+      ) : classes < 2 ? (
+        <span className="help-foot mono">Label samples in at least 2 classes (above) before training.</span>
+      ) : null}
+    </div>
+  );
+}
+
+const RUN_BADGE: Record<string, string> = {
+  queued: "badge-warn",
+  preparing: "badge-warn",
+  training: "badge-ok",
+  complete: "badge-ok",
+  error: "badge-err",
+  stopped: "badge-warn",
+};
+
+function RunsPanel({ datasets }: { datasets: DatasetInfo[] }) {
+  const runs = useRuns().data ?? [];
+  const stop = useStopRun();
+  const activate = useActivateModel();
+  const toast = useToast();
+  if (runs.length === 0) return null;
+
+  const dsName = (id: number) => datasets.find((d) => d.id === id)?.name ?? `#${id}`;
+  const active = (s: string) => s === "queued" || s === "preparing" || s === "training";
+
+  return (
+    <div className="panel">
+      <div className="panel-title"><IconBolt size={16} /> Training runs</div>
+      <div className="model-list">
+        {runs.map((r: TrainingRunInfo) => {
+          const pct = r.epochs ? Math.round((r.epoch / r.epochs) * 100) : 0;
+          return (
+            <div key={r.id} className="run-row">
+              <div className="run-head">
+                <span className={`badge ${RUN_BADGE[r.status] ?? "badge-warn"}`}>{r.status}</span>
+                <span className="run-name">{dsName(r.dataset_id)} · {r.base_model}</span>
+                <span className="grow" />
+                {active(r.status) && (
+                  <Button variant="ghost" size="sm" icon={<IconStop size={13} />} onClick={() => stop.mutate(r.id)}>Stop</Button>
+                )}
+                {r.status === "complete" && r.model_id && (
+                  <Button variant="outline" size="sm" onClick={() => { activate.mutate(r.model_id as number); toast.ok("Model activated"); }}>
+                    Use model
+                  </Button>
+                )}
+              </div>
+              {active(r.status) && (
+                <div className="run-bar"><span className="run-bar-fill" style={{ width: `${pct}%` }} /></div>
+              )}
+              <div className="run-meta mono">
+                {r.status === "training" ? `epoch ${r.epoch}/${r.epochs}` : `${r.epochs} epochs`}
+                {typeof r.metrics.top1 === "number" ? ` · top-1 ${(r.metrics.top1 * 100).toFixed(1)}%` : ""}
+                {r.log ? ` · ${r.log}` : ""}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

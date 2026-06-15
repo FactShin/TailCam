@@ -768,6 +768,14 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .model-default-btn:hover:not(:disabled) { background: var(--hair); color: var(--text); }
 .model-default-btn:disabled { opacity: 0.45; }
 
+.run-row { display: flex; flex-direction: column; gap: 7px; padding: 11px 12px; border-radius: 12px; background: var(--bg2); border: 1px solid var(--border); }
+.run-head { display: flex; align-items: center; gap: 9px; }
+.run-head .grow { flex: 1; }
+.run-name { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-bar { height: 6px; border-radius: 3px; background: var(--bg0); overflow: hidden; }
+.run-bar-fill { display: block; height: 100%; background: var(--accent-grad); transition: width 0.4s var(--ease); }
+.run-meta { color: var(--muted); font-size: 11px; }
+
 /* 7 nav items — let the mobile tab bar scroll rather than crush labels. */
 .tabbar { overflow-x: auto; scrollbar-width: none; }
 .tabbar::-webkit-scrollbar { display: none; }

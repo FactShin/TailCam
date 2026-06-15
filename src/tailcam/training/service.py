@@ -14,6 +14,7 @@ the inference phase); this module owns the data + registry.
 
 from __future__ import annotations
 
+import json
 import shutil
 import threading
 import time
@@ -27,7 +28,12 @@ from tailcam import paths
 from tailcam.camera.manager import CameraManager
 from tailcam.config import TrainingConfig
 from tailcam.logging_setup import get_logger
-from tailcam.persistence.models import DatasetRecord, DatasetSampleRecord, ModelRecord
+from tailcam.persistence.models import (
+    DatasetRecord,
+    DatasetSampleRecord,
+    ModelRecord,
+    TrainingRunRecord,
+)
 from tailcam.persistence.store import Store
 from tailcam.streaming.encoder import encode_jpeg
 
@@ -55,6 +61,7 @@ class TrainingService:
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
         self.collected_this_session = 0
+        self._run_stops: dict[int, threading.Event] = {}
 
     # -- startup -----------------------------------------------------------
     def startup(self) -> None:
@@ -283,6 +290,116 @@ class TrainingService:
         if self._config.active_model_id == model_id:
             self._config.active_model_id = 0
         return True
+
+
+    # -- training runs -----------------------------------------------------
+    def train(
+        self,
+        dataset_id: int,
+        base_model: str | None = None,
+        epochs: int | None = None,
+        image_size: int | None = None,
+    ) -> TrainingRunRecord | None:
+        if self._store.get_dataset(dataset_id) is None:
+            return None
+        cfg = self._config
+        base = base_model or cfg.base_model
+        ep = epochs or cfg.epochs
+        imgsz = image_size or cfg.image_size
+        run = TrainingRunRecord(
+            id=None,
+            dataset_id=dataset_id,
+            model_id=None,
+            base_model=base,
+            status="queued",
+            params_json=json.dumps({"epochs": ep, "image_size": imgsz}),
+            metrics_json="{}",
+            log="",
+            epochs=ep,
+            epoch=0,
+            created_ts=time.time(),
+        )
+        run.id = self._store.add_run(run)
+        stop = threading.Event()
+        with self._lock:
+            self._run_stops[run.id] = stop
+        threading.Thread(
+            target=self._train_job,
+            args=(run.id, dataset_id, base, ep, imgsz, stop),
+            name=f"training-run-{run.id}",
+            daemon=True,
+        ).start()
+        return self._store.get_run(run.id)
+
+    def stop_run(self, run_id: int) -> bool:
+        with self._lock:
+            stop = self._run_stops.get(run_id)
+        if stop is None:
+            return False
+        stop.set()
+        return True
+
+    def _train_job(
+        self,
+        run_id: int,
+        dataset_id: int,
+        base: str,
+        epochs: int,
+        imgsz: int,
+        stop: threading.Event,
+    ) -> None:
+        from tailcam.training import runner
+        from tailcam.training.engine import engine_available, torch_device
+
+        try:
+            if not engine_available():
+                self._store.update_run(
+                    run_id, status="error", ended_ts=time.time(),
+                    log="Training engine not installed (pip install 'tailcam[training]').",
+                )
+                return
+            self._store.update_run(run_id, status="preparing", started_ts=time.time())
+            run_dir = paths.models_dir() / f"run-{run_id}"
+            data_dir = run_dir / "dataset"
+            classes, n_train, n_val = runner.export_classification_dataset(
+                self._store, dataset_id, data_dir
+            )
+            self._store.update_run(
+                run_id, status="training",
+                log=f"{n_train} train / {n_val} val · classes: {', '.join(classes)}",
+            )
+            result = runner.train_model(
+                base, data_dir, epochs, imgsz, torch_device(), run_dir,
+                on_epoch=lambda e: self._store.update_run(run_id, epoch=e),
+                should_stop=stop.is_set,
+            )
+            if stop.is_set():
+                self._store.update_run(run_id, status="stopped", ended_ts=time.time())
+                return
+            metrics = result.get("metrics", {})
+            model_id = self._store.add_model(
+                ModelRecord(
+                    id=None,
+                    name=f"Trained {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+                    kind="trained",
+                    path=result["model_path"],
+                    classes_json=json.dumps(classes),
+                    base_model=base,
+                    metrics_json=json.dumps(metrics),
+                    created_ts=time.time(),
+                )
+            )
+            self._store.update_run(
+                run_id, status="complete", model_id=model_id, epoch=epochs,
+                metrics_json=json.dumps(metrics), ended_ts=time.time(),
+            )
+            log.info("training run %s complete -> model %s", run_id, model_id)
+        except Exception as exc:
+            log.exception("training run %s failed: %s", run_id, exc)
+            self._store.update_run(run_id, status="error", log=str(exc)[:500], ended_ts=time.time())
+        finally:
+            with self._lock:
+                self._run_stops.pop(run_id, None)
 
 
 def _write_thumb(image: np.ndarray, dataset_id: int, stem: str) -> Path | None:

@@ -124,6 +124,20 @@ export const deactivateModel = () =>
   jsonFetch<{ ok: boolean }>("/api/models/deactivate", { method: "POST" });
 export const deleteModel = (id: number) =>
   jsonFetch<{ ok: boolean }>(`/api/models/${id}`, { method: "DELETE" });
+
+export const getRuns = () => jsonFetch<import("../types").TrainingRunInfo[]>("/api/training/runs");
+export const startRun = (body: {
+  dataset_id: number;
+  base_model?: string;
+  epochs?: number;
+  image_size?: number;
+}) =>
+  jsonFetch<import("../types").TrainingRunInfo>("/api/training/runs", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+export const stopRun = (id: number) =>
+  jsonFetch<import("../types").TrainingRunInfo>(`/api/training/runs/${id}/stop`, { method: "POST" });
 export const eventThumbUrl = (prefix: string, eventId: number) =>
   `${prefix}/events/${eventId}/thumbnail`;
 export const reloadSystem = () =>
