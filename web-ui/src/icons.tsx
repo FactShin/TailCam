@@ -128,3 +128,7 @@ export const IconTimelapse = (p: IconProps) => (
 export const IconSparkle = (p: IconProps) => (
   <Icon {...p}><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" /><path d="M19 15.5l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z" /></Icon>
 );
+// Brain — model training.
+export const IconBrain = (p: IconProps) => (
+  <Icon {...p}><path d="M9 4.5a2.5 2.5 0 0 0-2.5 2.5 2.5 2.5 0 0 0-1 4.8A2.5 2.5 0 0 0 7 16.5a2.5 2.5 0 0 0 2.5 2.5c.8 0 1.5-.4 1.5-1V5.5c0-.6-.7-1-1.5-1z" /><path d="M15 4.5a2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 1 1 4.8A2.5 2.5 0 0 1 17 16.5a2.5 2.5 0 0 1-2.5 2.5c-.8 0-1.5-.4-1.5-1V5.5c0-.6.7-1 1.5-1z" /></Icon>
+);

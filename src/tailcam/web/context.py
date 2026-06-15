@@ -18,6 +18,7 @@ from tailcam.persistence.store import Store
 from tailcam.streaming.mjpeg import MJPEGBackend
 from tailcam.tailscale.client import TailscaleClient
 from tailcam.timelapse.service import TimelapseService
+from tailcam.training.service import TrainingService
 
 log = get_logger(__name__)
 
@@ -36,6 +37,9 @@ class AppContext:
         self.tailscale = TailscaleClient()
         self.mjpeg = MJPEGBackend()
         self.local_host = resolve_local_host(self.tailscale)
+        self.training = TrainingService(
+            self.manager, self.store, config.training, self.analyzer, self.local_host
+        )
         self.cluster = ClusterService(
             config.peers, self.tailscale, self.local_host, config.tailscale.serve_port
         )
@@ -50,6 +54,10 @@ class AppContext:
         interrupted = self.store.interrupt_active_timelapses()
         if interrupted:
             log.info("Marked %d timelapse(s) interrupted (encode them to finish)", interrupted)
+        interrupted_runs = self.store.interrupt_active_runs()
+        if interrupted_runs:
+            log.info("Marked %d training run(s) interrupted (re-run to finish)", interrupted_runs)
+        self.training.startup()
         self.manager.discover()
         # Eager-start workers so status reflects reality from the first poll
         # (the UI only streams cameras that report online).
@@ -70,6 +78,7 @@ class AppContext:
         self._motion_workers.clear()
         self.recorder.stop_all()
         self.timelapse.shutdown()
+        self.training.shutdown()
         self.manager.stop_all()
 
     async def aclose(self) -> None:

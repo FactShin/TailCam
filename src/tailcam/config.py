@@ -120,6 +120,27 @@ class TimelapseConfig:
 
 
 @dataclass
+class TrainingConfig:
+    # On-device model training from your own camera footage (optional, GPU). The
+    # engine (Ultralytics/torch) is auto-detected; install it to enable.
+    engine: str = "ultralytics"
+    # Continuous dataset collection: sample a frame from every online camera on
+    # this interval and add it to the active dataset for training.
+    collect_enabled: bool = False
+    collect_interval_seconds: float = 30.0
+    auto_label: bool = True  # weak-label new samples with the Ollama model
+    active_dataset_id: int = 0  # 0 = none
+    classes: list[str] = field(
+        default_factory=lambda: ["person", "animal", "vehicle", "package", "nothing"]
+    )
+    # Training run defaults.
+    base_model: str = "yolo11n-cls.pt"  # downloaded on first train
+    epochs: int = 30
+    image_size: int = 224
+    active_model_id: int = 0  # 0 = use Ollama; >0 = a trained/BYO model
+
+
+@dataclass
 class AppConfig:
     server: ServerConfig = field(default_factory=ServerConfig)
     stream: StreamConfig = field(default_factory=StreamConfig)
@@ -130,6 +151,7 @@ class AppConfig:
     cameras: CamerasConfig = field(default_factory=CamerasConfig)
     ai: AIConfig = field(default_factory=AIConfig)
     timelapse: TimelapseConfig = field(default_factory=TimelapseConfig)
+    training: TrainingConfig = field(default_factory=TrainingConfig)
 
     @classmethod
     def load(cls, path: Path | None = None) -> AppConfig:
@@ -166,6 +188,7 @@ class AppConfig:
             cameras=CamerasConfig(**raw.get("cameras", {})),
             ai=AIConfig(**raw.get("ai", {})),
             timelapse=TimelapseConfig(**raw.get("timelapse", {})),
+            training=TrainingConfig(**raw.get("training", {})),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -179,6 +202,7 @@ class AppConfig:
             "cameras": asdict(self.cameras),
             "ai": asdict(self.ai),
             "timelapse": asdict(self.timelapse),
+            "training": asdict(self.training),
         }
 
     def save(self, path: Path | None = None) -> None:

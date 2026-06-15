@@ -84,6 +84,19 @@ def timelapse_dir() -> Path:
     return data_dir() / "timelapse"
 
 
+def training_dir() -> Path:
+    # Holds datasets/<id>/ (sample images + thumbnails) and models/ (artifacts).
+    return data_dir() / "training"
+
+
+def datasets_dir() -> Path:
+    return training_dir() / "datasets"
+
+
+def models_dir() -> Path:
+    return training_dir() / "models"
+
+
 def database_file() -> Path:
     return data_dir() / "tailcam.db"
 
