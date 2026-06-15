@@ -62,6 +62,21 @@ def test_capture_encode_lifecycle(service, context):
     assert list(Path(done.frames_dir).glob("*.jpg"))
 
 
+def test_stop_is_non_blocking(service, context):
+    import time as _t
+
+    cam_id = _synthetic_id(context)
+    rec = service.start(cam_id, interval_seconds=0.1, output_fps=8)
+    tl_id = rec.id
+    assert _wait(lambda: service.get(tl_id).frames_captured >= 3)
+    t0 = _t.monotonic()
+    result = service.stop(tl_id)
+    # Returns promptly — the worker join + encode run on a background thread.
+    assert _t.monotonic() - t0 < 2.0
+    assert result is not None and result.state in ("encoding", "complete")
+    assert _wait(lambda: service.get(tl_id).state == "complete")
+
+
 def test_max_frames_auto_finalizes(context):
     context.config.timelapse.max_frames = 4
     svc = TimelapseService(context.manager, context.store, context.config.timelapse)
