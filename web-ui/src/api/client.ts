@@ -75,6 +75,8 @@ export const getSystem = () => jsonFetch<SystemInfo>("/api/system");
 export const getUpdate = () =>
   jsonFetch<{ current: string; latest: string | null; available: boolean }>("/api/update");
 export const getAi = () => jsonFetch<import("../types").AIInfo>("/api/ai");
+export const updateAi = (body: import("../types").AIUpdate) =>
+  jsonFetch<import("../types").AIInfo>("/api/ai", { method: "POST", body: JSON.stringify(body) });
 export const eventThumbUrl = (prefix: string, eventId: number) =>
   `${prefix}/events/${eventId}/thumbnail`;
 export const reloadSystem = () =>

@@ -194,26 +194,22 @@ can analyze the whole fleet.
 Set up (e.g. on a Mac mini):
 
 ```bash
-# 1. Install Ollama and pull a vision model (moondream is small + fast):
+# Install Ollama and pull a vision model (moondream is small + fast):
 ollama pull moondream          # or: qwen2.5vl / llava for better labels
-# 2. In ~/.config/tailcam/config.toml (or the macOS app-support path):
-```
-```toml
-[ai]
-enabled = true
-base_url = "http://localhost:11434"   # or a tailnet host to analyze the fleet
-model = "moondream"
-```
-```bash
-tailcam restart
 ```
 
-Then motion events show a label chip (🧍 person, 🚗 vehicle…) + the trigger
-thumbnail. Settings → **AI motion analysis** shows whether Ollama is reachable
-and the model is pulled. To let one node analyze another's events, point
-`base_url` at that node (and run Ollama with `OLLAMA_HOST=0.0.0.0` so the tailnet
-can reach it). See [`docs/ai-detection-plan.md`](docs/ai-detection-plan.md) for
-the roadmap (notifications, 3D-print failure detection).
+Then enable it from the dashboard: open the **Models** page, flip **Motion AI
+(Ollama)** on, set the model and the Ollama URL (`http://localhost:11434`, or a
+tailnet host like `http://mac-mini.your-tailnet.ts.net:11434` to analyze the
+whole fleet), and hit **Save & test** — no restart, no config file. The panel
+shows whether Ollama is reachable and the model is pulled. (You can still set
+`[ai]` in `config.toml` if you prefer.)
+
+Motion events then show a label chip (🧍 person, 🚗 vehicle…) + the trigger
+thumbnail. To let one node analyze another's events, point the URL at that node
+(and run Ollama with `OLLAMA_HOST=0.0.0.0` so the tailnet can reach it). See
+[`docs/ai-detection-plan.md`](docs/ai-detection-plan.md) for the roadmap
+(notifications, 3D-print failure detection).
 
 ## Features
 
