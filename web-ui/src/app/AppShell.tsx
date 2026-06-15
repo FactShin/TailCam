@@ -7,6 +7,7 @@ import { CommandPalette } from "../components/CommandPalette";
 import { VideoWall } from "../components/VideoWall";
 import { fmtBytes } from "../lib/format";
 import {
+  IconBrain,
   IconChevL,
   IconChevR,
   IconChip,
@@ -26,8 +27,9 @@ const NAV: { to: string; label: string; icon: (p: IconProps) => JSX.Element; key
   { to: "/gallery", label: "Gallery", icon: IconFilm, key: "2" },
   { to: "/events", label: "Events", icon: IconMotion, key: "3" },
   { to: "/timelapse", label: "Timelapse", icon: IconTimelapse, key: "4" },
-  { to: "/models", label: "Models", icon: IconChip, key: "5" },
-  { to: "/settings", label: "Settings", icon: IconSettings, key: "6" },
+  { to: "/training", label: "Training", icon: IconBrain, key: "5" },
+  { to: "/models", label: "Models", icon: IconChip, key: "6" },
+  { to: "/settings", label: "Settings", icon: IconSettings, key: "7" },
 ];
 
 const isActive = (path: string, to: string) =>

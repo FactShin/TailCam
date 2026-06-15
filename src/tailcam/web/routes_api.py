@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from tailcam import __version__
@@ -13,18 +15,26 @@ from tailcam.web.schemas import (
     AIUpdate,
     CameraInfo,
     CameraSettingsUpdate,
+    CollectionUpdate,
+    DatasetCreate,
+    DatasetInfo,
     EngineInfo,
     HostInfo,
     MediaCreatedResponse,
     MediaInfo,
+    ModelInfo,
+    ModelRegister,
     MotionEventInfo,
     OkResponse,
     PostprocessInfo,
     PostprocessSettings,
+    SampleInfo,
+    SampleRelabel,
     SystemInfo,
     TimelapseInfo,
     TimelapseSmoothRequest,
     TimelapseStartRequest,
+    TrainingInfo,
     TransformModel,
     UpdateInfo,
 )
@@ -441,6 +451,220 @@ def set_postprocess(
         ctx.config.timelapse.smooth_engine = settings.default_engine
         ctx.config.save()
     return _postprocess_info(ctx)
+
+
+# -- model training --------------------------------------------------------
+
+
+def _dataset_info(ctx: AppContext, d) -> DatasetInfo:
+    counts = ctx.store.dataset_label_counts(d.id)
+    return DatasetInfo(
+        id=d.id,
+        name=d.name,
+        task=d.task,
+        created_ts=d.created_ts,
+        note=d.note,
+        sample_count=sum(counts.values()),
+        label_counts=counts,
+    )
+
+
+def _sample_info(s) -> SampleInfo:
+    return SampleInfo(
+        id=s.id,
+        dataset_id=s.dataset_id,
+        label=s.label,
+        source=s.source,
+        camera_id=s.camera_id,
+        host=s.host,
+        created_ts=s.created_ts,
+        confidence=s.confidence,
+        has_thumb=bool(s.thumb),
+    )
+
+
+def _model_info(m) -> ModelInfo:
+    try:
+        classes = json.loads(m.classes_json) or []
+    except (ValueError, TypeError):
+        classes = []
+    try:
+        metrics = json.loads(m.metrics_json) or {}
+    except (ValueError, TypeError):
+        metrics = {}
+    return ModelInfo(
+        id=m.id,
+        name=m.name,
+        kind=m.kind,
+        active=bool(m.active),
+        base_model=m.base_model,
+        classes=classes,
+        metrics=metrics,
+        created_ts=m.created_ts,
+        has_artifact=bool(m.path),
+    )
+
+
+def _training_info(ctx: AppContext) -> TrainingInfo:
+    from tailcam.training.engine import engine_info
+
+    info = engine_info()
+    tc = ctx.config.training
+    return TrainingInfo(
+        engine_available=info["available"],
+        framework=info["framework"],
+        version=info["version"],
+        device=info["device"],
+        collecting=ctx.training.is_collecting(),
+        collect_enabled=tc.collect_enabled,
+        collect_interval_seconds=tc.collect_interval_seconds,
+        auto_label=tc.auto_label,
+        active_dataset_id=tc.active_dataset_id,
+        active_model_id=tc.active_model_id,
+        classes=list(tc.classes),
+        total_samples=ctx.store.total_sample_count(),
+        dataset_count=len(ctx.store.list_datasets()),
+        model_count=len(ctx.store.list_models()),
+        collected_session=ctx.training.collected_this_session,
+    )
+
+
+@router.get("/training", response_model=TrainingInfo)
+def training_info(ctx: AppContext = Depends(get_context)) -> TrainingInfo:
+    """Training engine status + a summary for the Training page."""
+    return _training_info(ctx)
+
+
+@router.post("/training/collection", response_model=TrainingInfo)
+def update_collection(
+    upd: CollectionUpdate, ctx: AppContext = Depends(get_context)
+) -> TrainingInfo:
+    """Toggle/configure continuous dataset collection from the camera feeds."""
+    tc = ctx.config.training
+    if upd.interval_seconds is not None:
+        tc.collect_interval_seconds = max(2.0, upd.interval_seconds)
+    if upd.auto_label is not None:
+        tc.auto_label = upd.auto_label
+    if upd.active_dataset_id is not None:
+        tc.active_dataset_id = upd.active_dataset_id
+    if upd.enabled is not None:
+        tc.collect_enabled = upd.enabled
+        if upd.enabled:
+            if not tc.active_dataset_id:
+                ds = ctx.training.create_dataset("All cameras")
+                tc.active_dataset_id = ds.id or 0
+            ctx.training.start_collection()
+        else:
+            ctx.training.stop_collection()
+    ctx.config.save()
+    return _training_info(ctx)
+
+
+@router.get("/datasets", response_model=list[DatasetInfo])
+def list_datasets(ctx: AppContext = Depends(get_context)) -> list[DatasetInfo]:
+    return [_dataset_info(ctx, d) for d in ctx.store.list_datasets()]
+
+
+@router.post("/datasets", response_model=DatasetInfo)
+def create_dataset(body: DatasetCreate, ctx: AppContext = Depends(get_context)) -> DatasetInfo:
+    record = ctx.training.create_dataset(body.name, body.note)
+    ctx.config.save()
+    return _dataset_info(ctx, record)
+
+
+@router.get("/datasets/{dataset_id}", response_model=DatasetInfo)
+def get_dataset(dataset_id: int, ctx: AppContext = Depends(get_context)) -> DatasetInfo:
+    d = ctx.store.get_dataset(dataset_id)
+    if d is None:
+        raise HTTPException(status_code=404, detail="dataset not found")
+    return _dataset_info(ctx, d)
+
+
+@router.delete("/datasets/{dataset_id}", response_model=OkResponse)
+def delete_dataset(dataset_id: int, ctx: AppContext = Depends(get_context)) -> OkResponse:
+    if not ctx.training.delete_dataset(dataset_id):
+        raise HTTPException(status_code=404, detail="dataset not found")
+    ctx.config.save()
+    return OkResponse(detail="deleted")
+
+
+@router.post("/datasets/{dataset_id}/import-events", response_model=DatasetInfo)
+def import_events(dataset_id: int, ctx: AppContext = Depends(get_context)) -> DatasetInfo:
+    """Add existing motion-event snapshots to the dataset as labeled samples."""
+    d = ctx.store.get_dataset(dataset_id)
+    if d is None:
+        raise HTTPException(status_code=404, detail="dataset not found")
+    ctx.training.import_from_events(dataset_id)
+    return _dataset_info(ctx, ctx.store.get_dataset(dataset_id))
+
+
+@router.get("/datasets/{dataset_id}/samples", response_model=list[SampleInfo])
+def list_samples(
+    dataset_id: int,
+    label: str | None = None,
+    limit: int = 200,
+    offset: int = 0,
+    ctx: AppContext = Depends(get_context),
+) -> list[SampleInfo]:
+    return [_sample_info(s) for s in ctx.store.list_samples(dataset_id, label, limit, offset)]
+
+
+@router.patch("/samples/{sample_id}", response_model=SampleInfo)
+def relabel_sample(
+    sample_id: int, body: SampleRelabel, ctx: AppContext = Depends(get_context)
+) -> SampleInfo:
+    s = ctx.store.get_sample(sample_id)
+    if s is None:
+        raise HTTPException(status_code=404, detail="sample not found")
+    ctx.store.set_sample_label(sample_id, body.label)
+    return _sample_info(ctx.store.get_sample(sample_id))
+
+
+@router.delete("/samples/{sample_id}", response_model=OkResponse)
+def delete_sample(sample_id: int, ctx: AppContext = Depends(get_context)) -> OkResponse:
+    if not ctx.training.delete_sample(sample_id):
+        raise HTTPException(status_code=404, detail="sample not found")
+    return OkResponse(detail="deleted")
+
+
+@router.get("/models", response_model=list[ModelInfo])
+def list_models(ctx: AppContext = Depends(get_context)) -> list[ModelInfo]:
+    return [_model_info(m) for m in ctx.store.list_models()]
+
+
+@router.post("/models", response_model=ModelInfo)
+def register_model(body: ModelRegister, ctx: AppContext = Depends(get_context)) -> ModelInfo:
+    """Register a bring-your-own model file (.pt) by path."""
+    record = ctx.training.register_byo(body.name, body.path)
+    if record is None:
+        raise HTTPException(status_code=400, detail="model file not found at that path")
+    return _model_info(record)
+
+
+@router.post("/models/{model_id}/activate", response_model=ModelInfo)
+def activate_model(model_id: int, ctx: AppContext = Depends(get_context)) -> ModelInfo:
+    m = ctx.store.get_model(model_id)
+    if m is None:
+        raise HTTPException(status_code=404, detail="model not found")
+    ctx.training.activate_model(model_id)
+    ctx.config.save()
+    return _model_info(ctx.store.get_model(model_id))
+
+
+@router.post("/models/deactivate", response_model=OkResponse)
+def deactivate_model(ctx: AppContext = Depends(get_context)) -> OkResponse:
+    """Use the default analyzer (Ollama) instead of a trained/BYO model."""
+    ctx.training.activate_model(None)
+    ctx.config.save()
+    return OkResponse(detail="using default analyzer")
+
+
+@router.delete("/models/{model_id}", response_model=OkResponse)
+def delete_model(model_id: int, ctx: AppContext = Depends(get_context)) -> OkResponse:
+    if not ctx.training.delete_model(model_id):
+        raise HTTPException(status_code=400, detail="cannot delete (not found or base model)")
+    ctx.config.save()
+    return OkResponse(detail="deleted")
 
 
 @router.get("/system", response_model=SystemInfo)

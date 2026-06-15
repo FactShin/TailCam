@@ -95,3 +95,20 @@ def timelapse_smooth(tl_id: int, ctx: AppContext = Depends(get_context)) -> File
     if rec is None or not rec.smooth_path or not Path(rec.smooth_path).exists():
         raise HTTPException(status_code=404, detail="smoothed timelapse not found")
     return FileResponse(rec.smooth_path, media_type="video/mp4")
+
+
+@router.get("/datasets/sample/{sample_id}/thumbnail")
+def dataset_sample_thumb(sample_id: int, ctx: AppContext = Depends(get_context)) -> FileResponse:
+    rec = ctx.store.get_sample(sample_id)
+    candidate = (rec.thumb or rec.path) if rec else None
+    if rec is None or not candidate or not Path(candidate).exists():
+        raise HTTPException(status_code=404, detail="sample not found")
+    return FileResponse(candidate)
+
+
+@router.get("/datasets/sample/{sample_id}/image")
+def dataset_sample_image(sample_id: int, ctx: AppContext = Depends(get_context)) -> FileResponse:
+    rec = ctx.store.get_sample(sample_id)
+    if rec is None or not Path(rec.path).exists():
+        raise HTTPException(status_code=404, detail="sample not found")
+    return FileResponse(rec.path)

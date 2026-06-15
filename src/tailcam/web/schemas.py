@@ -158,6 +158,82 @@ class PostprocessSettings(BaseModel):
     default_engine: str | None = None  # ffmpeg | rife
 
 
+# -- model training --------------------------------------------------------
+
+
+class DatasetInfo(BaseModel):
+    id: int
+    name: str
+    task: str
+    created_ts: float
+    note: str = ""
+    sample_count: int = 0
+    label_counts: dict[str, int] = {}
+
+
+class DatasetCreate(BaseModel):
+    name: str
+    note: str = ""
+
+
+class SampleInfo(BaseModel):
+    id: int
+    dataset_id: int
+    label: str | None = None
+    source: str
+    camera_id: str
+    host: str = ""
+    created_ts: float
+    confidence: float | None = None
+    has_thumb: bool = False
+
+
+class SampleRelabel(BaseModel):
+    label: str | None = None  # None clears the label
+
+
+class ModelInfo(BaseModel):
+    id: int
+    name: str
+    kind: str  # base | trained | byo
+    active: bool = False
+    base_model: str = ""
+    classes: list[str] = []
+    metrics: dict = {}
+    created_ts: float
+    has_artifact: bool = False
+
+
+class ModelRegister(BaseModel):
+    name: str
+    path: str
+
+
+class CollectionUpdate(BaseModel):
+    enabled: bool | None = None
+    interval_seconds: float | None = None
+    auto_label: bool | None = None
+    active_dataset_id: int | None = None
+
+
+class TrainingInfo(BaseModel):
+    engine_available: bool
+    framework: str = "ultralytics"
+    version: str | None = None
+    device: str = "none"
+    collecting: bool = False
+    collect_enabled: bool = False
+    collect_interval_seconds: float = 30.0
+    auto_label: bool = True
+    active_dataset_id: int = 0
+    active_model_id: int = 0
+    classes: list[str] = []
+    total_samples: int = 0
+    dataset_count: int = 0
+    model_count: int = 0
+    collected_session: int = 0
+
+
 class SystemInfo(BaseModel):
     version: str
     host: str = ""  # this node's identity (used for peer discovery)

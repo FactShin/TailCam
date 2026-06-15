@@ -92,6 +92,67 @@ export interface AIUpdate {
   base_url?: string;
 }
 
+// -- model training --
+
+export interface TrainingInfo {
+  engine_available: boolean;
+  framework: string;
+  version: string | null;
+  device: string;
+  collecting: boolean;
+  collect_enabled: boolean;
+  collect_interval_seconds: number;
+  auto_label: boolean;
+  active_dataset_id: number;
+  active_model_id: number;
+  classes: string[];
+  total_samples: number;
+  dataset_count: number;
+  model_count: number;
+  collected_session: number;
+}
+
+export interface CollectionUpdate {
+  enabled?: boolean;
+  interval_seconds?: number;
+  auto_label?: boolean;
+  active_dataset_id?: number;
+}
+
+export interface DatasetInfo {
+  id: number;
+  name: string;
+  task: string;
+  created_ts: number;
+  note: string;
+  sample_count: number;
+  label_counts: Record<string, number>;
+}
+
+export interface SampleInfo {
+  id: number;
+  dataset_id: number;
+  label: string | null;
+  source: string;
+  camera_id: string;
+  host: string;
+  created_ts: number;
+  confidence: number | null;
+  has_thumb: boolean;
+}
+
+export interface ModelInfo {
+  id: number;
+  name: string;
+  kind: "base" | "trained" | "byo";
+  active: boolean;
+  base_model: string;
+  classes: string[];
+  metrics: Record<string, unknown>;
+  created_ts: number;
+  has_artifact: boolean;
+}
+
 export type TimelapseState = "capturing" | "encoding" | "complete" | "interrupted" | "error";
 
 export interface TimelapseInfo {
