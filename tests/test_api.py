@@ -17,6 +17,31 @@ def test_system_info(client):
     assert body["local_url"].startswith("http://localhost")
 
 
+def test_update_ai_config(client, context):
+    assert client.get("/api/ai").json()["enabled"] is False
+
+    # Enable + set model/URL via the UI endpoint (127.0.0.1:1 = instant refusal).
+    resp = client.post(
+        "/api/ai",
+        json={"enabled": True, "model": "llava", "base_url": "http://127.0.0.1:1/"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["enabled"] is True
+    assert body["model"] == "llava"
+    assert body["base_url"] == "http://127.0.0.1:1"  # trailing slash stripped
+
+    # Persisted to the live config the analyzer reads — takes effect immediately.
+    assert context.config.ai.enabled is True
+    assert context.config.ai.model == "llava"
+    assert context.analyzer.enabled is True
+
+    # Toggle off; blank fields are ignored (model unchanged).
+    off = client.post("/api/ai", json={"enabled": False, "model": ""}).json()
+    assert off["enabled"] is False and off["model"] == "llava"
+    assert context.config.ai.enabled is False
+
+
 def test_rename_camera(client):
     cam_id = client.get("/api/cameras").json()[0]["id"]
     resp = client.patch(f"/api/cameras/{cam_id}", json={"name": "Front Door"})

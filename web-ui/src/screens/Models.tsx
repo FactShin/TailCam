@@ -1,5 +1,8 @@
-import { useAi, usePostprocess, useSetPostprocess } from "../api/hooks";
+import { useEffect, useState } from "react";
+
+import { useAi, usePostprocess, useSetPostprocess, useUpdateAi } from "../api/hooks";
 import { useToast } from "../components/toast";
+import { Button, Toggle } from "../components/ui";
 import { IconChip, IconInfo, IconSparkle } from "../icons";
 import type { EngineInfo } from "../types";
 
@@ -51,7 +54,6 @@ function EngineCard({
 export function Models() {
   const toast = useToast();
   const pp = usePostprocess().data;
-  const ai = useAi().data;
   const setPp = useSetPostprocess();
 
   const makeDefault = async (id: string) => {
@@ -92,40 +94,7 @@ export function Models() {
         </div>
       </div>
 
-      <div className="panel">
-        <div className="panel-title"><IconChip size={16} /> Motion AI (Ollama)</div>
-        {!ai || !ai.enabled ? (
-          <div className="kv kv-stack">
-            <span className="kv-k">Status</span>
-            <span className="kv-v">
-              <span className="badge"><span className="pill-dot" style={{ background: "var(--muted)" }} /> Disabled</span>
-            </span>
-            <span className="help-foot mono">
-              Enable in config.toml [ai]: set enabled=true and point base_url at an Ollama host (e.g.
-              your Mac mini). Motion events then get labels (person / animal / vehicle…).
-            </span>
-          </div>
-        ) : (
-          <>
-            <div className="kv"><span className="kv-k">Model</span><span className="kv-v mono">{ai.model}</span></div>
-            <div className="kv">
-              <span className="kv-k">Ollama</span>
-              <span className="kv-v">
-                {ai.reachable && ai.model_present ? (
-                  <span className="badge badge-ok"><span className="pill-dot" style={{ background: "var(--ok)" }} /> Ready</span>
-                ) : ai.reachable ? (
-                  <span className="badge badge-warn"><span className="pill-dot" style={{ background: "var(--warn)" }} /> Model not pulled</span>
-                ) : (
-                  <span className="badge badge-err"><span className="pill-dot" style={{ background: "var(--err)" }} /> Unreachable</span>
-                )}
-              </span>
-            </div>
-            {ai.reachable && !ai.model_present && (
-              <span className="help-foot mono">Run on the Ollama host: ollama pull {ai.model}</span>
-            )}
-          </>
-        )}
-      </div>
+      <MotionAiPanel />
 
       <div className="panel panel-help">
         <div className="panel-title"><IconInfo size={16} /> About local models</div>
@@ -134,6 +103,104 @@ export function Models() {
           timelapse, motion analysis on whichever node you point Ollama at. No cloud, no accounts.
         </p>
       </div>
+    </div>
+  );
+}
+
+function MotionAiPanel() {
+  const ai = useAi().data;
+  const update = useUpdateAi();
+  const toast = useToast();
+  const [model, setModel] = useState("");
+  const [url, setUrl] = useState("");
+  const [dirty, setDirty] = useState(false);
+
+  // Mirror server values into the inputs unless the user is mid-edit.
+  useEffect(() => {
+    if (ai && !dirty) {
+      setModel(ai.model);
+      setUrl(ai.base_url);
+    }
+  }, [ai, dirty]);
+
+  const enabled = !!ai?.enabled;
+
+  const onToggle = async (on: boolean) => {
+    try {
+      await update.mutateAsync({ enabled: on });
+      toast.ok(on ? "AI motion analysis on" : "AI motion analysis off");
+    } catch {
+      toast.err("Could not update AI");
+    }
+  };
+
+  const onSave = async () => {
+    try {
+      await update.mutateAsync({ model: model.trim() || undefined, base_url: url.trim() || undefined });
+      setDirty(false);
+      toast.ok("Saved — re-checking Ollama");
+    } catch {
+      toast.err("Could not save");
+    }
+  };
+
+  return (
+    <div className="panel">
+      <div className="panel-title">
+        <IconChip size={16} /> Motion AI (Ollama)
+        <span style={{ flex: 1 }} />
+        <Toggle checked={enabled} label="Enable AI motion analysis" onChange={onToggle} />
+      </div>
+      <p className="engine-intro">
+        When on, motion events from cameras with motion detection enabled get labeled by a local
+        Ollama vision model (person / animal / vehicle…). Point the URL at whichever node runs Ollama
+        (e.g. your Mac mini). Nothing leaves your tailnet.
+      </p>
+
+      {enabled && ai && (
+        <div className="kv">
+          <span className="kv-k">Ollama</span>
+          <span className="kv-v">
+            {ai.reachable && ai.model_present ? (
+              <span className="badge badge-ok"><span className="pill-dot" style={{ background: "var(--ok)" }} /> Ready</span>
+            ) : ai.reachable ? (
+              <span className="badge badge-warn"><span className="pill-dot" style={{ background: "var(--warn)" }} /> Model not pulled</span>
+            ) : (
+              <span className="badge badge-err"><span className="pill-dot" style={{ background: "var(--err)" }} /> Unreachable</span>
+            )}
+          </span>
+        </div>
+      )}
+
+      <div className="ai-form">
+        <label className="tl-field">
+          <span className="microlabel">Model</span>
+          <input
+            className="tl-input"
+            value={model}
+            placeholder="moondream"
+            onChange={(e) => { setModel(e.target.value); setDirty(true); }}
+          />
+        </label>
+        <label className="tl-field">
+          <span className="microlabel">Ollama URL</span>
+          <input
+            className="tl-input"
+            value={url}
+            placeholder="http://localhost:11434"
+            onChange={(e) => { setUrl(e.target.value); setDirty(true); }}
+          />
+        </label>
+        <div className="tl-field tl-field-action">
+          <Button variant="primary" disabled={!dirty || update.isPending} onClick={onSave}>
+            Save &amp; test
+          </Button>
+        </div>
+      </div>
+
+      {enabled && ai?.reachable && !ai.model_present && (
+        <span className="help-foot mono">Model not pulled — run on the Ollama host: ollama pull {ai.model}</span>
+      )}
     </div>
   );
 }

@@ -90,6 +90,13 @@ class AIInfo(BaseModel):
     reachable: bool
     model: str
     model_present: bool
+    base_url: str = ""
+
+
+class AIUpdate(BaseModel):
+    enabled: bool | None = None
+    model: str | None = None
+    base_url: str | None = None
 
 
 class TimelapseStartRequest(BaseModel):

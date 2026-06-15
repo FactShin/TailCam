@@ -55,6 +55,17 @@ export function useAi() {
   return useQuery({ queryKey: ["ai"], queryFn: api.getAi, refetchInterval: 30_000 });
 }
 
+export function useUpdateAi() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: import("../types").AIUpdate) => api.updateAi(body),
+    onSuccess: (data) => {
+      qc.setQueryData(["ai"], data);
+      qc.invalidateQueries({ queryKey: ["ai"] });
+    },
+  });
+}
+
 export function useRefreshCameras() {
   const qc = useQueryClient();
   return useMutation({

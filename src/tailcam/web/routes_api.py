@@ -10,6 +10,7 @@ from tailcam.web.context import AppContext
 from tailcam.web.deps import get_context
 from tailcam.web.schemas import (
     AIInfo,
+    AIUpdate,
     CameraInfo,
     CameraSettingsUpdate,
     EngineInfo,
@@ -469,18 +470,41 @@ async def system_reload(ctx: AppContext = Depends(get_context)) -> list[CameraIn
     return await _aggregate_cameras(ctx, "all")
 
 
-@router.get("/ai", response_model=AIInfo)
-async def ai_info(ctx: AppContext = Depends(get_context)) -> AIInfo:
-    """AI analyzer status for the dashboard (Ollama reachable? model present?)."""
+async def _ai_info(ctx: AppContext) -> AIInfo:
     import anyio
 
     reachable, model = await anyio.to_thread.run_sync(ctx.analyzer.health)
+    ai = ctx.config.ai
     return AIInfo(
-        enabled=ctx.config.ai.enabled,
+        enabled=ai.enabled,
         reachable=reachable,
-        model=ctx.config.ai.model,
+        model=ai.model,
         model_present=model is not None,
+        base_url=ai.base_url,
     )
+
+
+@router.get("/ai", response_model=AIInfo)
+async def ai_info(ctx: AppContext = Depends(get_context)) -> AIInfo:
+    """AI analyzer status for the dashboard (Ollama reachable? model present?)."""
+    return await _ai_info(ctx)
+
+
+@router.post("/ai", response_model=AIInfo)
+async def update_ai(update: AIUpdate, ctx: AppContext = Depends(get_context)) -> AIInfo:
+    """Enable/disable AI motion analysis and set the model/Ollama URL (persisted).
+
+    The analyzer reads ``config.ai`` live, so the change takes effect immediately
+    for in-flight motion workers — no restart."""
+    ai = ctx.config.ai
+    if update.enabled is not None:
+        ai.enabled = update.enabled
+    if update.model is not None and update.model.strip():
+        ai.model = update.model.strip()
+    if update.base_url is not None and update.base_url.strip():
+        ai.base_url = update.base_url.strip().rstrip("/")
+    ctx.config.save()
+    return await _ai_info(ctx)
 
 
 @router.get("/update", response_model=UpdateInfo)

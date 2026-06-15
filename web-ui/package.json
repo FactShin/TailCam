@@ -1,7 +1,7 @@
 {
   "name": "tailcam-web-ui",
   "private": true,
-  "version": "0.7.3",
+  "version": "0.8.0",
   "type": "module",
   "description": "TailCam dashboard — responsive web / PWA front-end",
   "scripts": {

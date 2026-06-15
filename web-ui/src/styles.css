@@ -725,6 +725,9 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .engine-hint { color: var(--faint); font-size: 11px; line-height: 1.55; background: var(--bg0); border: 1px solid var(--hair); border-radius: 10px; padding: 9px 11px; }
 .engine-hint .lit, .engine-meta .lit { color: var(--accent); }
 .engine-foot { margin-top: 2px; }
+.ai-form { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 12px; align-items: end; }
+@container appframe (min-width: 720px) { .ai-form { grid-template-columns: 1fr 1.4fr auto; } }
+.ai-form .tl-field-action .btn { width: 100%; justify-content: center; white-space: nowrap; }
 
 /* ===== toasts ===== */
 .toast-wrap { position: absolute; left: 0; right: 0; bottom: 16px; display: flex; flex-direction: column; align-items: center; gap: 8px; z-index: 60; pointer-events: none; padding: 0 14px; }

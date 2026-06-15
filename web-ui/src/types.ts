@@ -83,6 +83,13 @@ export interface AIInfo {
   reachable: boolean;
   model: string;
   model_present: boolean;
+  base_url: string;
+}
+
+export interface AIUpdate {
+  enabled?: boolean;
+  model?: string;
+  base_url?: string;
 }
 
 export type TimelapseState = "capturing" | "encoding" | "complete" | "interrupted" | "error";
