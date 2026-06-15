@@ -499,7 +499,9 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .detail-error { display: block; margin-top: 2px; font-family: var(--mono); font-size: 10.5px; color: var(--err); }
 
 .stage { position: relative; aspect-ratio: 16/9; background: #06081a; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); box-shadow: var(--card-shadow); }
-.stage.is-fs { border-radius: 0; }
+/* CSS fullscreen overlay — works everywhere (incl. iOS, where native
+   element fullscreen isn't available). Fills the dynamic viewport. */
+.stage.is-fs { position: fixed; inset: 0; z-index: 200; width: 100vw; height: 100vh; height: 100dvh; aspect-ratio: auto; border: 0; border-radius: 0; box-shadow: none; }
 .fs-btn { position: absolute; top: 10px; right: 10px; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px; background: rgba(6, 8, 26, 0.6); border: 1px solid var(--border); backdrop-filter: blur(5px); z-index: 5; }
 .fs-btn:hover { background: rgba(6, 8, 26, 0.85); border-color: var(--border-2); }
 .resetview-btn { position: absolute; bottom: 38px; right: 11px; padding: 6px 12px; border-radius: 999px; background: rgba(6, 8, 26, 0.66); border: 1px solid var(--border-2); font-size: 12px; font-weight: 600; backdrop-filter: blur(4px); z-index: 5; }
@@ -682,10 +684,17 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .tl-input:focus, .tl-select:focus { outline: none; border-color: var(--accent); }
 .tl-field-action .btn { width: 100%; justify-content: center; }
 
-.tl-active { display: flex; flex-direction: column; gap: 10px; margin-bottom: var(--gap); }
-.tl-active-row { display: flex; align-items: center; gap: 12px; background: var(--bg1); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; }
-.tl-active-row.is-rec { border-color: color-mix(in srgb, var(--ok) 38%, var(--border)); }
+.tl-active { display: flex; flex-direction: column; gap: var(--gap); margin-bottom: var(--gap); }
+.tl-live-card { background: var(--bg1); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--card-shadow); }
+.tl-live-card.is-rec { border-color: color-mix(in srgb, var(--ok) 38%, var(--border)); }
+.tl-live-media { position: relative; aspect-ratio: 16/9; max-height: 60vh; background: #06081a; }
+.tl-live-media .viewer { width: 100%; height: 100%; }
+.tl-live-chip { position: absolute; top: 12px; left: 12px; z-index: 3; }
+.tl-live-encoding { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--warn); }
+.tl-live-bar { display: flex; align-items: center; gap: 12px; padding: 12px 14px; flex-wrap: wrap; }
+.tl-live-bar .btn { white-space: nowrap; }
 .tl-grow { flex: 1; min-width: 0; }
+.tl-grow .tl-meta { overflow: hidden; text-overflow: ellipsis; }
 .tl-name { font-weight: 650; font-size: 13.5px; }
 .tl-meta { color: var(--muted); font-size: 11.5px; }
 .tl-encoding { display: inline-flex; align-items: center; gap: 7px; color: var(--warn); font-size: 11.5px; }

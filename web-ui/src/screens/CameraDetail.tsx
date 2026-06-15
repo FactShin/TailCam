@@ -142,19 +142,46 @@ export function CameraDetail() {
     }
   };
 
+  // The CSS overlay (.stage.is-fs) is the reliable fullscreen mechanism on every
+  // platform — iOS Safari can't put a <div> into native fullscreen, which is why
+  // the button used to do nothing on mobile. We still *try* the native API for
+  // the nicer chrome-hiding where it's supported (desktop), but never depend on it.
   const toggleFs = () => {
     const el = stageRef.current;
-    if (!document.fullscreenElement) {
-      el?.requestFullscreen?.().catch(() => {});
-    } else {
-      document.exitFullscreen?.();
+    const next = !fs;
+    setFs(next);
+    try {
+      if (next) {
+        void el?.requestFullscreen?.().catch(() => {});
+      } else if (document.fullscreenElement) {
+        void document.exitFullscreen?.();
+      }
+    } catch {
+      /* CSS overlay already applied */
     }
   };
+  // Esc (or the browser exiting native fullscreen) should also drop the overlay.
   useEffect(() => {
-    const on = () => setFs(!!document.fullscreenElement);
+    const on = () => {
+      if (!document.fullscreenElement) setFs(false);
+    };
     document.addEventListener("fullscreenchange", on);
     return () => document.removeEventListener("fullscreenchange", on);
   }, []);
+  // Lock background scroll while the CSS overlay is up.
+  useEffect(() => {
+    if (!fs) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !document.fullscreenElement) setFs(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [fs]);
 
   if (!cam) {
     if (camerasQ.isLoading) {

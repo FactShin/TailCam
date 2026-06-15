@@ -11,6 +11,7 @@ import {
   useStopTimelapse,
   useTimelapses,
 } from "../api/hooks";
+import { LiveViewer } from "../components/LiveViewer";
 import { useToast } from "../components/toast";
 import { Button, ConfirmDialog, Segmented, Spinner } from "../components/ui";
 import {
@@ -24,7 +25,7 @@ import {
   IconTrash,
 } from "../icons";
 import { fmtBytes, fmtDateTime, fmtDur } from "../lib/format";
-import type { TimelapseInfo, TimelapseState } from "../types";
+import type { TimelapseInfo, TimelapseState, ViewParams } from "../types";
 
 const STATE_BADGE: Record<TimelapseState, { cls: string; label: string }> = {
   capturing: { cls: "badge-ok", label: "Capturing" },
@@ -33,6 +34,10 @@ const STATE_BADGE: Record<TimelapseState, { cls: string; label: string }> = {
   interrupted: { cls: "badge-warn", label: "Interrupted" },
   error: { cls: "badge-err", label: "Failed" },
 };
+
+// Live preview while capturing — a modest stream (the capture itself is the
+// real artifact; this is just to watch it happen and stop it).
+const PREVIEW_VIEW: ViewParams = { fps: 12, zoom: 1, panX: 0.5, panY: 0.5, quality: 70, w: 960 };
 
 // frames at output_fps → seconds of finished video
 const videoSeconds = (t: TimelapseInfo) => t.frames_captured / Math.max(1, t.output_fps);
@@ -206,31 +211,51 @@ export function Timelapse() {
         </p>
       </div>
 
-      {/* Active captures */}
+      {/* Active captures — live preview + stop */}
       {active.length > 0 && (
         <div className="tl-active">
           {active.map((t) => {
-            const b = STATE_BADGE[t.state];
+            const cam = cameras.find((c) => c.id === t.camera_id);
+            const capturing = t.state === "capturing";
             const elapsed = (t.end_ts ?? Date.now() / 1000) - t.start_ts;
             return (
-              <div key={t.id} className={`tl-active-row ${t.state === "capturing" ? "is-rec" : ""}`}>
-                <span className={`badge ${b.cls}`}>
-                  <span className="pill-dot" style={{ background: t.state === "capturing" ? "var(--ok)" : "var(--warn)" }} />
-                  {b.label}
-                </span>
-                <div className="tl-grow">
-                  <div className="tl-name">{t.name}</div>
-                  <div className="tl-meta mono">
-                    {camName(t.camera_id)} · {t.frames_captured} frames · {fmtDur(elapsed)} · every {t.interval_seconds}s
+              <div key={t.id} className={`tl-live-card ${capturing ? "is-rec" : ""}`}>
+                <div className="tl-live-media">
+                  {cam && capturing ? (
+                    <LiveViewer cam={cam} view={PREVIEW_VIEW} showOsd={false} big fit="contain" />
+                  ) : (
+                    <div className="tl-live-encoding">
+                      <Spinner size={26} />
+                      <span className="mono">Encoding video…</span>
+                    </div>
+                  )}
+                  <div className="tl-live-chip">
+                    <span className="chip-live">
+                      <span className="live-dot" style={capturing ? undefined : { background: "var(--warn)" }} />
+                      {capturing ? "CAPTURING" : "ENCODING"}
+                    </span>
                   </div>
                 </div>
-                {t.state === "capturing" ? (
-                  <Button variant="danger" size="sm" icon={<IconStop size={14} />} onClick={() => onStop(t)}>
-                    Stop
-                  </Button>
-                ) : (
-                  <span className="tl-encoding mono"><Spinner size={14} /> encoding…</span>
-                )}
+                <div className="tl-live-bar">
+                  <div className="tl-grow">
+                    <div className="tl-name">{t.name}</div>
+                    <div className="tl-meta mono">
+                      {camName(t.camera_id)} · {t.frames_captured} frames · {fmtDur(elapsed)} · every {t.interval_seconds}s
+                    </div>
+                  </div>
+                  {capturing ? (
+                    <Button
+                      variant="danger"
+                      icon={<IconStop size={16} />}
+                      disabled={stop.isPending}
+                      onClick={() => onStop(t)}
+                    >
+                      Stop &amp; save
+                    </Button>
+                  ) : (
+                    <span className="tl-encoding mono"><Spinner size={14} /> encoding…</span>
+                  )}
+                </div>
               </div>
             );
           })}
