@@ -216,6 +216,28 @@ class CollectionUpdate(BaseModel):
     active_dataset_id: int | None = None
 
 
+class TrainRequest(BaseModel):
+    dataset_id: int
+    base_model: str | None = None
+    epochs: int | None = None
+    image_size: int | None = None
+
+
+class TrainingRunInfo(BaseModel):
+    id: int
+    dataset_id: int
+    model_id: int | None = None
+    base_model: str
+    status: str  # queued | preparing | training | complete | error | stopped
+    epochs: int
+    epoch: int
+    metrics: dict = {}
+    log: str = ""
+    created_ts: float
+    started_ts: float | None = None
+    ended_ts: float | None = None
+
+
 class TrainingInfo(BaseModel):
     engine_available: bool
     framework: str = "ultralytics"

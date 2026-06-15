@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import json
 from dataclasses import dataclass
+from typing import Protocol, runtime_checkable
 
 import cv2
 import httpx
@@ -27,6 +28,16 @@ class Analysis:
     label: str
     description: str
     confidence: float
+
+
+@runtime_checkable
+class FrameAnalyzer(Protocol):
+    """What the motion worker needs from any analyzer (Ollama or a local model)."""
+
+    @property
+    def enabled(self) -> bool: ...
+
+    def analyze(self, image: np.ndarray) -> Analysis | None: ...
 
 
 def _coerce(data: dict) -> Analysis | None:

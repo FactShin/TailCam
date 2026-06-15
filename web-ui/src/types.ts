@@ -153,6 +153,23 @@ export interface ModelInfo {
   has_artifact: boolean;
 }
 
+export type RunStatus = "queued" | "preparing" | "training" | "complete" | "error" | "stopped";
+
+export interface TrainingRunInfo {
+  id: number;
+  dataset_id: number;
+  model_id: number | null;
+  base_model: string;
+  status: RunStatus;
+  epochs: number;
+  epoch: number;
+  metrics: Record<string, number>;
+  log: string;
+  created_ts: number;
+  started_ts: number | null;
+  ended_ts: number | null;
+}
+
 export type TimelapseState = "capturing" | "encoding" | "complete" | "interrupted" | "error";
 
 export interface TimelapseInfo {
