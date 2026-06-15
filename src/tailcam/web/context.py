@@ -18,6 +18,7 @@ from tailcam.persistence.store import Store
 from tailcam.streaming.mjpeg import MJPEGBackend
 from tailcam.tailscale.client import TailscaleClient
 from tailcam.timelapse.service import TimelapseService
+from tailcam.training.inference import InferenceRouter
 from tailcam.training.service import TrainingService
 
 log = get_logger(__name__)
@@ -40,6 +41,8 @@ class AppContext:
         self.training = TrainingService(
             self.manager, self.store, config.training, self.analyzer, self.local_host
         )
+        # Motion analysis routes through the active trained/BYO model if set, else Ollama.
+        self.inference = InferenceRouter(self.store, config.training, self.analyzer)
         self.cluster = ClusterService(
             config.peers, self.tailscale, self.local_host, config.tailscale.serve_port
         )
@@ -97,7 +100,7 @@ class AppContext:
                 return False
             worker = MotionWorker(
                 camera_id, buffer, self.config.motion, self.event_log, self.recorder,
-                analyzer=self.analyzer,
+                analyzer=self.inference,
             )
             worker.start()
             self._motion_workers[camera_id] = worker

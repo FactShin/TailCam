@@ -11,7 +11,7 @@ from datetime import datetime
 import cv2
 
 from tailcam import paths
-from tailcam.ai.analyzer import OllamaAnalyzer
+from tailcam.ai.analyzer import FrameAnalyzer
 from tailcam.config import MotionConfig
 from tailcam.logging_setup import get_logger
 from tailcam.media.recorder import RecordingService
@@ -29,7 +29,7 @@ class MotionWorker:
         config: MotionConfig,
         event_log: EventLog,
         recorder: RecordingService | None = None,
-        analyzer: OllamaAnalyzer | None = None,
+        analyzer: FrameAnalyzer | None = None,
     ) -> None:
         self.camera_id = camera_id
         self.buffer = buffer

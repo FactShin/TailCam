@@ -114,6 +114,29 @@ export function useDeleteModel() {
   return useMutation({ mutationFn: (id: number) => api.deleteModel(id), onSuccess: () => _invTraining(qc) });
 }
 
+export function useRuns() {
+  return useQuery({ queryKey: ["runs"], queryFn: api.getRuns, refetchInterval: 3000 });
+}
+
+export function useStartRun() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.startRun,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["runs"] });
+      qc.invalidateQueries({ queryKey: ["training"] });
+    },
+  });
+}
+
+export function useStopRun() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.stopRun(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["runs"] }),
+  });
+}
+
 export function useCamera(prefix: string, id: string) {
   return useQuery({
     queryKey: ["camera", prefix, id],
