@@ -107,19 +107,44 @@ class TimelapseService:
 
     # -- stop / finalize ---------------------------------------------------
     def stop(self, tl_id: int) -> TimelapseRecord | None:
+        """Stop a running capture and start encoding. Returns immediately — the
+        worker join + encode happen on a background thread so the HTTP request
+        (and the UI) never blocks waiting for the capture thread to wind down."""
+        with self._lock:
+            worker = self._workers.get(tl_id)
+        if worker is None:
+            # Nothing capturing (already stopped/interrupted): finalize any frames.
+            self._finalize_async(tl_id)
+            return self.get(tl_id)
+        # Reflect the transition right away for a snappy Stop button.
+        self._store.update_timelapse(
+            tl_id,
+            state="encoding",
+            end_ts=time.time(),
+            frames_captured=worker.frames_captured,
+            width=worker.width,
+            height=worker.height,
+        )
+        threading.Thread(
+            target=self._stop_and_finalize,
+            args=(tl_id,),
+            name=f"timelapse-stop-{tl_id}",
+            daemon=True,
+        ).start()
+        return self.get(tl_id)
+
+    def _stop_and_finalize(self, tl_id: int) -> None:
         with self._lock:
             worker = self._workers.get(tl_id)
         if worker is not None:
-            worker.stop()
+            worker.stop()  # finish the current frame and join the capture thread
             self._store.update_timelapse(
                 tl_id,
                 frames_captured=worker.frames_captured,
                 width=worker.width,
                 height=worker.height,
-                end_ts=time.time(),
             )
         self._finalize_async(tl_id)
-        return self.get(tl_id)
 
     def encode(self, tl_id: int) -> TimelapseRecord | None:
         """(Re)encode a stopped/interrupted timelapse from its stored frames."""
