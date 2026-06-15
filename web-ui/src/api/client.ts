@@ -77,6 +77,53 @@ export const getUpdate = () =>
 export const getAi = () => jsonFetch<import("../types").AIInfo>("/api/ai");
 export const updateAi = (body: import("../types").AIUpdate) =>
   jsonFetch<import("../types").AIInfo>("/api/ai", { method: "POST", body: JSON.stringify(body) });
+
+// ---- model training ----
+
+export const getTraining = () => jsonFetch<import("../types").TrainingInfo>("/api/training");
+export const updateCollection = (body: import("../types").CollectionUpdate) =>
+  jsonFetch<import("../types").TrainingInfo>("/api/training/collection", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const getDatasets = () => jsonFetch<import("../types").DatasetInfo[]>("/api/datasets");
+export const createDataset = (body: { name: string; note?: string }) =>
+  jsonFetch<import("../types").DatasetInfo>("/api/datasets", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+export const deleteDataset = (id: number) =>
+  jsonFetch<{ ok: boolean }>(`/api/datasets/${id}`, { method: "DELETE" });
+export const importEvents = (id: number) =>
+  jsonFetch<import("../types").DatasetInfo>(`/api/datasets/${id}/import-events`, { method: "POST" });
+
+export const getSamples = (datasetId: number, label?: string, limit = 200) =>
+  jsonFetch<import("../types").SampleInfo[]>(
+    `/api/datasets/${datasetId}/samples${qs({ label, limit })}`,
+  );
+export const relabelSample = (id: number, label: string | null) =>
+  jsonFetch<import("../types").SampleInfo>(`/api/samples/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ label }),
+  });
+export const deleteSample = (id: number) =>
+  jsonFetch<{ ok: boolean }>(`/api/samples/${id}`, { method: "DELETE" });
+export const sampleThumbUrl = (id: number) => `/datasets/sample/${id}/thumbnail`;
+export const sampleImageUrl = (id: number) => `/datasets/sample/${id}/image`;
+
+export const getModels = () => jsonFetch<import("../types").ModelInfo[]>("/api/models");
+export const registerModel = (body: { name: string; path: string }) =>
+  jsonFetch<import("../types").ModelInfo>("/api/models", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+export const activateModel = (id: number) =>
+  jsonFetch<import("../types").ModelInfo>(`/api/models/${id}/activate`, { method: "POST" });
+export const deactivateModel = () =>
+  jsonFetch<{ ok: boolean }>("/api/models/deactivate", { method: "POST" });
+export const deleteModel = (id: number) =>
+  jsonFetch<{ ok: boolean }>(`/api/models/${id}`, { method: "DELETE" });
 export const eventThumbUrl = (prefix: string, eventId: number) =>
   `${prefix}/events/${eventId}/thumbnail`;
 export const reloadSystem = () =>

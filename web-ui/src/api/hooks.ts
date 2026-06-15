@@ -8,12 +8,110 @@ import * as api from "./client";
 import type {
   CameraInfo,
   CameraSettingsUpdate,
+  CollectionUpdate,
   TimelapseSmoothParams,
   TimelapseStartParams,
 } from "../types";
 
 export function useCameras() {
   return useQuery({ queryKey: ["cameras"], queryFn: api.getCameras, refetchInterval: 2500 });
+}
+
+// -- model training --
+
+function _invTraining(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ["training"] });
+  qc.invalidateQueries({ queryKey: ["datasets"] });
+  qc.invalidateQueries({ queryKey: ["models"] });
+}
+
+export function useTraining() {
+  return useQuery({ queryKey: ["training"], queryFn: api.getTraining, refetchInterval: 4000 });
+}
+
+export function useUpdateCollection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CollectionUpdate) => api.updateCollection(body),
+    onSuccess: (data) => {
+      qc.setQueryData(["training"], data);
+      qc.invalidateQueries({ queryKey: ["datasets"] });
+    },
+  });
+}
+
+export function useDatasets() {
+  return useQuery({ queryKey: ["datasets"], queryFn: api.getDatasets, refetchInterval: 5000 });
+}
+
+export function useCreateDataset() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: api.createDataset, onSuccess: () => _invTraining(qc) });
+}
+
+export function useDeleteDataset() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (id: number) => api.deleteDataset(id), onSuccess: () => _invTraining(qc) });
+}
+
+export function useImportEvents() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (id: number) => api.importEvents(id), onSuccess: () => _invTraining(qc) });
+}
+
+export function useSamples(datasetId: number | null, label?: string) {
+  return useQuery({
+    queryKey: ["samples", datasetId, label ?? null],
+    queryFn: () => api.getSamples(datasetId as number, label),
+    enabled: datasetId != null,
+    refetchInterval: 5000,
+  });
+}
+
+export function useRelabelSample() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, label }: { id: number; label: string | null }) => api.relabelSample(id, label),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["samples"] });
+      qc.invalidateQueries({ queryKey: ["datasets"] });
+    },
+  });
+}
+
+export function useDeleteSample() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.deleteSample(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["samples"] });
+      qc.invalidateQueries({ queryKey: ["datasets"] });
+    },
+  });
+}
+
+export function useModels() {
+  return useQuery({ queryKey: ["models"], queryFn: api.getModels, refetchInterval: 8000 });
+}
+
+export function useRegisterModel() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: api.registerModel, onSuccess: () => _invTraining(qc) });
+}
+
+export function useActivateModel() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (id: number) => api.activateModel(id), onSuccess: () => _invTraining(qc) });
+}
+
+export function useDeactivateModel() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: () => api.deactivateModel(), onSuccess: () => _invTraining(qc) });
+}
+
+export function useDeleteModel() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (id: number) => api.deleteModel(id), onSuccess: () => _invTraining(qc) });
 }
 
 export function useCamera(prefix: string, id: string) {

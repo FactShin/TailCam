@@ -70,3 +70,60 @@ class TimelapseRecord:
     smooth_size_bytes: int = 0
     smooth_engine: str = ""  # "ffmpeg" | "rife" — which engine produced it
 
+
+# -- model training ---------------------------------------------------------
+
+
+@dataclass
+class DatasetRecord:
+    id: int | None
+    name: str
+    task: str  # "classification" (future: "detection")
+    created_ts: float
+    note: str = ""
+
+
+@dataclass
+class DatasetSampleRecord:
+    id: int | None
+    dataset_id: int
+    path: str
+    thumb: str | None
+    label: str | None  # None = unlabeled (awaiting a human/auto label)
+    source: str  # "collect" | "motion" | "timelapse" | "manual"
+    camera_id: str
+    host: str
+    created_ts: float
+    confidence: float | None = None  # weak-label confidence, if auto-labeled
+
+
+@dataclass
+class ModelRecord:
+    id: int | None
+    name: str
+    kind: str  # "base" | "trained" | "byo"
+    path: str  # artifact path ("" for a not-yet-downloaded base)
+    classes_json: str  # JSON list of class names
+    base_model: str  # what it was fine-tuned from
+    metrics_json: str  # JSON dict of training metrics
+    created_ts: float
+    active: int = 0  # 1 = the model used for inference
+
+
+@dataclass
+class TrainingRunRecord:
+    id: int | None
+    dataset_id: int
+    model_id: int | None  # the produced model, once complete
+    base_model: str
+    # queued | preparing | training | complete | error | stopped
+    status: str
+    params_json: str
+    metrics_json: str
+    log: str
+    epochs: int
+    epoch: int  # current epoch (progress)
+    created_ts: float
+    started_ts: float | None = None
+    ended_ts: float | None = None
+
