@@ -23,4 +23,5 @@ web-ui/.vite/
 # desktop build outputs
 desktop/node_modules/
 desktop/src-tauri/target/
+desktop/src-tauri/binaries/tailcam-node-*
 desktop/sidecars/dist/
