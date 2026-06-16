@@ -315,11 +315,16 @@ export function useTimelapsePresets() {
   return useQuery({ queryKey: ["timelapse-presets"], queryFn: api.getTimelapsePresets });
 }
 
-export function useTimelapseAnalysisEvents(prefix: string, tlId: number | null) {
+export function useTimelapseAnalysisEvents(
+  prefix: string,
+  tlId: number | null,
+  analysisEnabled = true,
+) {
   return useQuery({
     queryKey: ["timelapse-analysis-events", prefix, tlId],
     queryFn: () => api.getTimelapseAnalysisEvents(prefix, tlId as number),
-    enabled: tlId !== null,
+    // Only poll for printer captures that actually run analysis.
+    enabled: tlId !== null && analysisEnabled,
     refetchInterval: 5000,
   });
 }

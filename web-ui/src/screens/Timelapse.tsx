@@ -99,6 +99,7 @@ export function Timelapse() {
   const analysisEvents = useTimelapseAnalysisEvents(
     play?.proxy_prefix ?? "",
     play?.id ?? null,
+    play?.analysis_enabled ?? false,
   ).data ?? [];
 
   // Default the player to the smoothed cut when one exists.

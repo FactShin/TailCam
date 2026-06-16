@@ -49,6 +49,9 @@ def test_printer_analysis_parser_is_strict_and_clamps_confidence():
     assert result.description == "Detached print"
     assert coerce_printer_analysis({"state": "looks_bad", "confidence": 1}) is None
     assert coerce_printer_analysis({"state": "healthy", "confidence": "bad"}) is not None
+    # A model that returns valid JSON but not an object must not crash on .get.
+    assert coerce_printer_analysis("healthy") is None
+    assert coerce_printer_analysis([{"state": "failure"}]) is None
 
 
 def test_analysis_queue_returns_immediately_and_persists_evidence(store, tmp_path):
