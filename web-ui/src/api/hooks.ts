@@ -149,6 +149,51 @@ export function useHosts() {
   return useQuery({ queryKey: ["hosts"], queryFn: api.getHosts, refetchInterval: 4000 });
 }
 
+export const fleetNodeHealthQueryOptions = (nodeKey: string, enabled = true) => ({
+  queryKey: ["fleet", "node", nodeKey, "health"] as const,
+  queryFn: () => api.getFleetNodeHealth(nodeKey),
+  enabled,
+  refetchInterval: 5000,
+});
+
+export const fleetNodeCapabilitiesQueryOptions = (nodeKey: string, enabled = true) => ({
+  queryKey: ["fleet", "node", nodeKey, "capabilities"] as const,
+  queryFn: () => api.getFleetNodeCapabilities(nodeKey),
+  enabled,
+  refetchInterval: 30_000,
+});
+
+export function useFleetNodeHealth(nodeKey: string, enabled = true) {
+  return useQuery(fleetNodeHealthQueryOptions(nodeKey, enabled));
+}
+
+export function useFleetNodeCapabilities(nodeKey: string, enabled = true) {
+  return useQuery(fleetNodeCapabilitiesQueryOptions(nodeKey, enabled));
+}
+
+export function useFleetNodeAudit(nodeKey: string, limit = 20, enabled = true) {
+  return useQuery({
+    queryKey: ["fleet", "node", nodeKey, "audit", limit] as const,
+    queryFn: () => api.getFleetNodeAudit(nodeKey, limit),
+    enabled,
+    refetchInterval: 15_000,
+  });
+}
+
+export function useReloadFleetNode() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (nodeKey: string) => api.reloadFleetNode(nodeKey),
+    onSuccess: (data, nodeKey) => {
+      qc.setQueryData(["fleet", "node", nodeKey, "health"], data.health);
+      qc.invalidateQueries({ queryKey: ["fleet", "node", nodeKey, "audit"] });
+      qc.invalidateQueries({ queryKey: ["hosts"] });
+      qc.invalidateQueries({ queryKey: ["cameras"] });
+      qc.invalidateQueries({ queryKey: ["system"] });
+    },
+  });
+}
+
 export function useSystem() {
   return useQuery({ queryKey: ["system"], queryFn: api.getSystem, refetchInterval: 15000 });
 }

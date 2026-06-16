@@ -99,7 +99,15 @@ export function Dashboard() {
   const orderedHosts: HostInfo[] = hosts.length
     ? hosts
     : cameras.length
-      ? [{ host: cameras[0].host, kind: "local", online: true, version: null, camera_count: cameras.length, proxy_prefix: "" }]
+      ? [{
+          host: cameras[0].host,
+          node_key: "local",
+          kind: "local",
+          online: true,
+          version: null,
+          camera_count: cameras.length,
+          proxy_prefix: "",
+        }]
       : [];
   const byHost = (h: string) => cameras.filter((c) => c.host === h);
   const multiHost = orderedHosts.length > 1;

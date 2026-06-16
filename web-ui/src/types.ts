@@ -30,11 +30,84 @@ export interface CameraInfo {
 
 export interface HostInfo {
   host: string;
+  node_key: string;
   kind: "local" | "peer";
   online: boolean;
   version: string | null;
   camera_count: number;
   proxy_prefix: string;
+}
+
+export interface PrincipalInfo {
+  actor: string;
+  display_name: string | null;
+  source: string;
+  verified: boolean;
+  roles: string[];
+}
+
+export type NodeIssueSeverity = "info" | "warning" | "error";
+
+export interface NodeIssueInfo {
+  code: string;
+  severity: NodeIssueSeverity;
+  summary: string;
+  detail: string | null;
+}
+
+export interface NodeCapabilitiesInfo {
+  api_version: string;
+  capabilities: string[];
+  actions: string[];
+  principal: PrincipalInfo;
+}
+
+export interface NodeHealthInfo {
+  host: string;
+  version: string;
+  platform: string;
+  python_version: string;
+  uptime_seconds: number;
+  tailscale_installed: boolean;
+  tailscale_running: boolean;
+  tailscale_served: boolean;
+  access_url: string;
+  local_url: string;
+  camera_total: number;
+  camera_online: number;
+  camera_offline: number;
+  camera_degraded: number;
+  camera_recording: number;
+  media_bytes: number;
+  timelapse_bytes: number;
+  update_current: string;
+  update_latest: string | null;
+  update_available: boolean;
+  ai_enabled: boolean;
+  ai_reachable: boolean;
+  ai_model: string;
+  ai_model_present: boolean;
+  issues: NodeIssueInfo[];
+}
+
+export interface AuditEventInfo {
+  id: number;
+  created_ts: number;
+  actor: string;
+  source: string;
+  action: string;
+  target: string;
+  result: string;
+  detail: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface NodeActionResponse {
+  action: string;
+  target: string;
+  result: string;
+  detail: string;
+  health: NodeHealthInfo;
 }
 
 export interface CameraSettingsUpdate {

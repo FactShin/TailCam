@@ -51,6 +51,7 @@ class CameraInfo(BaseModel):
 
 class HostInfo(BaseModel):
     host: str
+    node_key: str
     kind: str  # "local" | "peer"
     online: bool
     version: str | None = None

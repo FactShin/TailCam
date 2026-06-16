@@ -11,6 +11,10 @@ import type {
   HostInfo,
   MediaInfo,
   MotionEventInfo,
+  AuditEventInfo,
+  NodeActionResponse,
+  NodeCapabilitiesInfo,
+  NodeHealthInfo,
   PostprocessInfo,
   SystemInfo,
   TimelapseAnalysisEvent,
@@ -76,6 +80,18 @@ export const getHosts = () => jsonFetch<HostInfo[]>("/api/hosts");
 export const getSystem = () => jsonFetch<SystemInfo>("/api/system");
 export const getUpdate = () =>
   jsonFetch<{ current: string; latest: string | null; available: boolean }>("/api/update");
+
+const fleetNodeBase = (nodeKey: string) => `/api/v1/fleet/nodes/${encodeURIComponent(nodeKey)}`;
+
+export const getFleetNodeHealth = (nodeKey: string) =>
+  jsonFetch<NodeHealthInfo>(`${fleetNodeBase(nodeKey)}/health`);
+export const getFleetNodeCapabilities = (nodeKey: string) =>
+  jsonFetch<NodeCapabilitiesInfo>(`${fleetNodeBase(nodeKey)}/capabilities`);
+export const getFleetNodeAudit = (nodeKey: string, limit = 50, offset = 0) =>
+  jsonFetch<AuditEventInfo[]>(`${fleetNodeBase(nodeKey)}/audit${qs({ limit, offset })}`);
+export const reloadFleetNode = (nodeKey: string) =>
+  jsonFetch<NodeActionResponse>(`${fleetNodeBase(nodeKey)}/actions/reload`, { method: "POST" });
+
 export const getAi = () => jsonFetch<import("../types").AIInfo>("/api/ai");
 export const updateAi = (body: import("../types").AIUpdate) =>
   jsonFetch<import("../types").AIInfo>("/api/ai", { method: "POST", body: JSON.stringify(body) });

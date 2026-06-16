@@ -120,6 +120,7 @@ async def list_hosts(ctx: AppContext = Depends(get_context)) -> list[HostInfo]:
     hosts = [
         HostInfo(
             host=ctx.local_host,
+            node_key="local",
             kind="local",
             online=True,
             version=__version__,
@@ -131,6 +132,7 @@ async def list_hosts(ctx: AppContext = Depends(get_context)) -> list[HostInfo]:
         hosts.append(
             HostInfo(
                 host=peer.host,
+                node_key=peer.key,
                 kind="peer",
                 online=peer.online,
                 version=peer.version,

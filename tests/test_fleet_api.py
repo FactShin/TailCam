@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
@@ -33,6 +35,31 @@ def test_fleet_relay_rejects_unknown_node(local_client) -> None:
     resp = local_client.get("/api/v1/fleet/nodes/nope/health")
 
     assert resp.status_code == 404
+
+
+def test_hosts_include_fleet_node_keys(context) -> None:
+    context.cluster._peers = [
+        Peer(
+            key="peer-node",
+            host="peer-node.example.ts.net",
+            base_url="https://peer-node.example.ts.net:8443",
+            online=True,
+            version="0.90.0",
+            camera_count=2,
+        )
+    ]
+    context.cluster._by_key = {"peer-node": context.cluster._peers[0]}
+    context.cluster._fetched_at = time.monotonic()
+
+    app = create_app(context.config, context=context)
+    with TestClient(app, base_url="http://localhost:8088", client=("127.0.0.1", 50000)) as c:
+        hosts = c.get("/api/hosts").json()
+
+    assert hosts[0]["kind"] == "local"
+    assert hosts[0]["node_key"] == "local"
+    peer = next(host for host in hosts if host["kind"] == "peer")
+    assert peer["node_key"] == "peer-node"
+    assert peer["proxy_prefix"] == "/proxy/peer-node"
 
 
 def test_remote_fleet_reload_dispatches_only_allowlisted_path(context) -> None:

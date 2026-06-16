@@ -670,6 +670,78 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .help-list .mono { color: var(--accent); font-size: 12.5px; }
 .help-foot { margin: 12px 0 0; padding-top: 11px; border-top: 1px solid var(--hair); color: var(--faint); font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.03em; }
 
+/* ===== fleet ===== */
+.fleet-strip { margin-bottom: var(--gap); }
+.fleet-grid { display: grid; grid-template-columns: 1fr; gap: var(--gap); }
+@container appframe (min-width: 980px) { .fleet-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container appframe (min-width: 1480px) { .fleet-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.fleet-card {
+  position: relative;
+  display: flex; flex-direction: column; gap: 14px;
+  min-width: 0; padding: 18px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background:
+    radial-gradient(120% 90% at 10% -20%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 46%),
+    var(--bg1);
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+}
+.fleet-card::before {
+  content: ""; position: absolute; inset: 0 auto 0 0; width: 3px;
+  background: var(--accent);
+  opacity: 0.8;
+}
+.fleet-card-warning::before { background: var(--warn); }
+.fleet-card-error::before,
+.fleet-card-offline::before { background: var(--err); }
+.fleet-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.fleet-node-title { display: flex; gap: 11px; min-width: 0; }
+.fleet-node-icon {
+  width: 36px; height: 36px; flex: none; display: grid; place-items: center;
+  border-radius: 13px; background: var(--accent-soft); color: var(--accent);
+  border: 1px solid var(--accent-line);
+}
+.fleet-node-title h2 {
+  margin: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 16px; letter-spacing: -0.01em;
+}
+.fleet-node-sub { display: block; margin-top: 2px; color: var(--faint); font-size: 10.5px; }
+.fleet-meta-row { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.fleet-muted { color: var(--faint); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fleet-metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+@container appframe (min-width: 620px) { .fleet-metrics { grid-template-columns: repeat(4, 1fr); } }
+.fleet-metric {
+  min-width: 0; padding: 10px 11px; border: 1px solid var(--hair); border-radius: 12px;
+  background: color-mix(in srgb, var(--bg0) 36%, transparent);
+}
+.fleet-metric-v { display: block; margin-top: 3px; color: var(--text); font-size: 15px; }
+.fleet-systems { display: grid; grid-template-columns: 1fr; gap: 7px; }
+.fleet-system {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  padding: 7px 0; border-top: 1px solid var(--hair);
+  color: var(--muted); font-size: 12.5px;
+}
+.fleet-system:first-child { border-top: 0; }
+.fleet-system svg { flex: none; color: var(--faint); }
+.fleet-system span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fleet-auth {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--hair);
+}
+.fleet-issues { display: flex; flex-direction: column; gap: 7px; }
+.fleet-issue {
+  display: flex; gap: 8px; align-items: flex-start;
+  padding: 9px 10px; border-radius: 12px; border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg0) 32%, transparent);
+  color: var(--muted); font-size: 12.5px;
+}
+.fleet-issue .mono { color: var(--faint); font-size: 10px; flex: none; }
+.fleet-issue-warning { border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
+.fleet-issue-error { border-color: color-mix(in srgb, var(--err) 34%, transparent); color: var(--err); }
+.fleet-loading { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; }
+.fleet-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; padding-top: 2px; }
+
 /* ===== timelapse ===== */
 .tl-new { margin-bottom: var(--gap); }
 .tl-form-grid { display: grid; grid-template-columns: 1fr; gap: 12px; align-items: end; }

@@ -8,6 +8,7 @@ import { ToastProvider } from "./components/toast";
 import { CameraDetail } from "./screens/CameraDetail";
 import { Dashboard } from "./screens/Dashboard";
 import { Events } from "./screens/Events";
+import { Fleet } from "./screens/Fleet";
 import { Gallery } from "./screens/Gallery";
 import { Models } from "./screens/Models";
 import { Settings } from "./screens/Settings";
@@ -35,6 +36,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/timelapse" element={<Timelapse />} />
               <Route path="/training" element={<Training />} />
               <Route path="/models" element={<Models />} />
+              <Route path="/fleet" element={<Fleet />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

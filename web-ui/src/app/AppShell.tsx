@@ -15,6 +15,7 @@ import {
   IconGrid,
   IconMotion,
   IconSearch,
+  IconServer,
   IconSettings,
   IconTimelapse,
   IconWall,
@@ -29,7 +30,8 @@ const NAV: { to: string; label: string; icon: (p: IconProps) => JSX.Element; key
   { to: "/timelapse", label: "Timelapse", icon: IconTimelapse, key: "4" },
   { to: "/training", label: "Training", icon: IconBrain, key: "5" },
   { to: "/models", label: "Models", icon: IconChip, key: "6" },
-  { to: "/settings", label: "Settings", icon: IconSettings, key: "7" },
+  { to: "/fleet", label: "Fleet", icon: IconServer, key: "7" },
+  { to: "/settings", label: "Settings", icon: IconSettings, key: "8" },
 ];
 
 const isActive = (path: string, to: string) =>
