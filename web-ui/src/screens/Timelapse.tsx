@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 
-import { timelapseFileUrl, timelapseSmoothUrl, timelapseThumbUrl } from "../api/client";
 import {
+  timelapseFileUrl,
+  timelapseFrameUrl,
+  timelapseSmoothUrl,
+  timelapseThumbUrl,
+} from "../api/client";
+import {
+  useAi,
   useCameras,
   useDeleteTimelapse,
   useEncodeTimelapse,
@@ -9,6 +15,8 @@ import {
   useSmoothTimelapse,
   useStartTimelapse,
   useStopTimelapse,
+  useTimelapseAnalysisEvents,
+  useTimelapsePresets,
   useTimelapses,
 } from "../api/hooks";
 import { LiveViewer } from "../components/LiveViewer";
@@ -25,7 +33,7 @@ import {
   IconTrash,
 } from "../icons";
 import { fmtBytes, fmtDateTime, fmtDur } from "../lib/format";
-import type { TimelapseInfo, TimelapseState, ViewParams } from "../types";
+import type { TimelapseInfo, TimelapseStartParams, TimelapseState, ViewParams } from "../types";
 
 const STATE_BADGE: Record<TimelapseState, { cls: string; label: string }> = {
   capturing: { cls: "badge-ok", label: "Capturing" },
@@ -42,10 +50,37 @@ const PREVIEW_VIEW: ViewParams = { fps: 12, zoom: 1, panX: 0.5, panY: 0.5, quali
 // frames at output_fps → seconds of finished video
 const videoSeconds = (t: TimelapseInfo) => t.frames_captured / Math.max(1, t.output_fps);
 
+type PrinterSettings = Required<Omit<TimelapseStartParams, "name">>;
+
+const DEFAULT_SETTINGS: PrinterSettings = {
+  interval_seconds: 2,
+  output_fps: 30,
+  duration_seconds: 0,
+  jpeg_quality: 95,
+  max_frames: 0,
+  auto_smooth: true,
+  smooth_target_fps: 60,
+  smooth_interpolate: true,
+  smooth_deflicker: true,
+  smooth_engine: "ffmpeg",
+  smooth_quality: "high",
+  analysis_enabled: false,
+  analysis_cadence_seconds: 60,
+};
+
+const HEALTH_BADGE: Record<string, { cls: string; label: string }> = {
+  healthy: { cls: "badge-ok", label: "Print healthy" },
+  possible_failure: { cls: "badge-warn", label: "Possible failure" },
+  failure: { cls: "badge-err", label: "Failure detected" },
+  uncertain: { cls: "badge-warn", label: "Analysis uncertain" },
+};
+
 export function Timelapse() {
   const toast = useToast();
   const cameras = useCameras().data ?? [];
   const rows = useTimelapses().data ?? [];
+  const presets = useTimelapsePresets().data ?? [];
+  const ai = useAi().data;
   const start = useStartTimelapse();
   const stop = useStopTimelapse();
   const encode = useEncodeTimelapse();
@@ -54,12 +89,17 @@ export function Timelapse() {
   const postprocess = usePostprocess().data;
 
   const [camId, setCamId] = useState("");
-  const [interval, setIntervalSec] = useState(2);
-  const [fps, setFps] = useState(30);
   const [name, setName] = useState("");
+  const [presetName, setPresetName] = useState("Reliable Print");
+  const [settings, setSettings] = useState<PrinterSettings>(DEFAULT_SETTINGS);
+  const [advanced, setAdvanced] = useState(false);
   const [play, setPlay] = useState<TimelapseInfo | null>(null);
   const [playSmooth, setPlaySmooth] = useState(true);
   const [confirm, setConfirm] = useState<TimelapseInfo | null>(null);
+  const analysisEvents = useTimelapseAnalysisEvents(
+    play?.proxy_prefix ?? "",
+    play?.id ?? null,
+  ).data ?? [];
 
   // Default the player to the smoothed cut when one exists.
   useEffect(() => {
@@ -83,13 +123,19 @@ export function Timelapse() {
   const active = rows.filter((r) => r.state === "capturing" || r.state === "encoding");
   const done = rows.filter((r) => r.state !== "capturing" && r.state !== "encoding");
 
+  const applyPreset = (nextName: string) => {
+    setPresetName(nextName);
+    const preset = presets.find((item) => item.name === nextName);
+    if (preset) setSettings((current) => ({ ...current, ...preset.settings }));
+  };
+
   const onStart = async () => {
     if (!selected) return;
     try {
       await start.mutateAsync({
         prefix: selected.proxy_prefix,
         id: selected.id,
-        params: { interval_seconds: interval, output_fps: fps, name: name.trim() || undefined },
+        params: { ...settings, name: name.trim() || undefined },
       });
       toast.ok("Timelapse started");
       setName("");
@@ -118,7 +164,17 @@ export function Timelapse() {
 
   const onSmooth = async (t: TimelapseInfo) => {
     try {
-      await smooth.mutateAsync({ prefix: t.proxy_prefix, id: t.id, params: {} });
+      await smooth.mutateAsync({
+        prefix: t.proxy_prefix,
+        id: t.id,
+        params: {
+          target_fps: settings.smooth_target_fps,
+          interpolate: settings.smooth_interpolate,
+          deflicker: settings.smooth_deflicker,
+          engine: settings.smooth_engine,
+          quality: settings.smooth_quality,
+        },
+      });
       toast.ok("Smoothing — interpolating frames…");
     } catch {
       toast.err("Could not start smoothing");
@@ -151,6 +207,12 @@ export function Timelapse() {
         <div className="panel-title"><IconTimelapse size={16} /> New capture</div>
         <div className="tl-form-grid">
           <label className="tl-field">
+            <span className="microlabel">Printer preset</span>
+            <select className="tl-select" value={presetName} onChange={(e) => applyPreset(e.target.value)}>
+              {presets.map((preset) => <option key={preset.name}>{preset.name}</option>)}
+            </select>
+          </label>
+          <label className="tl-field">
             <span className="microlabel">Camera</span>
             <select className="tl-select" value={camId} onChange={(e) => setCamId(e.target.value)}>
               {cameras.length === 0 && <option value="">No cameras</option>}
@@ -166,10 +228,10 @@ export function Timelapse() {
             <input
               className="tl-input"
               type="number"
-              min={0.2}
+              min={0.1}
               step={0.5}
-              value={interval}
-              onChange={(e) => setIntervalSec(Math.max(0.2, Number(e.target.value) || 0.2))}
+              value={settings.interval_seconds}
+              onChange={(e) => setSettings({ ...settings, interval_seconds: Math.max(0.1, Number(e.target.value) || 0.1) })}
             />
           </label>
           <label className="tl-field">
@@ -180,8 +242,8 @@ export function Timelapse() {
               min={1}
               max={60}
               step={1}
-              value={fps}
-              onChange={(e) => setFps(Math.min(60, Math.max(1, Math.round(Number(e.target.value) || 1))))}
+              value={settings.output_fps}
+              onChange={(e) => setSettings({ ...settings, output_fps: Math.min(60, Math.max(1, Math.round(Number(e.target.value) || 1))) })}
             />
           </label>
           <label className="tl-field tl-field-wide">
@@ -205,9 +267,84 @@ export function Timelapse() {
             </Button>
           </div>
         </div>
+        <div className="tl-advanced-toggle">
+          <Button variant="ghost" size="sm" onClick={() => setAdvanced(!advanced)}>
+            {advanced ? "Hide advanced settings" : "Configure capture, smoothing & analysis"}
+          </Button>
+          <span className="tl-meta mono">
+            JPEG {settings.jpeg_quality} · {settings.auto_smooth ? `${settings.smooth_engine} auto-smooth` : "manual smooth"}
+            {settings.analysis_enabled ? ` · analysis every ${settings.analysis_cadence_seconds}s` : ""}
+          </span>
+        </div>
+        {advanced && (
+          <div className="tl-advanced-grid">
+            <label className="tl-field">
+              <span className="microlabel">JPEG quality</span>
+              <input className="tl-input" type="number" min={1} max={100} value={settings.jpeg_quality}
+                onChange={(e) => setSettings({ ...settings, jpeg_quality: Math.min(100, Math.max(1, Number(e.target.value) || 1)) })} />
+            </label>
+            <label className="tl-field">
+              <span className="microlabel">Stop after frames (0 = manual)</span>
+              <input className="tl-input" type="number" min={0} value={settings.max_frames}
+                onChange={(e) => setSettings({ ...settings, max_frames: Math.max(0, Math.round(Number(e.target.value) || 0)) })} />
+            </label>
+            <label className="tl-field">
+              <span className="microlabel">Stop after seconds (0 = manual)</span>
+              <input className="tl-input" type="number" min={0} value={settings.duration_seconds}
+                onChange={(e) => setSettings({ ...settings, duration_seconds: Math.max(0, Number(e.target.value) || 0) })} />
+            </label>
+            <label className="tl-field">
+              <span className="microlabel">Smoothing engine</span>
+              <select className="tl-select" value={settings.smooth_engine}
+                onChange={(e) => setSettings({ ...settings, smooth_engine: e.target.value as "ffmpeg" | "rife" })}>
+                <option value="ffmpeg">FFmpeg optical flow</option>
+                <option value="rife">RIFE, fallback to FFmpeg</option>
+              </select>
+            </label>
+            <label className="tl-field">
+              <span className="microlabel">Smooth target FPS</span>
+              <input className="tl-input" type="number" min={1} max={120} value={settings.smooth_target_fps}
+                onChange={(e) => setSettings({ ...settings, smooth_target_fps: Math.min(120, Math.max(1, Math.round(Number(e.target.value) || 1))) })} />
+            </label>
+            <label className="tl-field">
+              <span className="microlabel">Output quality</span>
+              <select className="tl-select" value={settings.smooth_quality}
+                onChange={(e) => setSettings({ ...settings, smooth_quality: e.target.value as "standard" | "high" | "maximum" })}>
+                <option value="standard">Standard</option>
+                <option value="high">High</option>
+                <option value="maximum">Maximum</option>
+              </select>
+            </label>
+            <label className="tl-check">
+              <input type="checkbox" checked={settings.auto_smooth}
+                onChange={(e) => setSettings({ ...settings, auto_smooth: e.target.checked })} />
+              <span>Automatically smooth after capture</span>
+            </label>
+            <label className="tl-check">
+              <input type="checkbox" checked={settings.smooth_interpolate}
+                onChange={(e) => setSettings({ ...settings, smooth_interpolate: e.target.checked })} />
+              <span>Generate intermediate motion</span>
+            </label>
+            <label className="tl-check">
+              <input type="checkbox" checked={settings.smooth_deflicker}
+                onChange={(e) => setSettings({ ...settings, smooth_deflicker: e.target.checked })} />
+              <span>Normalize exposure flicker</span>
+            </label>
+            <label className={`tl-check ${!ai?.enabled ? "is-disabled" : ""}`}>
+              <input type="checkbox" checked={settings.analysis_enabled} disabled={!ai?.enabled}
+                onChange={(e) => setSettings({ ...settings, analysis_enabled: e.target.checked })} />
+              <span>Analyze printer health with local Ollama</span>
+            </label>
+            <label className="tl-field">
+              <span className="microlabel">Analysis cadence (seconds)</span>
+              <input className="tl-input" type="number" min={1} max={3600} disabled={!settings.analysis_enabled}
+                value={settings.analysis_cadence_seconds}
+                onChange={(e) => setSettings({ ...settings, analysis_cadence_seconds: Math.min(3600, Math.max(1, Number(e.target.value) || 1)) })} />
+            </label>
+          </div>
+        )}
         <p className="help-foot mono">
-          Tip for 3D prints: a short interval (1–2s) captures the print growing. Raw frames are
-          kept, so a future update can smooth the motion with interpolation.
+          Raw frames are retained. Manual Smooth uses the settings above. {!ai?.enabled && "Enable Ollama on Models to turn on printer-health analysis."}
         </p>
       </div>
 
@@ -242,6 +379,11 @@ export function Timelapse() {
                     <div className="tl-meta mono">
                       {camName(t.camera_id)} · {t.frames_captured} frames · {fmtDur(elapsed)} · every {t.interval_seconds}s
                     </div>
+                    {t.analysis_latest_state && HEALTH_BADGE[t.analysis_latest_state] && (
+                      <span className={`badge ${HEALTH_BADGE[t.analysis_latest_state].cls}`}>
+                        {HEALTH_BADGE[t.analysis_latest_state].label}
+                      </span>
+                    )}
                   </div>
                   {capturing ? (
                     <Button
@@ -302,6 +444,11 @@ export function Timelapse() {
                     {t.frames_captured} frames
                     {t.state === "complete" && ` · ${videoSeconds(t).toFixed(1)}s @ ${t.output_fps}fps · ${fmtBytes(t.size_bytes)}`}
                   </span>
+                  {t.analysis_latest_state && HEALTH_BADGE[t.analysis_latest_state] && (
+                    <span className={`badge tl-health-badge ${HEALTH_BADGE[t.analysis_latest_state].cls}`}>
+                      {HEALTH_BADGE[t.analysis_latest_state].label} · {t.analysis_event_count} checks
+                    </span>
+                  )}
                 </div>
                 <div className="tl-foot">
                   {playable && (
@@ -317,7 +464,7 @@ export function Timelapse() {
                   {playable && t.smooth_state === "processing" && (
                     <span className="tl-encoding mono"><Spinner size={13} /> smoothing…</span>
                   )}
-                  {playable && postprocess?.available && t.smooth_state !== "processing" && t.smooth_state !== "complete" && (
+                  {playable && postprocess?.available && t.smooth_state !== "processing" && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -325,7 +472,7 @@ export function Timelapse() {
                       title="Interpolate frames into smooth motion"
                       onClick={() => onSmooth(t)}
                     >
-                      {t.smooth_state === "error" ? "Retry smooth" : "Smooth"}
+                      {t.smooth_state === "complete" ? "Re-smooth" : t.smooth_state === "error" ? "Retry smooth" : "Smooth"}
                     </Button>
                   )}
                   <Button variant="danger" size="sm" icon={<IconTrash size={14} />} onClick={() => setConfirm(t)}>
@@ -384,6 +531,36 @@ export function Timelapse() {
                   <Button variant="danger" size="sm" icon={<IconTrash size={15} />} onClick={() => setConfirm(play)}>Delete</Button>
                 </div>
               </div>
+              {play.analysis_enabled && (
+                <div className="tl-analysis-panel">
+                  <div className="panel-title">Printer-health analysis</div>
+                  {analysisEvents.length === 0 ? (
+                    <span className="tl-meta mono">No analysis results recorded yet.</span>
+                  ) : (
+                    <div className="tl-analysis-events">
+                      {analysisEvents.map((event) => {
+                        const badge = HEALTH_BADGE[event.state];
+                        return (
+                          <div key={event.id} className="tl-analysis-event">
+                            <img
+                              className="tl-evidence"
+                              src={timelapseFrameUrl(play.proxy_prefix, play.id, event.frame_number)}
+                              alt={`frame ${event.frame_number}`}
+                              loading="lazy"
+                            />
+                            <div className="tl-analysis-event-body">
+                              <span className={`badge ${badge.cls}`}>{badge.label}</span>
+                              <span className="mono">frame {event.frame_number} · {Math.round(event.confidence * 100)}%</span>
+                              <span>{event.description}</span>
+                              <span className="tl-meta mono">{fmtDateTime(event.created_ts)}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         );

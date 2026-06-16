@@ -8,6 +8,7 @@ encoding so a future phase can re-stitch them with interpolation/deflicker.
 
 from __future__ import annotations
 
+import math
 import shutil
 import threading
 import time
@@ -22,6 +23,7 @@ from tailcam.logging_setup import get_logger
 from tailcam.persistence.models import TimelapseRecord
 from tailcam.persistence.store import Store
 from tailcam.streaming.encoder import encode_jpeg
+from tailcam.timelapse.analyzer import TimelapseAnalysisQueue
 from tailcam.timelapse.ffmpeg import (
     build_encode_command,
     build_smooth_command,
@@ -38,10 +40,17 @@ _THUMB_WIDTH = 320
 
 
 class TimelapseService:
-    def __init__(self, manager: CameraManager, store: Store, config: TimelapseConfig) -> None:
+    def __init__(
+        self,
+        manager: CameraManager,
+        store: Store,
+        config: TimelapseConfig,
+        analysis_queue: TimelapseAnalysisQueue | None = None,
+    ) -> None:
         self._manager = manager
         self._store = store
         self._config = config
+        self._analysis_queue = analysis_queue
         self._workers: dict[int, TimelapseCaptureWorker] = {}
         self._encoding: set[int] = set()
         self._smoothing: set[int] = set()
@@ -55,12 +64,24 @@ class TimelapseService:
         interval_seconds: float | None = None,
         output_fps: int | None = None,
         duration_seconds: float = 0.0,
+        jpeg_quality: int | None = None,
+        max_frames: int | None = None,
+        auto_smooth: bool | None = None,
+        smooth_target_fps: int | None = None,
+        smooth_interpolate: bool | None = None,
+        smooth_deflicker: bool | None = None,
+        smooth_engine: str | None = None,
+        smooth_quality: str | None = None,
+        analysis_enabled: bool | None = None,
+        analysis_cadence_seconds: float | None = None,
     ) -> TimelapseRecord | None:
         buffer = self._manager.get_buffer(camera_id)
         if buffer is None:
             return None
         interval = interval_seconds or self._config.default_interval_seconds
         fps = output_fps or self._config.default_output_fps
+        capture_quality = jpeg_quality or self._config.jpeg_quality
+        frame_cap = self._config.max_frames if max_frames is None else max_frames
         cam = self._manager.get(camera_id)
         cam_name = cam.name if cam else camera_id
         ts = time.time()
@@ -77,6 +98,26 @@ class TimelapseService:
             start_ts=ts,
             end_ts=None,
             frames_dir="",  # filled in once we know the id
+            jpeg_quality=capture_quality,
+            max_frames=frame_cap,
+            auto_smooth=self._config.auto_smooth if auto_smooth is None else auto_smooth,
+            smooth_target_fps=smooth_target_fps or self._config.smooth_target_fps,
+            smooth_interpolate=(
+                self._config.smooth_interpolate
+                if smooth_interpolate is None
+                else smooth_interpolate
+            ),
+            smooth_deflicker=(
+                self._config.smooth_deflicker if smooth_deflicker is None else smooth_deflicker
+            ),
+            smooth_engine=smooth_engine or self._config.smooth_engine,
+            smooth_quality=smooth_quality or self._config.smooth_quality,
+            analysis_enabled=(
+                self._config.analysis_enabled if analysis_enabled is None else analysis_enabled
+            ),
+            analysis_cadence_seconds=(
+                analysis_cadence_seconds or self._config.analysis_cadence_seconds
+            ),
         )
         tl_id = self._store.add_timelapse(record)
         record.id = tl_id
@@ -87,10 +128,16 @@ class TimelapseService:
         worker = TimelapseCaptureWorker(
             tl_id, camera_id, buffer, frames_dir,
             interval_seconds=interval,
-            jpeg_quality=self._config.jpeg_quality,
-            max_frames=self._config.max_frames,
+            jpeg_quality=record.jpeg_quality,
+            max_frames=record.max_frames,
             duration_seconds=duration_seconds,
-            on_frame=lambda n: self._on_frame(tl_id, n),
+            on_frame=lambda n: self._on_frame(
+                tl_id,
+                n,
+                frames_dir,
+                max(1, math.ceil(record.analysis_cadence_seconds / interval)),
+                record.analysis_enabled,
+            ),
             on_complete=lambda: self._finalize_async(tl_id),
         )
         with self._lock:
@@ -99,11 +146,24 @@ class TimelapseService:
         log.info("timelapse %s started on %s (interval=%.1fs)", tl_id, camera_id, interval)
         return record
 
-    def _on_frame(self, tl_id: int, n: int) -> None:
+    def _on_frame(
+        self,
+        tl_id: int,
+        n: int,
+        frames_dir: Path,
+        analysis_every: int,
+        analysis_enabled: bool,
+    ) -> None:
         # Persist progress occasionally so a crash loses little; live reads use
         # the in-memory worker counter (see _patch_live).
         if n % 10 == 0:
             self._store.update_timelapse(tl_id, frames_captured=n)
+        if (
+            analysis_enabled
+            and self._analysis_queue is not None
+            and (n == 1 or n % analysis_every == 0)
+        ):
+            self._analysis_queue.submit(tl_id, n - 1, frames_dir / f"{n - 1:06d}.jpg")
 
     # -- stop / finalize ---------------------------------------------------
     def stop(self, tl_id: int) -> TimelapseRecord | None:
@@ -185,6 +245,15 @@ class TimelapseService:
                 end_ts=record.end_ts or time.time(),
             )
             log.info("timelapse %s encoded: %d frames -> %s", tl_id, count, video_path.name)
+            if record.auto_smooth:
+                self.smooth(
+                    tl_id,
+                    target_fps=record.smooth_target_fps,
+                    interpolate=record.smooth_interpolate,
+                    deflicker=record.smooth_deflicker,
+                    engine=record.smooth_engine,
+                    quality=record.smooth_quality,
+                )
         except Exception as exc:  # pragma: no cover - encode failure
             log.exception("timelapse %s encode failed: %s", tl_id, exc)
             self._store.update_timelapse(tl_id, state="error")
@@ -200,6 +269,7 @@ class TimelapseService:
         interpolate: bool | None = None,
         deflicker: bool | None = None,
         engine: str | None = None,
+        quality: str | None = None,
     ) -> TimelapseRecord | None:
         """Kick off a background pass that turns the captured frames into smooth,
         flowing motion. ``engine`` is "ffmpeg" or "rife"; a failed RIFE run falls
@@ -214,25 +284,40 @@ class TimelapseService:
             if tl_id in self._smoothing:
                 return self.get(tl_id)
             self._smoothing.add(tl_id)
-        cfg = self._config
-        tfps = target_fps or cfg.smooth_target_fps
-        interp = cfg.smooth_interpolate if interpolate is None else interpolate
-        defl = cfg.smooth_deflicker if deflicker is None else deflicker
-        chosen = engine or cfg.smooth_engine
-        if chosen == "rife" and not rife_available(cfg.rife_path):
+        tfps = target_fps or record.smooth_target_fps
+        interp = record.smooth_interpolate if interpolate is None else interpolate
+        defl = record.smooth_deflicker if deflicker is None else deflicker
+        chosen = engine or record.smooth_engine
+        output_quality = quality or record.smooth_quality
+        if chosen == "rife" and not rife_available(self._config.rife_path):
             chosen = "ffmpeg"  # not installed → fall back before we even start
-        self._store.update_timelapse(tl_id, smooth_state="processing", smooth_path=None)
+        self._store.update_timelapse(
+            tl_id,
+            smooth_state="processing",
+            smooth_target_fps=tfps,
+            smooth_interpolate=int(interp),
+            smooth_deflicker=int(defl),
+            smooth_engine=chosen,
+            smooth_quality=output_quality,
+        )
         threading.Thread(
             target=self._smooth_job,
-            args=(tl_id, tfps, interp, defl, chosen),
+            args=(tl_id, tfps, interp, defl, chosen, output_quality),
             name=f"timelapse-smooth-{tl_id}",
             daemon=True,
         ).start()
         return self.get(tl_id)
 
     def _smooth_job(
-        self, tl_id: int, target_fps: int, interpolate: bool, deflicker: bool, engine: str
+        self,
+        tl_id: int,
+        target_fps: int,
+        interpolate: bool,
+        deflicker: bool,
+        engine: str,
+        quality: str,
     ) -> None:
+        pending: Path | None = None
         try:
             record = self._store.get_timelapse(tl_id)
             exe = ffmpeg_path()
@@ -241,22 +326,34 @@ class TimelapseService:
                 return
             frames_dir = Path(record.frames_dir)
             out = frames_dir.parent / "smooth.mp4"
+            pending = frames_dir.parent / "smooth.pending.mp4"
+            pending.unlink(missing_ok=True)
 
             used = "ffmpeg"
             ok = False
             if engine == "rife":
-                ok = self._smooth_with_rife(record, frames_dir, out, target_fps, deflicker, exe)
+                ok = self._smooth_with_rife(
+                    record, frames_dir, pending, target_fps, deflicker, quality, exe
+                )
                 if ok:
                     used = "rife"
                 else:
                     log.warning("timelapse %s: RIFE failed, falling back to ffmpeg", tl_id)
             if not ok:
                 cmd = build_smooth_command(
-                    exe, frames_dir, record.output_fps, out, target_fps, interpolate, deflicker
+                    exe,
+                    frames_dir,
+                    record.output_fps,
+                    pending,
+                    target_fps,
+                    interpolate,
+                    deflicker,
+                    quality,
                 )
-                ok = run_ffmpeg(cmd) and out.exists()
+                ok = run_ffmpeg(cmd) and pending.exists()
 
-            if ok and out.exists():
+            if ok and pending.exists():
+                pending.replace(out)
                 self._store.update_timelapse(
                     tl_id,
                     smooth_state="complete",
@@ -271,11 +368,20 @@ class TimelapseService:
             log.exception("timelapse %s smoothing failed: %s", tl_id, exc)
             self._store.update_timelapse(tl_id, smooth_state="error")
         finally:
+            if pending is not None:
+                pending.unlink(missing_ok=True)
             with self._lock:
                 self._smoothing.discard(tl_id)
 
     def _smooth_with_rife(
-        self, record, frames_dir: Path, out: Path, target_fps: int, deflicker: bool, ffmpeg: str
+        self,
+        record,
+        frames_dir: Path,
+        out: Path,
+        target_fps: int,
+        deflicker: bool,
+        quality: str,
+        ffmpeg: str,
     ) -> bool:
         """RIFE pipeline: interpolate frames with rife-ncnn-vulkan, then encode.
         Keeps the original cadence's wall-clock duration by scaling fps with the
@@ -303,7 +409,7 @@ class TimelapseService:
                 return False
             # RIFE writes PNGs; encode them at the multiplied fps.
             glob = str(interp_dir / "*.png")
-            enc = build_encode_command(ffmpeg, glob, encode_fps, out, deflicker)
+            enc = build_encode_command(ffmpeg, glob, encode_fps, out, deflicker, quality)
             return run_ffmpeg(enc) and out.exists()
         finally:
             shutil.rmtree(interp_dir, ignore_errors=True)
@@ -360,6 +466,8 @@ class TimelapseService:
                 width=worker.width,
                 height=worker.height,
             )
+        if self._analysis_queue is not None:
+            self._analysis_queue.shutdown()
 
 
 def _encode_frames(

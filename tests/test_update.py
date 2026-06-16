@@ -64,6 +64,7 @@ def test_cli_update_installs_and_restarts(monkeypatch, isolated_env):
 
     from tailcam.service import installer
 
+    monkeypatch.setattr(installer, "is_installed", lambda: False)
     monkeypatch.setattr(installer, "restart", lambda: (actions.append("restart"), "Restarted")[1])
     result = runner.invoke(app, ["update"])
     assert result.exit_code == 0

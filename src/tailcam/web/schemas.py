@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from typing import Literal
+
+from pydantic import BaseModel, Field
 
 
 class TransformModel(BaseModel):
@@ -101,9 +103,19 @@ class AIUpdate(BaseModel):
 
 class TimelapseStartRequest(BaseModel):
     name: str | None = None
-    interval_seconds: float | None = None
-    output_fps: int | None = None
-    duration_seconds: float = 0.0  # 0 = until stopped
+    interval_seconds: float | None = Field(default=None, ge=0.1, le=3600)
+    output_fps: int | None = Field(default=None, ge=1, le=120)
+    duration_seconds: float = Field(default=0.0, ge=0, le=604800)
+    jpeg_quality: int | None = Field(default=None, ge=1, le=100)
+    max_frames: int | None = Field(default=None, ge=0, le=10_000_000)
+    auto_smooth: bool | None = None
+    smooth_target_fps: int | None = Field(default=None, ge=1, le=120)
+    smooth_interpolate: bool | None = None
+    smooth_deflicker: bool | None = None
+    smooth_engine: Literal["ffmpeg", "rife"] | None = None
+    smooth_quality: Literal["standard", "high", "maximum"] | None = None
+    analysis_enabled: bool | None = None
+    analysis_cadence_seconds: float | None = Field(default=None, ge=1, le=3600)
 
 
 class TimelapseInfo(BaseModel):
@@ -128,15 +140,37 @@ class TimelapseInfo(BaseModel):
     has_smooth: bool = False
     smooth_size_bytes: int = 0
     smooth_engine: str = ""  # ffmpeg | rife
+    jpeg_quality: int = 90
+    max_frames: int = 0
+    auto_smooth: bool = False
+    smooth_target_fps: int = 60
+    smooth_interpolate: bool = True
+    smooth_deflicker: bool = True
+    smooth_quality: str = "high"
+    analysis_enabled: bool = False
+    analysis_cadence_seconds: float = 60.0
+    analysis_event_count: int = 0
+    analysis_latest_state: str = ""
     host: str = ""
     proxy_prefix: str = ""
 
 
+class TimelapseAnalysisEventInfo(BaseModel):
+    id: int
+    timelapse_id: int
+    frame_number: int
+    state: Literal["healthy", "possible_failure", "failure", "uncertain"]
+    confidence: float
+    description: str
+    created_ts: float
+
+
 class TimelapseSmoothRequest(BaseModel):
-    target_fps: int | None = None
+    target_fps: int | None = Field(default=None, ge=1, le=120)
     interpolate: bool | None = None
     deflicker: bool | None = None
-    engine: str | None = None  # ffmpeg | rife (default from config)
+    engine: Literal["ffmpeg", "rife"] | None = None
+    quality: Literal["standard", "high", "maximum"] | None = None
 
 
 class EngineInfo(BaseModel):

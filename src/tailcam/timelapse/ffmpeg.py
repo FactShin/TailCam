@@ -8,6 +8,7 @@ static binary bundled by ``imageio-ffmpeg`` so smoothing works with no setup.
 
 from __future__ import annotations
 
+import importlib.util
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,19 @@ _KNOWN_BINARIES = {
     "darwin": ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"],
     "win32": [r"C:\ffmpeg\bin\ffmpeg.exe", r"C:\Program Files\ffmpeg\bin\ffmpeg.exe"],
 }
+_QUALITY_ARGS = {
+    "standard": ("medium", "20"),
+    "high": ("slow", "18"),
+    "maximum": ("slower", "15"),
+}
+
+
+def output_quality_args(quality: str) -> tuple[str, str]:
+    """Return a fixed FFmpeg preset/CRF pair; never accept arbitrary arguments."""
+    try:
+        return _QUALITY_ARGS[quality]
+    except KeyError as exc:
+        raise ValueError("quality must be standard, high, or maximum") from exc
 
 
 def ffmpeg_path() -> str | None:
@@ -39,6 +53,14 @@ def ffmpeg_path() -> str | None:
             return exe
     except Exception:  # pragma: no cover - imageio_ffmpeg should be installed
         pass
+    # Platform probes can be overridden by packaging/tests. Discovering the
+    # installed wheel without importing it still finds this machine's binary.
+    spec = importlib.util.find_spec("imageio_ffmpeg")
+    if spec and spec.origin:
+        binaries = Path(spec.origin).parent / "binaries"
+        bundled = next((path for path in binaries.glob("ffmpeg-*") if path.is_file()), None)
+        if bundled is not None:
+            return str(bundled)
     return None
 
 
@@ -77,6 +99,7 @@ def build_smooth_command(
     target_fps: int,
     interpolate: bool,
     deflicker: bool,
+    quality: str = "high",
 ) -> list[str]:
     """ffmpeg invocation that reads the numbered source frames and writes a
     smoothed H.264 mp4. ``minterpolate`` synthesizes in-between frames up to
@@ -90,12 +113,13 @@ def build_smooth_command(
         )
     else:
         filters.append(f"fps={target_fps}")
+    preset, crf = output_quality_args(quality)
     return [
         ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
         "-framerate", str(max(1, src_fps)),
         "-i", str(frames_dir / "%06d.jpg"),
         "-vf", ",".join(filters),
-        "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+        "-c:v", "libx264", "-preset", preset, "-crf", crf,
         "-pix_fmt", "yuv420p", "-movflags", "+faststart",
         str(out_path),
     ]
@@ -107,6 +131,7 @@ def build_encode_command(
     fps: int,
     out_path: Path,
     deflicker: bool,
+    quality: str = "high",
 ) -> list[str]:
     """Encode an already-prepared frame sequence (e.g. RIFE output) to mp4 at
     ``fps``. No interpolation here — the frames are the final cadence."""
@@ -117,8 +142,9 @@ def build_encode_command(
     ]
     if deflicker:
         cmd += ["-vf", "deflicker=mode=pm:size=10"]
+    preset, crf = output_quality_args(quality)
     cmd += [
-        "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+        "-c:v", "libx264", "-preset", preset, "-crf", crf,
         "-pix_fmt", "yuv420p", "-movflags", "+faststart",
         str(out_path),
     ]
