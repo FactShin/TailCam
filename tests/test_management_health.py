@@ -14,6 +14,7 @@ def _healthy_tailscale() -> TailscaleStatus:
         running=True,
         ipv4="100.64.0.10",
         magic_dns="tailcam.example.ts.net",
+        app_capabilities_supported=True,
     )
 
 
@@ -112,6 +113,33 @@ def test_stopped_tailscale_creates_issue(context, monkeypatch) -> None:
     assert health.tailscale_installed is True
     assert health.tailscale_running is False
     assert any(issue.code == "tailscale.stopped" for issue in health.issues)
+
+
+def test_missing_tailscale_app_caps_creates_warning_issue(context, monkeypatch) -> None:
+    monkeypatch.setattr(
+        context.tailscale,
+        "status",
+        lambda: TailscaleStatus(
+            installed=True,
+            running=True,
+            ipv4="100.64.0.10",
+            magic_dns="tailcam.example.ts.net",
+            app_capabilities_supported=False,
+        ),
+    )
+    monkeypatch.setattr(
+        context.tailscale,
+        "access_url",
+        lambda local_port, served, https_port=8443: "https://tailcam.example.ts.net:8443/",
+    )
+    monkeypatch.setattr(context.analyzer, "health", lambda: (True, context.config.ai.model))
+
+    health = NodeHealthService(
+        context,
+        update_checker=lambda use_cache=True: ("0.90.0", "0.90.0", False),
+    ).snapshot()
+
+    assert any(issue.code == "tailscale.app_caps_unavailable" for issue in health.issues)
 
 
 def test_unavailable_ai_creates_issue(context, monkeypatch) -> None:

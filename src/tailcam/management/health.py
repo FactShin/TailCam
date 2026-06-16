@@ -113,6 +113,15 @@ class NodeHealthService:
                     summary="Tailscale is not installed",
                 )
             )
+        elif tailscale.installed and tailscale.running and not tailscale.app_capabilities_supported:
+            issues.append(
+                NodeIssue(
+                    code="tailscale.app_caps_unavailable",
+                    severity="warning",
+                    summary="Tailscale Serve application capabilities are unavailable",
+                    detail="Upgrade Tailscale to 1.92+ for tagged-node TailCam administration.",
+                )
+            )
 
         ai_reachable, ai_model_present_name = ctx.analyzer.health()
         ai_model_present = bool(ai_model_present_name)

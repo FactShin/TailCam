@@ -132,6 +132,13 @@ If TailCam previously grabbed the root URL and you want it back for another app:
 tailcam tailscale serve-off --https-port 443   # removes only TailCam's :443 handler
 ```
 
+When the installed Tailscale CLI supports it, TailCam starts Serve with
+`--accept-app-caps=factshin.github.io/cap/tailcam` so management APIs can receive
+`Tailscale-App-Capabilities` for fine-grained TailCam roles. Tailscale 1.92+ is
+required for this app-capability header path; older clients still serve TailCam
+privately, but tagged-node administration reports a health warning until Tailscale is
+upgraded. See [TailCam Tailscale grants](docs/tailscale-grants.md) for policy examples.
+
 ## Multi-host: every camera, from any device
 
 Install TailCam on more than one machine on the same tailnet (a Raspberry Pi, a Mac, a Linux
@@ -169,7 +176,9 @@ Notes & current limits:
 ## Security model
 
 TailCam's boundary is your **Tailscale network**: the server binds to `127.0.0.1` and is reached
-over your tailnet, with no per-request login. On top of that, TailCam ships defense-in-depth:
+over your tailnet. The normal web UI stays no-login for a personal tailnet, while management APIs
+layer Tailscale Serve identity and TailCam app-capability roles on top. TailCam also ships
+defense-in-depth:
 
 - **Cross-origin / drive-by protection** — state-changing requests (snapshot, record, delete,
   settings) from a foreign web origin are rejected; only localhost and your tailnet (`*.ts.net`)

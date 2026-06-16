@@ -11,7 +11,7 @@ from typing import Literal
 
 from starlette.requests import Request
 
-TAILCAM_APP_CAPABILITY = "factshin.github.io/cap/tailcam"
+from tailcam.tailscale.client import TAILCAM_APP_CAPABILITY
 
 
 class TailCamRole(str, Enum):
