@@ -44,6 +44,7 @@ dependencies = [
 [project.optional-dependencies]
 webrtc = ["aiortc~=1.9"]
 turbojpeg = ["PyTurboJPEG~=1.7"]
+desktop = ["pyinstaller==6.20.0"]
 dev = [
     "pytest~=8.3",
     "pytest-asyncio~=0.24",
