@@ -24,12 +24,14 @@ describe("desktop runtime", () => {
     });
 
     await runtime.openMainWindow();
+    await runtime.openMainRoute("/events");
     expect(await runtime.getLaunchAtLogin()).toBe(true);
     await runtime.setLaunchAtLogin(true);
     await runtime.quit();
 
     expect(invoke.mock.calls).toEqual([
       ["open_main_window"],
+      ["open_main_route", { path: "/events" }],
       ["get_launch_at_login"],
       ["set_launch_at_login", { enabled: true }],
       ["quit_tailcam"],

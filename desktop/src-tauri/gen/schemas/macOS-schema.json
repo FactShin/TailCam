@@ -183,6 +183,12 @@
           "markdownDescription": "Allows the TailCam desktop UI to read whether TailCam launches at login."
         },
         {
+          "description": "Allows the TailCam desktop UI to open a local TailCam app route in the main window.",
+          "type": "string",
+          "const": "allow-open-main-route",
+          "markdownDescription": "Allows the TailCam desktop UI to open a local TailCam app route in the main window."
+        },
+        {
           "description": "Allows the TailCam desktop UI to open and focus the main TailCam window.",
           "type": "string",
           "const": "allow-open-main-window",

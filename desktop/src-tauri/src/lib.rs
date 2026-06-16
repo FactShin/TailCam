@@ -1,4 +1,6 @@
 pub mod node;
+pub mod notifications;
+pub mod tray;
 pub mod windows;
 
 use std::sync::Mutex;
@@ -15,6 +17,16 @@ pub struct DesktopState {
 #[tauri::command]
 fn open_main_window(app: tauri::AppHandle) -> Result<(), String> {
     windows::open_main_window(&app)
+}
+
+#[tauri::command]
+fn open_main_route(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, DesktopState>,
+    path: String,
+) -> Result<(), String> {
+    let origin = state.origin.lock().map_err(|err| err.to_string())?.clone();
+    windows::open_main_route(&app, origin.as_deref(), &path)
 }
 
 #[tauri::command]
@@ -87,6 +99,8 @@ pub fn run() {
                 .map_err(|err| io_error(err.to_string()))? = Some(origin.clone());
             *state.node.lock().map_err(|err| io_error(err.to_string()))? = Some(node);
             windows::navigate_app_windows(app.handle(), &origin).map_err(io_error)?;
+            tray::install(app.handle()).map_err(io_error)?;
+            notifications::start(app.handle().clone(), origin);
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -99,6 +113,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             open_main_window,
+            open_main_route,
             quit_tailcam,
             get_launch_at_login,
             set_launch_at_login

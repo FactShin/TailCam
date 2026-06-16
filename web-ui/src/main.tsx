@@ -5,6 +5,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { AppShell } from "./app/AppShell";
 import { ToastProvider } from "./components/toast";
+import { DesktopNotificationRouter } from "./desktop/DesktopNotificationRouter";
 import { CameraDetail } from "./screens/CameraDetail";
 import { Dashboard } from "./screens/Dashboard";
 import { DesktopCommandCenter } from "./screens/DesktopCommandCenter";
@@ -28,6 +29,7 @@ createRoot(document.getElementById("root")!).render(
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <ToastProvider>
+          <DesktopNotificationRouter />
           <Routes>
             <Route path="/desktop/command-center" element={<DesktopCommandCenter />} />
             <Route path="/*" element={

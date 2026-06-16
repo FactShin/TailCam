@@ -1,6 +1,7 @@
 export interface DesktopRuntime {
   isDesktop: boolean;
   openMainWindow(): Promise<void>;
+  openMainRoute(path: string): Promise<void>;
   quit(): Promise<void>;
   getLaunchAtLogin(): Promise<boolean>;
   setLaunchAtLogin(enabled: boolean): Promise<void>;
@@ -30,7 +31,12 @@ export function createDesktopRuntime(options: DesktopRuntimeOptions = {}): Deskt
   let invokePromise: Promise<TauriInvoke> | null = null;
 
   const invoke = async <T = unknown>(
-    command: "open_main_window" | "quit_tailcam" | "get_launch_at_login" | "set_launch_at_login",
+    command:
+      | "open_main_window"
+      | "open_main_route"
+      | "quit_tailcam"
+      | "get_launch_at_login"
+      | "set_launch_at_login",
     args?: Record<string, unknown>,
   ): Promise<T | undefined> => {
     if (!isDesktop) return undefined;
@@ -42,6 +48,9 @@ export function createDesktopRuntime(options: DesktopRuntimeOptions = {}): Deskt
     isDesktop,
     async openMainWindow() {
       await invoke("open_main_window");
+    },
+    async openMainRoute(path: string) {
+      await invoke("open_main_route", { path });
     },
     async quit() {
       await invoke("quit_tailcam");

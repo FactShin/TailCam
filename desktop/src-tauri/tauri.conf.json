@@ -4,8 +4,8 @@
   "version": "0.90.0",
   "identifier": "io.github.factshin.tailcam",
   "build": {
-    "beforeDevCommand": "cd ../../web-ui && npm run dev",
-    "beforeBuildCommand": "cd ../../web-ui && npm run build",
+    "beforeDevCommand": "cd ../web-ui && npm run dev",
+    "beforeBuildCommand": "cd ../web-ui && npm run build",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../../src/tailcam/web/spa"
   },
@@ -46,7 +46,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": ""
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVGMDBGOTI2ODAxMDRBQjgKUldTNFNoQ0FKdmtBNzVnTncyVDVVVnpUM3lUU3djNUN2UGl5WE9oemhXUVI1QXZCWENDVFZ5Q1IK"
     }
   }
 }

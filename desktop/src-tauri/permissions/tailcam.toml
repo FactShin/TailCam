@@ -4,6 +4,11 @@ description = "Allows the TailCam desktop UI to open and focus the main TailCam 
 commands.allow = ["open_main_window"]
 
 [[permission]]
+identifier = "allow-open-main-route"
+description = "Allows the TailCam desktop UI to open a local TailCam app route in the main window."
+commands.allow = ["open_main_route"]
+
+[[permission]]
 identifier = "allow-quit-tailcam"
 description = "Allows the TailCam desktop UI to quit TailCam and stop an owned sidecar."
 commands.allow = ["quit_tailcam"]
