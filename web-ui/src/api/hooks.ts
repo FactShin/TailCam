@@ -311,6 +311,19 @@ export function useTimelapses(params: { camera_id?: string; limit?: number } = {
   });
 }
 
+export function useTimelapsePresets() {
+  return useQuery({ queryKey: ["timelapse-presets"], queryFn: api.getTimelapsePresets });
+}
+
+export function useTimelapseAnalysisEvents(prefix: string, tlId: number | null) {
+  return useQuery({
+    queryKey: ["timelapse-analysis-events", prefix, tlId],
+    queryFn: () => api.getTimelapseAnalysisEvents(prefix, tlId as number),
+    enabled: tlId !== null,
+    refetchInterval: 5000,
+  });
+}
+
 function _invalidateTimelapse(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ["timelapse"] });
   qc.invalidateQueries({ queryKey: ["system"] });

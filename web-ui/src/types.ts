@@ -193,6 +193,17 @@ export interface TimelapseInfo {
   has_smooth: boolean;
   smooth_size_bytes: number;
   smooth_engine: string; // "ffmpeg" | "rife"
+  jpeg_quality: number;
+  max_frames: number;
+  auto_smooth: boolean;
+  smooth_target_fps: number;
+  smooth_interpolate: boolean;
+  smooth_deflicker: boolean;
+  smooth_quality: "standard" | "high" | "maximum";
+  analysis_enabled: boolean;
+  analysis_cadence_seconds: number;
+  analysis_event_count: number;
+  analysis_latest_state: string;
   host: string;
   proxy_prefix: string;
 }
@@ -202,6 +213,16 @@ export interface TimelapseStartParams {
   interval_seconds?: number;
   output_fps?: number;
   duration_seconds?: number;
+  jpeg_quality?: number;
+  max_frames?: number;
+  auto_smooth?: boolean;
+  smooth_target_fps?: number;
+  smooth_interpolate?: boolean;
+  smooth_deflicker?: boolean;
+  smooth_engine?: "ffmpeg" | "rife";
+  smooth_quality?: "standard" | "high" | "maximum";
+  analysis_enabled?: boolean;
+  analysis_cadence_seconds?: number;
 }
 
 export interface TimelapseSmoothParams {
@@ -209,6 +230,22 @@ export interface TimelapseSmoothParams {
   interpolate?: boolean;
   deflicker?: boolean;
   engine?: string; // "ffmpeg" | "rife"
+  quality?: "standard" | "high" | "maximum";
+}
+
+export interface TimelapsePreset {
+  name: string;
+  settings: TimelapseStartParams;
+}
+
+export interface TimelapseAnalysisEvent {
+  id: number;
+  timelapse_id: number;
+  frame_number: number;
+  state: "healthy" | "possible_failure" | "failure" | "uncertain";
+  confidence: number;
+  description: string;
+  created_ts: number;
 }
 
 export interface EngineInfo {

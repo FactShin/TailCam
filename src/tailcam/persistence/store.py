@@ -17,6 +17,7 @@ from tailcam.persistence.models import (
     MediaRecord,
     ModelRecord,
     MotionEventRecord,
+    TimelapseAnalysisEventRecord,
     TimelapseRecord,
     TrainingRunRecord,
 )
@@ -88,12 +89,38 @@ _SCHEMA = [
         smooth_state TEXT NOT NULL DEFAULT 'none',
         smooth_path TEXT,
         smooth_size_bytes INTEGER NOT NULL DEFAULT 0,
-        smooth_engine TEXT NOT NULL DEFAULT ''
+        smooth_engine TEXT NOT NULL DEFAULT '',
+        jpeg_quality INTEGER NOT NULL DEFAULT 90,
+        max_frames INTEGER NOT NULL DEFAULT 0,
+        auto_smooth INTEGER NOT NULL DEFAULT 0,
+        smooth_target_fps INTEGER NOT NULL DEFAULT 60,
+        smooth_interpolate INTEGER NOT NULL DEFAULT 1,
+        smooth_deflicker INTEGER NOT NULL DEFAULT 1,
+        smooth_quality TEXT NOT NULL DEFAULT 'high',
+        analysis_enabled INTEGER NOT NULL DEFAULT 0,
+        analysis_cadence_seconds REAL NOT NULL DEFAULT 60
     );
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_timelapses_camera_ts
         ON timelapses (camera_id, created_ts DESC);
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS timelapse_analysis_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timelapse_id INTEGER NOT NULL,
+        frame_number INTEGER NOT NULL,
+        state TEXT NOT NULL,
+        confidence REAL NOT NULL,
+        description TEXT NOT NULL,
+        evidence_path TEXT NOT NULL,
+        created_ts REAL NOT NULL,
+        FOREIGN KEY(timelapse_id) REFERENCES timelapses(id) ON DELETE CASCADE
+    );
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_timelapse_analysis_frame
+        ON timelapse_analysis_events (timelapse_id, frame_number);
     """,
     """
     CREATE TABLE IF NOT EXISTS datasets (
@@ -155,7 +182,7 @@ _SCHEMA = [
     CREATE INDEX IF NOT EXISTS idx_runs_created ON training_runs (created_ts DESC);
     """,
 ]
-_CURRENT_VERSION = 6
+_CURRENT_VERSION = 7
 
 # Columns added after v1 — applied to existing DBs via ALTER TABLE on migrate().
 _EVENT_COLUMNS = {
@@ -171,6 +198,15 @@ _TIMELAPSE_COLUMNS = {
     "smooth_path": "TEXT",
     "smooth_size_bytes": "INTEGER NOT NULL DEFAULT 0",
     "smooth_engine": "TEXT NOT NULL DEFAULT ''",
+    "jpeg_quality": "INTEGER NOT NULL DEFAULT 90",
+    "max_frames": "INTEGER NOT NULL DEFAULT 0",
+    "auto_smooth": "INTEGER NOT NULL DEFAULT 0",
+    "smooth_target_fps": "INTEGER NOT NULL DEFAULT 60",
+    "smooth_interpolate": "INTEGER NOT NULL DEFAULT 1",
+    "smooth_deflicker": "INTEGER NOT NULL DEFAULT 1",
+    "smooth_quality": "TEXT NOT NULL DEFAULT 'high'",
+    "analysis_enabled": "INTEGER NOT NULL DEFAULT 0",
+    "analysis_cadence_seconds": "REAL NOT NULL DEFAULT 60",
 }
 
 
@@ -392,8 +428,12 @@ class Store:
                 INSERT INTO timelapses
                     (camera_id, name, state, mode, interval_seconds, output_fps,
                      frames_captured, created_ts, start_ts, end_ts, frames_dir,
-                     video_path, thumb_path, size_bytes, width, height)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     video_path, thumb_path, size_bytes, width, height,
+                     smooth_engine, jpeg_quality, max_frames, auto_smooth, smooth_target_fps,
+                     smooth_interpolate, smooth_deflicker, smooth_quality,
+                     analysis_enabled, analysis_cadence_seconds)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.camera_id, record.name, record.state, record.mode,
@@ -401,6 +441,11 @@ class Store:
                     record.created_ts, record.start_ts, record.end_ts, record.frames_dir,
                     record.video_path, record.thumb_path, record.size_bytes,
                     record.width, record.height,
+                    record.smooth_engine, record.jpeg_quality, record.max_frames,
+                    int(record.auto_smooth), record.smooth_target_fps,
+                    int(record.smooth_interpolate),
+                    int(record.smooth_deflicker), record.smooth_quality,
+                    int(record.analysis_enabled), record.analysis_cadence_seconds,
                 ),
             )
             return int(cur.lastrowid or 0)
@@ -437,6 +482,82 @@ class Store:
     def delete_timelapse(self, tl_id: int) -> None:
         with self._conn() as conn:
             conn.execute("DELETE FROM timelapses WHERE id=?", (tl_id,))
+
+    def add_timelapse_analysis_event(self, record: TimelapseAnalysisEventRecord) -> int:
+        with self._conn() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO timelapse_analysis_events
+                    (timelapse_id, frame_number, state, confidence, description,
+                     evidence_path, created_ts)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.timelapse_id,
+                    record.frame_number,
+                    record.state,
+                    record.confidence,
+                    record.description,
+                    record.evidence_path,
+                    record.created_ts,
+                ),
+            )
+            return int(cur.lastrowid or 0)
+
+    def list_timelapse_analysis_events(
+        self, tl_id: int
+    ) -> list[TimelapseAnalysisEventRecord]:
+        rows = self._conn().execute(
+            """
+            SELECT * FROM timelapse_analysis_events
+            WHERE timelapse_id=?
+            ORDER BY frame_number, created_ts
+            """,
+            (tl_id,),
+        ).fetchall()
+        return [_timelapse_analysis_event_from_row(row) for row in rows]
+
+    def timelapse_analysis_summary(self, tl_id: int) -> tuple[int, str]:
+        row = self._conn().execute(
+            """
+            SELECT
+                COUNT(*) AS event_count,
+                COALESCE(
+                    (
+                        SELECT state FROM timelapse_analysis_events
+                        WHERE timelapse_id=?
+                        ORDER BY created_ts DESC, id DESC
+                        LIMIT 1
+                    ),
+                    ''
+                ) AS latest_state
+            FROM timelapse_analysis_events
+            WHERE timelapse_id=?
+            """,
+            (tl_id, tl_id),
+        ).fetchone()
+        return int(row["event_count"]), str(row["latest_state"])
+
+    def timelapse_analysis_summaries(self) -> dict[int, tuple[int, str]]:
+        """Per-timelapse (event_count, latest_state) for every analyzed timelapse
+        in a single query — avoids an N+1 over the timelapse list."""
+        rows = self._conn().execute(
+            """
+            SELECT timelapse_id,
+                   COUNT(*) AS event_count,
+                   (
+                       SELECT state FROM timelapse_analysis_events e2
+                       WHERE e2.timelapse_id = e1.timelapse_id
+                       ORDER BY created_ts DESC, id DESC LIMIT 1
+                   ) AS latest_state
+            FROM timelapse_analysis_events e1
+            GROUP BY timelapse_id
+            """
+        ).fetchall()
+        return {
+            int(r["timelapse_id"]): (int(r["event_count"]), str(r["latest_state"]))
+            for r in rows
+        }
 
     def interrupt_active_timelapses(self) -> int:
         """Mark non-terminal timelapses as interrupted at startup (their worker
@@ -697,6 +818,28 @@ def _timelapse_from_row(row: sqlite3.Row) -> TimelapseRecord:
         smooth_path=row["smooth_path"],
         smooth_size_bytes=row["smooth_size_bytes"],
         smooth_engine=row["smooth_engine"],
+        jpeg_quality=row["jpeg_quality"],
+        max_frames=row["max_frames"],
+        auto_smooth=bool(row["auto_smooth"]),
+        smooth_target_fps=row["smooth_target_fps"],
+        smooth_interpolate=bool(row["smooth_interpolate"]),
+        smooth_deflicker=bool(row["smooth_deflicker"]),
+        smooth_quality=row["smooth_quality"],
+        analysis_enabled=bool(row["analysis_enabled"]),
+        analysis_cadence_seconds=row["analysis_cadence_seconds"],
+    )
+
+
+def _timelapse_analysis_event_from_row(row: sqlite3.Row) -> TimelapseAnalysisEventRecord:
+    return TimelapseAnalysisEventRecord(
+        id=row["id"],
+        timelapse_id=row["timelapse_id"],
+        frame_number=row["frame_number"],
+        state=row["state"],
+        confidence=row["confidence"],
+        description=row["description"],
+        evidence_path=row["evidence_path"],
+        created_ts=row["created_ts"],
     )
 
 

@@ -17,6 +17,7 @@ from tailcam.motion.worker import MotionWorker
 from tailcam.persistence.store import Store
 from tailcam.streaming.mjpeg import MJPEGBackend
 from tailcam.tailscale.client import TailscaleClient
+from tailcam.timelapse.analyzer import PrinterAnalyzer, TimelapseAnalysisQueue
 from tailcam.timelapse.service import TimelapseService
 from tailcam.training.inference import InferenceRouter
 from tailcam.training.service import TrainingService
@@ -31,10 +32,17 @@ class AppContext:
         self.manager = CameraManager(self.store, config)
         self.snapshots = SnapshotService(self.manager, self.store)
         self.recorder = RecordingService(self.manager, self.store)
-        self.timelapse = TimelapseService(self.manager, self.store, config.timelapse)
         self.gallery = MediaGallery(self.store)
         self.event_log = EventLog(self.store)
         self.analyzer = OllamaAnalyzer(config.ai)
+        self.printer_analyzer = PrinterAnalyzer(config.ai)
+        self.timelapse_analysis = TimelapseAnalysisQueue(self.store, self.printer_analyzer)
+        self.timelapse = TimelapseService(
+            self.manager,
+            self.store,
+            config.timelapse,
+            analysis_queue=self.timelapse_analysis,
+        )
         self.tailscale = TailscaleClient()
         self.mjpeg = MJPEGBackend()
         self.local_host = resolve_local_host(self.tailscale)

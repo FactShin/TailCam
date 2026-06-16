@@ -54,14 +54,17 @@ class MediaGallery:
                 if self.delete(record.id):
                     removed += 1
         max_bytes = int(retention.max_gb * 1024**3)
-        if self.total_bytes() > max_bytes:
-            # Delete oldest-first until under budget.
+        current = self.total_bytes()
+        if current > max_bytes:
+            # Delete oldest-first until under budget. Track the running total in
+            # Python instead of re-summing the whole table each iteration.
             all_media = sorted(
                 self._store.list_media(limit=100000), key=lambda r: r.created_ts
             )
             for record in all_media:
-                if self.total_bytes() <= max_bytes:
+                if current <= max_bytes:
                     break
                 if record.id is not None and self.delete(record.id):
+                    current -= record.size_bytes
                     removed += 1
         return removed

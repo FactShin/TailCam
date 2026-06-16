@@ -13,7 +13,9 @@ import type {
   MotionEventInfo,
   PostprocessInfo,
   SystemInfo,
+  TimelapseAnalysisEvent,
   TimelapseInfo,
+  TimelapsePreset,
   TimelapseSmoothParams,
   TimelapseStartParams,
   ViewParams,
@@ -194,6 +196,11 @@ export const getTimelapses = (params: { camera_id?: string; limit?: number } = {
     `/api/timelapse${qs({ camera_id: params.camera_id, limit: params.limit ?? 100 })}`,
   );
 
+export const getTimelapsePresets = () => jsonFetch<TimelapsePreset[]>("/api/timelapse-presets");
+
+export const getTimelapseAnalysisEvents = (prefix: string, tlId: number) =>
+  jsonFetch<TimelapseAnalysisEvent[]>(`${prefix}/api/timelapse/${tlId}/analysis-events`);
+
 export const startTimelapse = (prefix: string, id: string, body: TimelapseStartParams) =>
   jsonFetch<TimelapseInfo>(`${prefix}/api/cameras/${id}/timelapse/start`, {
     method: "POST",
@@ -225,3 +232,5 @@ export const timelapseSmoothUrl = (prefix: string, tlId: number) =>
   `${prefix}/timelapse/${tlId}/smooth`;
 export const timelapseThumbUrl = (prefix: string, tlId: number) =>
   `${prefix}/timelapse/${tlId}/thumbnail`;
+export const timelapseFrameUrl = (prefix: string, tlId: number, frame: number) =>
+  `${prefix}/timelapse/${tlId}/frame/${frame}`;
