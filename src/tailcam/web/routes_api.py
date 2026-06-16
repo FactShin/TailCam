@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from tailcam import __version__
 from tailcam.camera.manager import ManagedCamera
+from tailcam.timelapse.presets import printer_presets
 from tailcam.web.context import AppContext
 from tailcam.web.deps import get_context
 from tailcam.web.schemas import (
@@ -31,6 +32,7 @@ from tailcam.web.schemas import (
     SampleInfo,
     SampleRelabel,
     SystemInfo,
+    TimelapseAnalysisEventInfo,
     TimelapseInfo,
     TimelapseSmoothRequest,
     TimelapseStartRequest,
@@ -294,7 +296,14 @@ async def list_events(
 # -- timelapse -------------------------------------------------------------
 
 
-def _timelapse_info(ctx: AppContext, r) -> TimelapseInfo:
+def _timelapse_info(
+    ctx: AppContext, r, summary: tuple[int, str] | None = None
+) -> TimelapseInfo:
+    # ``summary`` lets the list endpoint pass a batched count/state and avoid an
+    # N+1; single-record endpoints fall back to a per-id query.
+    event_count, latest_state = (
+        summary if summary is not None else ctx.store.timelapse_analysis_summary(r.id)
+    )
     return TimelapseInfo(
         id=r.id,
         camera_id=r.camera_id,
@@ -316,9 +325,25 @@ def _timelapse_info(ctx: AppContext, r) -> TimelapseInfo:
         has_smooth=bool(r.smooth_path),
         smooth_size_bytes=r.smooth_size_bytes,
         smooth_engine=r.smooth_engine,
+        jpeg_quality=r.jpeg_quality,
+        max_frames=r.max_frames,
+        auto_smooth=r.auto_smooth,
+        smooth_target_fps=r.smooth_target_fps,
+        smooth_interpolate=r.smooth_interpolate,
+        smooth_deflicker=r.smooth_deflicker,
+        smooth_quality=r.smooth_quality,
+        analysis_enabled=r.analysis_enabled,
+        analysis_cadence_seconds=r.analysis_cadence_seconds,
+        analysis_event_count=event_count,
+        analysis_latest_state=latest_state,
         host=ctx.local_host,
         proxy_prefix="",
     )
+
+
+@router.get("/timelapse-presets", response_model=list[dict[str, object]])
+def list_timelapse_presets() -> list[dict[str, object]]:
+    return printer_presets()
 
 
 @router.get("/timelapse", response_model=list[TimelapseInfo])
@@ -327,7 +352,11 @@ def list_timelapses(
     limit: int = 100,
     ctx: AppContext = Depends(get_context),
 ) -> list[TimelapseInfo]:
-    return [_timelapse_info(ctx, r) for r in ctx.timelapse.list(camera_id, limit)]
+    summaries = ctx.store.timelapse_analysis_summaries()
+    return [
+        _timelapse_info(ctx, r, summaries.get(r.id or 0, (0, "")))
+        for r in ctx.timelapse.list(camera_id, limit)
+    ]
 
 
 @router.post("/cameras/{camera_id:path}/timelapse/start", response_model=TimelapseInfo)
@@ -337,16 +366,51 @@ def start_timelapse(
     ctx: AppContext = Depends(get_context),
 ) -> TimelapseInfo:
     req = req or TimelapseStartRequest()
+    analysis_enabled = (
+        ctx.config.timelapse.analysis_enabled
+        if req.analysis_enabled is None
+        else req.analysis_enabled
+    )
+    if analysis_enabled and not ctx.analyzer.enabled:
+        raise HTTPException(
+            status_code=409,
+            detail="Enable and configure Ollama on the Models page before printer analysis",
+        )
     record = ctx.timelapse.start(
         camera_id,
         name=req.name,
         interval_seconds=req.interval_seconds,
         output_fps=req.output_fps,
         duration_seconds=req.duration_seconds,
+        jpeg_quality=req.jpeg_quality,
+        max_frames=req.max_frames,
+        auto_smooth=req.auto_smooth,
+        smooth_target_fps=req.smooth_target_fps,
+        smooth_interpolate=req.smooth_interpolate,
+        smooth_deflicker=req.smooth_deflicker,
+        smooth_engine=req.smooth_engine,
+        smooth_quality=req.smooth_quality,
+        analysis_enabled=req.analysis_enabled,
+        analysis_cadence_seconds=req.analysis_cadence_seconds,
     )
     if record is None:
         raise HTTPException(status_code=503, detail="camera unavailable")
     return _timelapse_info(ctx, record)
+
+
+@router.get(
+    "/timelapse/{tl_id}/analysis-events",
+    response_model=list[TimelapseAnalysisEventInfo],
+)
+def list_timelapse_analysis_events(
+    tl_id: int, ctx: AppContext = Depends(get_context)
+) -> list[TimelapseAnalysisEventInfo]:
+    if ctx.timelapse.get(tl_id) is None:
+        raise HTTPException(status_code=404, detail="timelapse not found")
+    return [
+        TimelapseAnalysisEventInfo.model_validate(event, from_attributes=True)
+        for event in ctx.store.list_timelapse_analysis_events(tl_id)
+    ]
 
 
 @router.get("/timelapse/{tl_id}", response_model=TimelapseInfo)
@@ -392,6 +456,7 @@ def smooth_timelapse(
         interpolate=req.interpolate,
         deflicker=req.deflicker,
         engine=req.engine,
+        quality=req.quality,
     )
     if record is None:
         raise HTTPException(status_code=404, detail="timelapse not found or has no frames")

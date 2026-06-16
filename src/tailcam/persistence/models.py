@@ -69,6 +69,28 @@ class TimelapseRecord:
     smooth_path: str | None = None
     smooth_size_bytes: int = 0
     smooth_engine: str = ""  # "ffmpeg" | "rife" — which engine produced it
+    # Immutable per-capture printer settings.
+    jpeg_quality: int = 90
+    max_frames: int = 0
+    auto_smooth: bool = False
+    smooth_target_fps: int = 60
+    smooth_interpolate: bool = True
+    smooth_deflicker: bool = True
+    smooth_quality: str = "high"
+    analysis_enabled: bool = False
+    analysis_cadence_seconds: float = 60.0
+
+
+@dataclass
+class TimelapseAnalysisEventRecord:
+    id: int | None
+    timelapse_id: int
+    frame_number: int
+    state: str
+    confidence: float
+    description: str
+    evidence_path: str
+    created_ts: float
 
 
 # -- model training ---------------------------------------------------------
@@ -126,4 +148,3 @@ class TrainingRunRecord:
     created_ts: float
     started_ts: float | None = None
     ended_ts: float | None = None
-

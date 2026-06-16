@@ -106,17 +106,21 @@ class TimelapseConfig:
     jpeg_quality: int = 90  # quality of the stored source frames
     # Safety cap so a forgotten capture can't fill the disk (0 = unlimited).
     max_frames: int = 0
+    auto_smooth: bool = False
     # Post-processing ("Smooth"): motion-interpolate the captured frames up to
     # smooth_target_fps for flowing motion, and even out exposure flicker.
     smooth_target_fps: int = 60
     smooth_interpolate: bool = True
     smooth_deflicker: bool = True
+    smooth_quality: str = "high"  # standard | high | maximum
     # Interpolation engine: "ffmpeg" (minterpolate, bundled, works everywhere) or
     # "rife" (rife-ncnn-vulkan, higher quality, GPU, must be installed). A failed
     # RIFE run automatically falls back to ffmpeg.
     smooth_engine: str = "ffmpeg"
     rife_path: str = ""  # explicit path to rife-ncnn-vulkan (else auto-detect)
     rife_model: str = "rife-v4.6"  # model folder name in the RIFE distribution
+    analysis_enabled: bool = False
+    analysis_cadence_seconds: float = 60.0
 
 
 @dataclass

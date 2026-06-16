@@ -97,6 +97,21 @@ def timelapse_smooth(tl_id: int, ctx: AppContext = Depends(get_context)) -> File
     return FileResponse(rec.smooth_path, media_type="video/mp4")
 
 
+@router.get("/timelapse/{tl_id}/frame/{frame_number}")
+def timelapse_frame(
+    tl_id: int, frame_number: int, ctx: AppContext = Depends(get_context)
+) -> FileResponse:
+    """Serve a single captured frame (e.g. the evidence frame a print-failure
+    analysis flagged). Frames are the retained ``NNNNNN.jpg`` capture stills."""
+    rec = ctx.store.get_timelapse(tl_id)
+    if rec is None or not rec.frames_dir or frame_number < 0:
+        raise HTTPException(status_code=404, detail="frame not found")
+    frame = Path(rec.frames_dir) / f"{frame_number:06d}.jpg"
+    if not frame.exists():
+        raise HTTPException(status_code=404, detail="frame not found")
+    return FileResponse(frame, media_type="image/jpeg")
+
+
 @router.get("/datasets/sample/{sample_id}/thumbnail")
 def dataset_sample_thumb(sample_id: int, ctx: AppContext = Depends(get_context)) -> FileResponse:
     rec = ctx.store.get_sample(sample_id)
