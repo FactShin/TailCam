@@ -1,0 +1,19 @@
+[[permission]]
+identifier = "allow-open-main-window"
+description = "Allows the TailCam desktop UI to open and focus the main TailCam window."
+commands.allow = ["open_main_window"]
+
+[[permission]]
+identifier = "allow-quit-tailcam"
+description = "Allows the TailCam desktop UI to quit TailCam and stop an owned sidecar."
+commands.allow = ["quit_tailcam"]
+
+[[permission]]
+identifier = "allow-get-launch-at-login"
+description = "Allows the TailCam desktop UI to read whether TailCam launches at login."
+commands.allow = ["get_launch_at_login"]
+
+[[permission]]
+identifier = "allow-set-launch-at-login"
+description = "Allows the TailCam desktop UI to update whether TailCam launches at login."
+commands.allow = ["set_launch_at_login"]

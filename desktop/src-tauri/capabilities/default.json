@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "tailcam-loopback",
+  "windows": ["main", "command-center"],
+  "remote": { "urls": ["http://127.0.0.1:*"] },
+  "permissions": [
+    "allow-open-main-window",
+    "allow-quit-tailcam",
+    "allow-get-launch-at-login",
+    "allow-set-launch-at-login"
+  ]
+}
