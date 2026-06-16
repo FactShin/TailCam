@@ -9,6 +9,7 @@ static binary bundled by ``imageio-ffmpeg`` so smoothing works with no setup.
 from __future__ import annotations
 
 import importlib.util
+import os
 import shutil
 import subprocess
 import sys
@@ -60,6 +61,12 @@ def ffmpeg_path() -> str | None:
         binaries = Path(spec.origin).parent / "binaries"
         bundled = next((path for path in binaries.glob("ffmpeg-*") if path.is_file()), None)
         if bundled is not None:
+            # get_ffmpeg_exe() normally sets the exec bit; this fallback path
+            # didn't go through it, so ensure the binary is runnable.
+            try:
+                os.chmod(bundled, bundled.stat().st_mode | 0o111)
+            except OSError:  # pragma: no cover
+                pass
             return str(bundled)
     return None
 

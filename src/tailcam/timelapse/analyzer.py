@@ -38,8 +38,14 @@ class PrinterAnalysis:
     description: str
 
 
-def coerce_printer_analysis(data: dict) -> PrinterAnalysis | None:
-    """Normalize strict printer-health JSON, rejecting unknown states."""
+def coerce_printer_analysis(data: object) -> PrinterAnalysis | None:
+    """Normalize strict printer-health JSON, rejecting unknown states.
+
+    Tolerates a model that returns valid JSON which isn't an object (e.g. a bare
+    string or list) — not usable, so return None instead of raising on ``.get``.
+    """
+    if not isinstance(data, dict):
+        return None
     state = str(data.get("state", "")).strip().lower()
     if state not in _VALID_STATES:
         return None
@@ -85,7 +91,7 @@ class PrinterAnalyzer:
             )
             response.raise_for_status()
             return coerce_printer_analysis(json.loads(response.json().get("response", "")))
-        except (httpx.HTTPError, ValueError, KeyError) as exc:
+        except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
             log.debug("Printer analysis failed: %s", exc)
             return None
 

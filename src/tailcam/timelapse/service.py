@@ -125,6 +125,9 @@ class TimelapseService:
         record.frames_dir = str(frames_dir)
         self._store.update_timelapse(tl_id, frames_dir=str(frames_dir))
 
+        # Analyze every Nth captured frame — constant per capture, so compute once.
+        analysis_every = max(1, math.ceil(record.analysis_cadence_seconds / interval))
+        analysis_enabled = record.analysis_enabled
         worker = TimelapseCaptureWorker(
             tl_id, camera_id, buffer, frames_dir,
             interval_seconds=interval,
@@ -132,11 +135,7 @@ class TimelapseService:
             max_frames=record.max_frames,
             duration_seconds=duration_seconds,
             on_frame=lambda n: self._on_frame(
-                tl_id,
-                n,
-                frames_dir,
-                max(1, math.ceil(record.analysis_cadence_seconds / interval)),
-                record.analysis_enabled,
+                tl_id, n, frames_dir, analysis_every, analysis_enabled
             ),
             on_complete=lambda: self._finalize_async(tl_id),
         )
