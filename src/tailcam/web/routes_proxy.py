@@ -32,7 +32,16 @@ _HOP_BY_HOP = {
 
 
 def _forward_request_headers(request: Request) -> dict[str, str]:
-    return {k: v for k, v in request.headers.items() if k.lower() not in _HOP_BY_HOP}
+    return {
+        k: v
+        for k, v in request.headers.items()
+        if k.lower() not in _HOP_BY_HOP and not k.lower().startswith("tailscale-")
+    }
+
+
+def _management_path(path: str) -> bool:
+    normalized = path.lstrip("/")
+    return normalized.startswith("api/v1/node") or normalized.startswith("api/v1/fleet")
 
 
 @router.api_route(
@@ -41,6 +50,9 @@ def _forward_request_headers(request: Request) -> dict[str, str]:
 async def proxy(
     key: str, path: str, request: Request, ctx: AppContext = Depends(get_context)
 ) -> StreamingResponse:
+    if _management_path(path):
+        raise HTTPException(status_code=403, detail="management API cannot use generic proxy")
+
     await ctx.cluster.peers()  # ensure discovery has run at least once
     base = ctx.cluster.peer_base(key)
     if base is None:

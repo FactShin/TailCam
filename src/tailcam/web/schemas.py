@@ -307,6 +307,76 @@ class UpdateInfo(BaseModel):
     available: bool = False
 
 
+class PrincipalInfo(BaseModel):
+    actor: str
+    display_name: str | None = None
+    source: str
+    verified: bool
+    roles: list[str] = Field(default_factory=list)
+
+
+class NodeIssueInfo(BaseModel):
+    code: str
+    severity: str
+    summary: str
+    detail: str | None = None
+
+
+class NodeCapabilitiesInfo(BaseModel):
+    api_version: str
+    capabilities: list[str]
+    actions: list[str]
+    principal: PrincipalInfo
+
+
+class NodeHealthInfo(BaseModel):
+    host: str
+    version: str
+    platform: str
+    python_version: str
+    uptime_seconds: float
+    tailscale_installed: bool
+    tailscale_running: bool
+    tailscale_served: bool
+    access_url: str
+    local_url: str
+    camera_total: int
+    camera_online: int
+    camera_offline: int
+    camera_degraded: int
+    camera_recording: int
+    media_bytes: int
+    timelapse_bytes: int
+    update_current: str
+    update_latest: str | None = None
+    update_available: bool
+    ai_enabled: bool
+    ai_reachable: bool
+    ai_model: str
+    ai_model_present: bool
+    issues: list[NodeIssueInfo] = Field(default_factory=list)
+
+
+class AuditEventInfo(BaseModel):
+    id: int
+    created_ts: float
+    actor: str
+    source: str
+    action: str
+    target: str
+    result: str
+    detail: str | None = None
+    metadata: dict = Field(default_factory=dict)
+
+
+class NodeActionResponse(BaseModel):
+    action: str
+    target: str
+    result: str
+    detail: str
+    health: NodeHealthInfo
+
+
 class OkResponse(BaseModel):
     ok: bool = True
     detail: str | None = None
