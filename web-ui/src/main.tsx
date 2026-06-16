@@ -7,6 +7,7 @@ import { AppShell } from "./app/AppShell";
 import { ToastProvider } from "./components/toast";
 import { CameraDetail } from "./screens/CameraDetail";
 import { Dashboard } from "./screens/Dashboard";
+import { DesktopCommandCenter } from "./screens/DesktopCommandCenter";
 import { Events } from "./screens/Events";
 import { Fleet } from "./screens/Fleet";
 import { Gallery } from "./screens/Gallery";
@@ -27,20 +28,25 @@ createRoot(document.getElementById("root")!).render(
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <ToastProvider>
-          <AppShell>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/camera/:host/:cid" element={<CameraDetail />} />
-              <Route path="/gallery" element={<Gallery />} />
-              <Route path="/events" element={<Events />} />
-              <Route path="/timelapse" element={<Timelapse />} />
-              <Route path="/training" element={<Training />} />
-              <Route path="/models" element={<Models />} />
-              <Route path="/fleet" element={<Fleet />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </AppShell>
+          <Routes>
+            <Route path="/desktop/command-center" element={<DesktopCommandCenter />} />
+            <Route path="/*" element={
+              <AppShell>
+                <Routes>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/camera/:host/:cid" element={<CameraDetail />} />
+                  <Route path="/gallery" element={<Gallery />} />
+                  <Route path="/events" element={<Events />} />
+                  <Route path="/timelapse" element={<Timelapse />} />
+                  <Route path="/training" element={<Training />} />
+                  <Route path="/models" element={<Models />} />
+                  <Route path="/fleet" element={<Fleet />} />
+                  <Route path="/settings" element={<Settings />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </AppShell>
+            } />
+          </Routes>
         </ToastProvider>
       </BrowserRouter>
     </QueryClientProvider>
