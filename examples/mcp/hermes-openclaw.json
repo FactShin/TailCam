@@ -1,0 +1,27 @@
+{
+  "_comment": "Generic MCP host config for OpenClaw/Hermes-style agents. Use the stdio block locally, or the remote block to reach a node over Tailscale Serve (requires [mcp] http_enabled). Recommended: enable read + incident tools first, then admin tools after confirming fleet scope.",
+  "mcpServers": {
+    "tailcam": {
+      "transport": "stdio",
+      "command": "tailcam",
+      "args": ["mcp", "stdio"],
+      "env": {
+        "TAILCAM_URL": "http://127.0.0.1:8088"
+      },
+      "autoEnableTools": [
+        "get_system_status",
+        "list_fleet_nodes",
+        "list_cameras",
+        "inspect_camera",
+        "list_recent_events",
+        "summarize_fleet_health",
+        "find_offline_cameras",
+        "investigate_motion_event"
+      ]
+    },
+    "tailcam-remote": {
+      "transport": "streamable-http",
+      "url": "https://tailcam-host.example.ts.net:8443/mcp"
+    }
+  }
+}

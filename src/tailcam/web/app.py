@@ -19,7 +19,7 @@ _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _SPA_DIR = Path(__file__).parent / "spa"  # built React dashboard (web-ui/dist)
 
 # Prefixes that must never be served by the SPA fallback.
-_API_PREFIXES = ("/api", "/stream", "/media", "/proxy", "/static", "/assets")
+_API_PREFIXES = ("/api", "/stream", "/media", "/proxy", "/static", "/assets", "/mcp")
 
 
 def create_app(config: AppConfig | None = None, context: AppContext | None = None) -> FastAPI:
@@ -52,6 +52,13 @@ def create_app(config: AppConfig | None = None, context: AppContext | None = Non
     app.include_router(routes_fleet_v1.router)
     app.include_router(routes_proxy.router)
     app.include_router(routes_api.router)
+
+    # Streamable HTTP MCP endpoint, only when explicitly enabled. Mounted before
+    # the SPA catch-all so /mcp is never swallowed by client-side routing.
+    if config.mcp.enabled and config.mcp.http_enabled:
+        from tailcam.mcp import transport_http
+
+        app.include_router(transport_http.router)
 
     spa_index = _SPA_DIR / "index.html"
     if spa_index.exists():

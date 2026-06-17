@@ -150,6 +150,23 @@ class TrainingConfig:
 
 
 @dataclass
+class MCPConfig:
+    # Model Context Protocol server: exposes cameras, events, media, health, and
+    # admin workflows to agents (Codex, Claude, OpenClaw/Hermes). ``tailcam mcp
+    # stdio`` is always available for local clients; the network ``/mcp`` mount is
+    # served only when both ``enabled`` and ``http_enabled`` are true and is
+    # gated by the same Tailscale identity/role checks as the v1 management API.
+    enabled: bool = True
+    http_enabled: bool = False
+    instructions_profile: str = "personal"  # personal | fleet
+    max_events: int = 100
+    max_media: int = 100
+    allow_image_content: bool = True
+    require_confirm_for_writes: bool = True
+    require_confirm_for_fleet_writes: bool = True
+
+
+@dataclass
 class AppConfig:
     server: ServerConfig = field(default_factory=ServerConfig)
     stream: StreamConfig = field(default_factory=StreamConfig)
@@ -161,6 +178,7 @@ class AppConfig:
     ai: AIConfig = field(default_factory=AIConfig)
     timelapse: TimelapseConfig = field(default_factory=TimelapseConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
+    mcp: MCPConfig = field(default_factory=MCPConfig)
 
     @classmethod
     def load(cls, path: Path | None = None) -> AppConfig:
@@ -198,6 +216,7 @@ class AppConfig:
             ai=AIConfig(**raw.get("ai", {})),
             timelapse=TimelapseConfig(**raw.get("timelapse", {})),
             training=TrainingConfig(**raw.get("training", {})),
+            mcp=MCPConfig(**raw.get("mcp", {})),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -212,6 +231,7 @@ class AppConfig:
             "ai": asdict(self.ai),
             "timelapse": asdict(self.timelapse),
             "training": asdict(self.training),
+            "mcp": asdict(self.mcp),
         }
 
     def save(self, path: Path | None = None) -> None:

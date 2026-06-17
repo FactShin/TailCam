@@ -1,0 +1,17 @@
+# TailCam MCP server for Codex.
+# Place in ~/.codex/config.toml (user) or a project config.toml.
+#
+# Local stdio: connects to a TailCam node running on this machine.
+[mcp_servers.tailcam]
+command = "tailcam"
+args = ["mcp", "stdio"]
+env = { TAILCAM_URL = "http://127.0.0.1:8088" }
+default_tools_approval_mode = "prompt"
+tool_timeout_sec = 60
+
+# Remote over Tailscale Serve — comment out the stdio block above and use this
+# instead to reach a node elsewhere on your tailnet. Requires [mcp] http_enabled.
+# [mcp_servers.tailcam]
+# url = "https://tailcam-host.example.ts.net:8443/mcp"
+# default_tools_approval_mode = "prompt"
+# tool_timeout_sec = 60

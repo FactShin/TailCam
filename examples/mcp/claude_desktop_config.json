@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "tailcam": {
+      "type": "stdio",
+      "command": "tailcam",
+      "args": ["mcp", "stdio"],
+      "env": {
+        "TAILCAM_URL": "http://127.0.0.1:8088"
+      }
+    }
+  }
+}
