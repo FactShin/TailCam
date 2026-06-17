@@ -6,6 +6,7 @@ import { LiveViewer } from "../components/LiveViewer";
 import { useToast } from "../components/toast";
 import { Button, ConfirmDialog, ControlSlider, ScopeBadge, Segmented, Spinner, Toggle } from "../components/ui";
 import {
+  IconBrain,
   IconCamShutter,
   IconChevL,
   IconContrast,
@@ -72,6 +73,7 @@ export function CameraDetail() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [fs, setFs] = useState(false);
+  const [detect, setDetect] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const wide = useWideLayout();
 
@@ -226,7 +228,15 @@ export function CameraDetail() {
         </div>
 
         <div ref={stageRef} className={`stage ${fs ? "is-fs" : ""}`}>
-          <LiveViewer cam={cam} view={view} onView={setView} big interactive showUrl fit="contain" />
+          <LiveViewer cam={cam} view={view} onView={setView} big interactive showUrl fit="contain" detect={detect} />
+          <button
+            className={`fs-btn detect-btn ${detect ? "is-on" : ""}`}
+            onClick={() => setDetect((d) => !d)}
+            aria-label="Toggle object detection"
+            title="Object detection overlay (active model)"
+          >
+            <IconBrain size={18} />
+          </button>
           <button className="fs-btn" onClick={toggleFs} aria-label="Fullscreen">
             {fs ? <IconShrink size={18} /> : <IconExpand size={18} />}
           </button>

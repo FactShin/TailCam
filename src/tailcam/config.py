@@ -142,6 +142,11 @@ class TrainingConfig:
     epochs: int = 30
     image_size: int = 224
     active_model_id: int = 0  # 0 = use Ollama; >0 = a trained/BYO model
+    # Object detection (bounding boxes: where + what). Detection datasets carry
+    # per-sample boxes; runs fine-tune a YOLO *detect* model from this base.
+    detect_base_model: str = "yolo11n.pt"  # downloaded on first detection train
+    detect_image_size: int = 640  # detection wants larger frames than cls
+    detect_conf: float = 0.35  # min box confidence reported by the live detector
 
 
 @dataclass

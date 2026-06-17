@@ -178,7 +178,8 @@ def test_train_lifecycle(client, context, monkeypatch, tmp_path):
     monkeypatch.setattr(engine, "engine_available", lambda: True)
     monkeypatch.setattr(engine, "torch_device", lambda: "cpu")
 
-    def fake_train(base, data_dir, epochs, imgsz, device, project_dir, on_epoch, should_stop=None):
+    def fake_train(base, data_dir, epochs, imgsz, device, project_dir, on_epoch,
+                   should_stop=None, task="classification"):
         assert (Path(data_dir) / "train").is_dir()  # export ran first
         for e in range(1, epochs + 1):
             on_epoch(e)
