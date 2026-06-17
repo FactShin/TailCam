@@ -100,7 +100,7 @@ class TimelapseAnalysisEventRecord:
 class DatasetRecord:
     id: int | None
     name: str
-    task: str  # "classification" (future: "detection")
+    task: str  # "classification" | "detection"
     created_ts: float
     note: str = ""
 
@@ -120,6 +120,22 @@ class DatasetSampleRecord:
 
 
 @dataclass
+class SampleAnnotationRecord:
+    """One bounding box on a detection sample. Coordinates are normalized to the
+    image (0..1): (cx, cy) is the box center, (w, h) its size — the layout YOLO
+    detection labels use, so export is a direct write."""
+
+    id: int | None
+    sample_id: int
+    label: str
+    cx: float
+    cy: float
+    w: float
+    h: float
+    created_ts: float
+
+
+@dataclass
 class ModelRecord:
     id: int | None
     name: str
@@ -130,6 +146,7 @@ class ModelRecord:
     metrics_json: str  # JSON dict of training metrics
     created_ts: float
     active: int = 0  # 1 = the model used for inference
+    task: str = "classification"  # "classification" | "detection"
 
 
 @dataclass

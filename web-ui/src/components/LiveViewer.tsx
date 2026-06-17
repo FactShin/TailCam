@@ -1,13 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { snapshotUrl, streamUrl } from "../api/client";
-import { usePageVisible } from "../api/hooks";
+import { useDetections, usePageVisible } from "../api/hooks";
 import { IconZoom } from "../icons";
 import { fmtDur, osdStamp } from "../lib/format";
 import type { CameraInfo, ViewParams } from "../types";
 import { Spinner } from "./ui";
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
+
+// The on-screen rect of a frame displayed in a container under object-fit
+// cover/contain — so normalized detection boxes land on the right pixels even
+// with cropping (cover) or letterboxing (contain).
+function displayedRect(
+  cw: number,
+  ch: number,
+  iw: number,
+  ih: number,
+  fit: "cover" | "contain",
+): { x: number; y: number; w: number; h: number } {
+  if (cw <= 0 || ch <= 0 || iw <= 0 || ih <= 0) return { x: 0, y: 0, w: cw, h: ch };
+  const scale = fit === "cover" ? Math.max(cw / iw, ch / ih) : Math.min(cw / iw, ch / ih);
+  const w = iw * scale;
+  const h = ih * scale;
+  return { x: (cw - w) / 2, y: (ch - h) / 2, w, h };
+}
 
 // WebKit (Safari on iOS *and* macOS) fails to render long-running
 // multipart/x-mixed-replace MJPEG streams, especially over HTTP/2 (the
@@ -41,6 +58,8 @@ interface Props {
   showOsd?: boolean;
   showUrl?: boolean;
   fit?: "cover" | "contain";
+  // Overlay live object-detection boxes from the active detection model.
+  detect?: boolean;
 }
 
 export function LiveViewer({
@@ -52,6 +71,7 @@ export function LiveViewer({
   showOsd = true,
   showUrl = false,
   fit = "cover",
+  detect = false,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [inView, setInView] = useState(false);
@@ -80,6 +100,23 @@ export function LiveViewer({
 
   const active = (pageVisible && inView) || big;
   const shouldStream = active && cam.status !== "offline";
+
+  // Live object detection: overlay boxes only when not zoomed (the overlay maths
+  // assume the whole frame is displayed). The query is gated so it idles when the
+  // viewer is offscreen or no detection model is active.
+  const detectOn = detect && shouldStream && view.zoom <= 1.02;
+  const detection = useDetections(cam.proxy_prefix, cam.id, detectOn);
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || !detect || !("ResizeObserver" in window)) return;
+    const ro = new ResizeObserver(([e]) =>
+      setSize({ w: e.contentRect.width, h: e.contentRect.height }),
+    );
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [detect]);
+  const boxes = detectOn ? (detection.data?.boxes ?? []) : [];
 
   // Snapshot-polling mode: WebKit can't render MJPEG, and any browser that
   // errors on the stream repeatedly is switched over automatically.
@@ -261,6 +298,40 @@ export function LiveViewer({
         />
       ) : (
         <div className="viewer-canvas viewer-paused" />
+      )}
+
+      {detectOn && boxes.length > 0 && (() => {
+        const r = displayedRect(size.w, size.h, cam.width, cam.height, fit);
+        return (
+          <div className="det-layer">
+            {boxes.map((b, i) => (
+              <div
+                key={i}
+                className="det-box"
+                style={{
+                  left: r.x + (b.cx - b.w / 2) * r.w,
+                  top: r.y + (b.cy - b.h / 2) * r.h,
+                  width: b.w * r.w,
+                  height: b.h * r.h,
+                }}
+              >
+                <span className="det-tag">
+                  {b.label} {Math.round(b.confidence * 100)}%
+                </span>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
+      {detect && (
+        <div className="det-status mono">
+          {detection.data && !detection.data.detector_active
+            ? "no detection model active"
+            : detectOn
+              ? `detecting · ${boxes.length}`
+              : "detect paused (zoomed)"}
+        </div>
       )}
 
       {showOsd && cam.status !== "offline" && <div className="osd mono">{stamp}</div>}

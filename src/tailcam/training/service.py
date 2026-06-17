@@ -32,6 +32,7 @@ from tailcam.persistence.models import (
     DatasetRecord,
     DatasetSampleRecord,
     ModelRecord,
+    SampleAnnotationRecord,
     TrainingRunRecord,
 )
 from tailcam.persistence.store import Store
@@ -181,9 +182,13 @@ class TrainingService:
         return sample_id
 
     # -- datasets ----------------------------------------------------------
-    def create_dataset(self, name: str, note: str = "") -> DatasetRecord:
+    def create_dataset(
+        self, name: str, note: str = "", task: str = "classification"
+    ) -> DatasetRecord:
         ts = time.time()
-        record = DatasetRecord(id=None, name=name.strip() or "Dataset", task="classification",
+        if task not in ("classification", "detection"):
+            task = "classification"
+        record = DatasetRecord(id=None, name=name.strip() or "Dataset", task=task,
                                created_ts=ts, note=note)
         record.id = self._store.add_dataset(record)
         (paths.datasets_dir() / str(record.id) / "frames").mkdir(parents=True, exist_ok=True)
@@ -213,6 +218,36 @@ class TrainingService:
                     pass
         self._store.delete_sample(sample_id)
         return True
+
+    def set_annotations(
+        self, sample_id: int, boxes: list[dict]
+    ) -> list[SampleAnnotationRecord] | None:
+        """Replace a detection sample's bounding boxes. Each box is
+        ``{"label", "cx", "cy", "w", "h"}`` with coordinates normalized 0..1;
+        they're clamped defensively so a bad drag can't store out-of-range geometry.
+        Returns the stored boxes, or None if the sample doesn't exist."""
+        if self._store.get_sample(sample_id) is None:
+            return None
+        ts = time.time()
+        records: list[SampleAnnotationRecord] = []
+        for box in boxes:
+            label = str(box.get("label", "")).strip()
+            if not label:
+                continue
+            cx = _clamp01(box.get("cx"))
+            cy = _clamp01(box.get("cy"))
+            w = _clamp01(box.get("w"))
+            h = _clamp01(box.get("h"))
+            if w <= 0 or h <= 0:
+                continue
+            records.append(
+                SampleAnnotationRecord(
+                    id=None, sample_id=sample_id, label=label,
+                    cx=cx, cy=cy, w=w, h=h, created_ts=ts,
+                )
+            )
+        self._store.replace_annotations(sample_id, records)
+        return self._store.list_annotations(sample_id)
 
     def import_from_events(self, dataset_id: int, limit: int = 1000) -> int:
         """Add existing motion-event snapshots to a dataset as labeled samples."""
@@ -253,7 +288,9 @@ class TrainingService:
         return added
 
     # -- models ------------------------------------------------------------
-    def register_byo(self, name: str, path: str) -> ModelRecord | None:
+    def register_byo(
+        self, name: str, path: str, task: str = "classification"
+    ) -> ModelRecord | None:
         p = Path(path).expanduser()
         if not p.exists():
             return None
@@ -266,6 +303,7 @@ class TrainingService:
             base_model="",
             metrics_json="{}",
             created_ts=time.time(),
+            task="detection" if task == "detection" else "classification",
         )
         record.id = self._store.add_model(record)
         return record
@@ -300,19 +338,25 @@ class TrainingService:
         epochs: int | None = None,
         image_size: int | None = None,
     ) -> TrainingRunRecord | None:
-        if self._store.get_dataset(dataset_id) is None:
+        dataset = self._store.get_dataset(dataset_id)
+        if dataset is None:
             return None
         cfg = self._config
-        base = base_model or cfg.base_model
+        task = "detection" if dataset.task == "detection" else "classification"
+        if task == "detection":
+            base = base_model or cfg.detect_base_model
+            imgsz = image_size or cfg.detect_image_size
+        else:
+            base = base_model or cfg.base_model
+            imgsz = image_size or cfg.image_size
         ep = epochs or cfg.epochs
-        imgsz = image_size or cfg.image_size
         run = TrainingRunRecord(
             id=None,
             dataset_id=dataset_id,
             model_id=None,
             base_model=base,
             status="queued",
-            params_json=json.dumps({"epochs": ep, "image_size": imgsz}),
+            params_json=json.dumps({"epochs": ep, "image_size": imgsz, "task": task}),
             metrics_json="{}",
             log="",
             epochs=ep,
@@ -325,7 +369,7 @@ class TrainingService:
             self._run_stops[run.id] = stop
         threading.Thread(
             target=self._train_job,
-            args=(run.id, dataset_id, base, ep, imgsz, stop),
+            args=(run.id, dataset_id, base, ep, imgsz, task, stop),
             name=f"training-run-{run.id}",
             daemon=True,
         ).start()
@@ -346,6 +390,7 @@ class TrainingService:
         base: str,
         epochs: int,
         imgsz: int,
+        task: str,
         stop: threading.Event,
     ) -> None:
         from tailcam.training import runner
@@ -361,9 +406,14 @@ class TrainingService:
             self._store.update_run(run_id, status="preparing", started_ts=time.time())
             run_dir = paths.models_dir() / f"run-{run_id}"
             data_dir = run_dir / "dataset"
-            classes, n_train, n_val = runner.export_classification_dataset(
-                self._store, dataset_id, data_dir
-            )
+            if task == "detection":
+                classes, n_train, n_val = runner.export_detection_dataset(
+                    self._store, dataset_id, data_dir
+                )
+            else:
+                classes, n_train, n_val = runner.export_classification_dataset(
+                    self._store, dataset_id, data_dir
+                )
             self._store.update_run(
                 run_id, status="training",
                 log=f"{n_train} train / {n_val} val · classes: {', '.join(classes)}",
@@ -372,6 +422,7 @@ class TrainingService:
                 base, data_dir, epochs, imgsz, torch_device(), run_dir,
                 on_epoch=lambda e: self._store.update_run(run_id, epoch=e),
                 should_stop=stop.is_set,
+                task=task,
             )
             if stop.is_set():
                 self._store.update_run(run_id, status="stopped", ended_ts=time.time())
@@ -387,6 +438,7 @@ class TrainingService:
                     base_model=base,
                     metrics_json=json.dumps(metrics),
                     created_ts=time.time(),
+                    task=task,
                 )
             )
             self._store.update_run(
@@ -400,6 +452,13 @@ class TrainingService:
         finally:
             with self._lock:
                 self._run_stops.pop(run_id, None)
+
+
+def _clamp01(value: object) -> float:
+    try:
+        return min(1.0, max(0.0, float(value)))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _write_thumb(image: np.ndarray, dataset_id: int, stem: str) -> Path | None:

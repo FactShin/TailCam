@@ -221,6 +221,11 @@ thumbnail. To let one node analyze another's events, point the URL at that node
   flowing motion. The interpolation engine is selectable on the **Models** page: a bundled **ffmpeg**
   (works everywhere) or an optional GPU **RIFE** model (`rife-ncnn-vulkan`) for higher quality, with
   automatic fallback to ffmpeg.
+- **Train your own model** — collect and label footage from your own cameras, then fine-tune a
+  private model on your Mac/Windows GPU (optional `tailcam[training]` extra). Build either a
+  **classification** model (one label per frame) or an **object-detection** model — draw bounding
+  boxes (where *and* what) right in the dashboard, train a YOLO detector, and overlay live boxes on
+  any camera. Use our base model, one you've trained, or bring your own `.pt`.
 - **Multi-host aggregation** — see every camera across all your tailnet devices from any one of them.
 - **Multi-camera** — auto-detects connected webcams; name them and view them in a grid.
 - **Resolution, zoom & pan** — set capture resolution; per-viewer digital zoom + pan;

@@ -198,16 +198,20 @@ class PostprocessSettings(BaseModel):
 class DatasetInfo(BaseModel):
     id: int
     name: str
-    task: str
+    task: str  # classification | detection
     created_ts: float
     note: str = ""
     sample_count: int = 0
     label_counts: dict[str, int] = {}
+    # Detection datasets: how many samples carry boxes + boxes-per-class.
+    annotated_count: int = 0
+    box_label_counts: dict[str, int] = {}
 
 
 class DatasetCreate(BaseModel):
     name: str
     note: str = ""
+    task: Literal["classification", "detection"] = "classification"
 
 
 class SampleInfo(BaseModel):
@@ -220,16 +224,48 @@ class SampleInfo(BaseModel):
     created_ts: float
     confidence: float | None = None
     has_thumb: bool = False
+    annotation_count: int = 0  # detection: number of boxes drawn on this sample
 
 
 class SampleRelabel(BaseModel):
     label: str | None = None  # None clears the label
 
 
+class AnnotationBox(BaseModel):
+    """A bounding box on a detection sample, normalized 0..1 (center + size)."""
+
+    label: str = Field(min_length=1, max_length=64)
+    cx: float = Field(ge=0.0, le=1.0)
+    cy: float = Field(ge=0.0, le=1.0)
+    w: float = Field(gt=0.0, le=1.0)
+    h: float = Field(gt=0.0, le=1.0)
+
+
+class SampleAnnotations(BaseModel):
+    sample_id: int
+    boxes: list[AnnotationBox] = []
+
+
+class SampleAnnotationsUpdate(BaseModel):
+    boxes: list[AnnotationBox] = Field(default_factory=list, max_length=200)
+
+
+class DetectionBox(AnnotationBox):
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
+class DetectionResult(BaseModel):
+    camera_id: str
+    detector_active: bool  # False = no detection model is active
+    model_name: str | None = None
+    boxes: list[DetectionBox] = []
+
+
 class ModelInfo(BaseModel):
     id: int
     name: str
     kind: str  # base | trained | byo
+    task: str = "classification"  # classification | detection
     active: bool = False
     base_model: str = ""
     classes: list[str] = []
@@ -241,6 +277,7 @@ class ModelInfo(BaseModel):
 class ModelRegister(BaseModel):
     name: str
     path: str
+    task: Literal["classification", "detection"] = "classification"
 
 
 class CollectionUpdate(BaseModel):
