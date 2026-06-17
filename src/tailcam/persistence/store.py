@@ -11,6 +11,7 @@ from typing import Any
 
 from tailcam import paths
 from tailcam.persistence.models import (
+    AuditRecord,
     CameraRecord,
     DatasetRecord,
     DatasetSampleRecord,
@@ -199,8 +200,24 @@ _SCHEMA = [
     """
     CREATE INDEX IF NOT EXISTS idx_runs_created ON training_runs (created_ts DESC);
     """,
+    """
+    CREATE TABLE IF NOT EXISTS audit_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_ts REAL NOT NULL,
+        actor TEXT NOT NULL,
+        source TEXT NOT NULL,
+        action TEXT NOT NULL,
+        target TEXT NOT NULL,
+        result TEXT NOT NULL,
+        detail TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}'
+    );
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_events (created_ts DESC);
+    """,
 ]
-_CURRENT_VERSION = 8
+_CURRENT_VERSION = 9
 
 # Columns added after v1 — applied to existing DBs via ALTER TABLE on migrate().
 _EVENT_COLUMNS = {
@@ -841,6 +858,39 @@ class Store:
             )
             return cur.rowcount
 
+    # -- audit -------------------------------------------------------------
+    def add_audit_event(self, record: AuditRecord) -> int:
+        with self._conn() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO audit_events
+                    (created_ts, actor, source, action, target, result, detail, metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.created_ts,
+                    record.actor,
+                    record.source,
+                    record.action,
+                    record.target,
+                    record.result,
+                    record.detail,
+                    record.metadata_json,
+                ),
+            )
+            return int(cur.lastrowid or 0)
+
+    def list_audit_events(self, limit: int = 100, offset: int = 0) -> list[AuditRecord]:
+        rows = self._conn().execute(
+            """
+            SELECT * FROM audit_events
+            ORDER BY created_ts DESC, id DESC
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
+        ).fetchall()
+        return [_audit_from_row(row) for row in rows]
+
 
 def _camera_from_row(row: sqlite3.Row) -> CameraRecord:
     return CameraRecord(
@@ -996,6 +1046,20 @@ def _run_from_row(row: sqlite3.Row) -> TrainingRunRecord:
         created_ts=row["created_ts"],
         started_ts=row["started_ts"],
         ended_ts=row["ended_ts"],
+    )
+
+
+def _audit_from_row(row: sqlite3.Row) -> AuditRecord:
+    return AuditRecord(
+        id=row["id"],
+        created_ts=row["created_ts"],
+        actor=row["actor"],
+        source=row["source"],
+        action=row["action"],
+        target=row["target"],
+        result=row["result"],
+        detail=row["detail"],
+        metadata_json=row["metadata_json"],
     )
 
 
