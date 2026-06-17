@@ -2,7 +2,7 @@ import json
 import subprocess
 from types import SimpleNamespace
 
-from tailcam.tailscale.client import TailscaleClient
+from tailcam.tailscale.client import TAILCAM_APP_CAPABILITY, TailscaleClient
 
 _STATUS_RUNNING = {
     "BackendState": "Running",
@@ -81,3 +81,59 @@ def test_access_url_prefers_magicdns_when_served(monkeypatch):
 def test_access_url_falls_back_to_localhost(monkeypatch):
     _force_absent(monkeypatch)
     assert TailscaleClient().access_url(8088, served=False) == "http://localhost:8088/"
+
+
+def test_serve_accepts_app_capabilities_when_supported(monkeypatch):
+    monkeypatch.setattr("tailcam.tailscale.client.shutil.which", lambda _b: "/usr/bin/tailscale")
+    calls = []
+
+    def runner(args, **kwargs):
+        calls.append(args[1:])
+        if args[1:] == ["serve", "--help"]:
+            return SimpleNamespace(stdout="  --accept-app-caps string", stderr="", returncode=0)
+        return SimpleNamespace(stdout="", stderr="", returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", runner)
+
+    assert TailscaleClient().serve(local_port=8088, https_port=8443) is True
+
+    assert calls[-1] == [
+        "serve",
+        "--bg",
+        f"--accept-app-caps={TAILCAM_APP_CAPABILITY}",
+        "--https=8443",
+        "localhost:8088",
+    ]
+
+
+def test_serve_falls_back_without_app_capabilities_on_older_cli(monkeypatch):
+    monkeypatch.setattr("tailcam.tailscale.client.shutil.which", lambda _b: "/usr/bin/tailscale")
+    calls = []
+
+    def runner(args, **kwargs):
+        calls.append(args[1:])
+        if args[1:] == ["serve", "--help"]:
+            return SimpleNamespace(stdout="usage: tailscale serve", stderr="", returncode=0)
+        return SimpleNamespace(stdout="", stderr="", returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", runner)
+    client = TailscaleClient()
+
+    assert client.app_capabilities_supported() is False
+    assert client.serve(local_port=8088, https_port=8443) is True
+    assert calls[-1] == ["serve", "--bg", "--https=8443", "localhost:8088"]
+
+
+def test_status_reports_app_capability_support(monkeypatch):
+    monkeypatch.setattr("tailcam.tailscale.client.shutil.which", lambda _b: "/usr/bin/tailscale")
+
+    def runner(args, **kwargs):
+        if args[1:] == ["status", "--json"]:
+            return SimpleNamespace(stdout=json.dumps(_STATUS_RUNNING), stderr="", returncode=0)
+        if args[1:] == ["serve", "--help"]:
+            return SimpleNamespace(stdout="--accept-app-caps string", stderr="", returncode=0)
+        return SimpleNamespace(stdout="", stderr="", returncode=1)
+
+    monkeypatch.setattr(subprocess, "run", runner)
+
+    assert TailscaleClient().status().app_capabilities_supported is True
