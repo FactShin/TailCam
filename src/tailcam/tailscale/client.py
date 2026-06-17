@@ -17,6 +17,7 @@ from tailcam.logging_setup import get_logger
 log = get_logger(__name__)
 
 _TIMEOUT = 5.0
+TAILCAM_APP_CAPABILITY = "factshin.github.io/cap/tailcam"
 
 # Background services (launchd on macOS, systemd) run with a minimal PATH that
 # often excludes Homebrew and the Tailscale.app bundle, so `which tailscale`
@@ -39,6 +40,7 @@ class TailscaleStatus:
     ipv4: str | None
     magic_dns: str | None  # e.g. "host.tailnet-name.ts.net"
     served: bool = False
+    app_capabilities_supported: bool = False
 
 
 @dataclass
@@ -62,6 +64,7 @@ def _resolve_binary(name: str) -> str | None:
 class TailscaleClient:
     def __init__(self, binary: str = "tailscale") -> None:
         self._binary = _resolve_binary(binary)
+        self._app_capabilities_supported: bool | None = None
 
     def _run(self, *args: str) -> subprocess.CompletedProcess | None:
         if self._binary is None:
@@ -96,7 +99,23 @@ class TailscaleClient:
         ips = self_node.get("TailscaleIPs") or []
         ipv4 = next((ip for ip in ips if ":" not in ip), None)
         magic = (self_node.get("DNSName") or "").rstrip(".") or None
-        return TailscaleStatus(True, running, ipv4, magic)
+        return TailscaleStatus(
+            True,
+            running,
+            ipv4,
+            magic,
+            app_capabilities_supported=self.app_capabilities_supported(),
+        )
+
+    def app_capabilities_supported(self) -> bool:
+        if self._app_capabilities_supported is not None:
+            return self._app_capabilities_supported
+        proc = self._run("serve", "--help")
+        output = ""
+        if proc is not None:
+            output = f"{proc.stdout or ''}\n{proc.stderr or ''}"
+        self._app_capabilities_supported = "--accept-app-caps" in output
+        return self._app_capabilities_supported
 
     def peers(self) -> list[TailscalePeer]:
         """Return online tailnet peers (other devices), for TailCam discovery."""
@@ -126,9 +145,11 @@ class TailscaleClient:
         8443) keeps TailCam off the root URL so it won't clobber another app
         already served at ``https://<host>/``.
         """
-        proc = self._run(
-            "serve", "--bg", f"--https={https_port}", f"localhost:{local_port}"
-        )
+        args = ["serve", "--bg"]
+        if self.app_capabilities_supported():
+            args.append(f"--accept-app-caps={TAILCAM_APP_CAPABILITY}")
+        args.extend([f"--https={https_port}", f"localhost:{local_port}"])
+        proc = self._run(*args)
         if proc is None:
             return False
         if proc.returncode != 0:

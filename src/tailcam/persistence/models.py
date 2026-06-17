@@ -165,3 +165,16 @@ class TrainingRunRecord:
     created_ts: float
     started_ts: float | None = None
     ended_ts: float | None = None
+
+
+@dataclass
+class AuditRecord:
+    id: int | None
+    created_ts: float
+    actor: str
+    source: str
+    action: str
+    target: str
+    result: str
+    detail: str | None
+    metadata_json: str = "{}"

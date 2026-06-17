@@ -112,7 +112,17 @@ def run(
     from tailcam.web.app import create_app
 
     application = create_app(config)
-    uvicorn.run(application, host=config.server.host, port=config.server.port, log_level="info")
+    # proxy_headers=False so request.client.host is always the real socket peer.
+    # The management API's principal parser trusts Tailscale identity headers only
+    # on loopback (Tailscale Serve -> 127.0.0.1); honoring X-Forwarded-For here
+    # would let a forwarded address spoof that loopback anchor.
+    uvicorn.run(
+        application,
+        host=config.server.host,
+        port=config.server.port,
+        log_level="info",
+        proxy_headers=False,
+    )
 
 
 def _fleet_tables(config: AppConfig, local_descriptors) -> None:
