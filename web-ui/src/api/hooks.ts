@@ -90,6 +90,44 @@ export function useDeleteSample() {
   });
 }
 
+export function useAnnotations(sampleId: number | null) {
+  return useQuery({
+    queryKey: ["annotations", sampleId],
+    queryFn: () => api.getAnnotations(sampleId as number),
+    enabled: sampleId !== null,
+  });
+}
+
+export function useSetAnnotations() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      sampleId,
+      boxes,
+    }: {
+      sampleId: number;
+      boxes: import("../types").AnnotationBox[];
+    }) => api.setAnnotations(sampleId, boxes),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["annotations", vars.sampleId] });
+      qc.invalidateQueries({ queryKey: ["samples"] });
+      qc.invalidateQueries({ queryKey: ["datasets"] });
+    },
+  });
+}
+
+// Poll the active detection model for boxes on a live camera. Disabled (and
+// silent) when no detection model is active — the server reports that cheaply.
+export function useDetections(prefix: string, id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["detections", prefix, id],
+    queryFn: () => api.detectObjects(prefix, id),
+    enabled,
+    refetchInterval: 1500,
+    refetchIntervalInBackground: false,
+  });
+}
+
 export function useModels() {
   return useQuery({ queryKey: ["models"], queryFn: api.getModels, refetchInterval: 8000 });
 }

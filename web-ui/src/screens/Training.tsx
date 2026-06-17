@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { sampleThumbUrl } from "../api/client";
+import { AnnotationEditor } from "../components/AnnotationEditor";
 import {
   useActivateModel,
   useCameras,
@@ -25,7 +26,7 @@ import { useToast } from "../components/toast";
 import { Button, ConfirmDialog, Spinner, Toggle } from "../components/ui";
 import { IconBolt, IconBrain, IconChip, IconInfo, IconMotion, IconStop, IconTrash } from "../icons";
 import { fmtAgo } from "../lib/format";
-import type { DatasetInfo, ModelInfo, TrainingRunInfo } from "../types";
+import type { DatasetInfo, DatasetTask, ModelInfo, TrainingRunInfo } from "../types";
 
 export function Training() {
   const training = useTraining().data;
@@ -74,8 +75,10 @@ function TrainPanel({ datasets, engineOk }: { datasets: DatasetInfo[]; engineOk:
   }, [datasets, did]);
 
   const ds = datasets.find((d) => d.id === did);
+  const detection = ds?.task === "detection";
   const classes = labeledClassCount(ds);
-  const canTrain = engineOk && classes >= 2 && !start.isPending;
+  const ready = detection ? (ds?.annotated_count ?? 0) >= 1 : classes >= 2;
+  const canTrain = engineOk && ready && !start.isPending;
 
   const onTrain = async () => {
     try {
@@ -100,7 +103,9 @@ function TrainPanel({ datasets, engineOk }: { datasets: DatasetInfo[]; engineOk:
             {datasets.length === 0 && <option value={0}>— no datasets —</option>}
             {datasets.map((d) => (
               <option key={d.id} value={d.id}>
-                {d.name} · {labeledClassCount(d)} labeled classes
+                {d.task === "detection"
+                  ? `${d.name} · ${d.annotated_count} annotated`
+                  : `${d.name} · ${labeledClassCount(d)} labeled classes`}
               </option>
             ))}
           </select>
@@ -118,8 +123,12 @@ function TrainPanel({ datasets, engineOk }: { datasets: DatasetInfo[]; engineOk:
       </div>
       {!engineOk ? (
         <span className="help-foot mono">Install the training engine on this machine to enable training.</span>
-      ) : classes < 2 ? (
-        <span className="help-foot mono">Label samples in at least 2 classes (above) before training.</span>
+      ) : !ready ? (
+        <span className="help-foot mono">
+          {detection
+            ? "Annotate at least one sample with a bounding box (above) before training."
+            : "Label samples in at least 2 classes (above) before training."}
+        </span>
       ) : null}
     </div>
   );
@@ -171,6 +180,7 @@ function RunsPanel({ datasets }: { datasets: DatasetInfo[] }) {
               <div className="run-meta mono">
                 {r.status === "training" ? `epoch ${r.epoch}/${r.epochs}` : `${r.epochs} epochs`}
                 {typeof r.metrics.top1 === "number" ? ` · top-1 ${(r.metrics.top1 * 100).toFixed(1)}%` : ""}
+                {typeof r.metrics.map50 === "number" ? ` · mAP50 ${(r.metrics.map50 * 100).toFixed(1)}%` : ""}
                 {r.log ? ` · ${r.log}` : ""}
               </div>
             </div>
@@ -284,6 +294,7 @@ function DatasetsPanel({ datasets, classes, activeId }: { datasets: DatasetInfo[
   const importEvents = useImportEvents();
   const toast = useToast();
   const [name, setName] = useState("");
+  const [task, setTask] = useState<DatasetTask>("classification");
   const [selected, setSelected] = useState<number | null>(null);
   const [confirm, setConfirm] = useState<DatasetInfo | null>(null);
 
@@ -294,7 +305,7 @@ function DatasetsPanel({ datasets, classes, activeId }: { datasets: DatasetInfo[
   const onCreate = async () => {
     if (!name.trim()) return;
     try {
-      const d = await create.mutateAsync({ name: name.trim() });
+      const d = await create.mutateAsync({ name: name.trim(), task });
       setName("");
       setSelected(d.id);
       toast.ok("Dataset created");
@@ -303,14 +314,23 @@ function DatasetsPanel({ datasets, classes, activeId }: { datasets: DatasetInfo[
     }
   };
 
+  const selectedDs = datasets.find((d) => d.id === selected);
+
   return (
     <div className="panel">
       <div className="panel-title"><IconChip size={16} /> Datasets</div>
-      <div className="ai-form" style={{ gridTemplateColumns: "1fr auto" }}>
+      <div className="ai-form" style={{ gridTemplateColumns: "1fr 1fr auto" }}>
         <label className="tl-field">
           <span className="microlabel">New dataset name</span>
           <input className="tl-input" value={name} placeholder="e.g. Driveway, Workshop"
             onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && onCreate()} />
+        </label>
+        <label className="tl-field">
+          <span className="microlabel">Type</span>
+          <select className="tl-select" value={task} onChange={(e) => setTask(e.target.value as DatasetTask)}>
+            <option value="classification">Classification (whole-frame label)</option>
+            <option value="detection">Detection (bounding boxes)</option>
+          </select>
         </label>
         <div className="tl-field tl-field-action">
           <Button variant="primary" disabled={!name.trim() || create.isPending} onClick={onCreate}>Create</Button>
@@ -328,7 +348,13 @@ function DatasetsPanel({ datasets, classes, activeId }: { datasets: DatasetInfo[
               onClick={() => setSelected(d.id)}
             >
               <div className="ds-row-main">
-                <span className="ds-name">{d.name}{d.id === activeId && <span className="badge badge-accent ds-active">collecting → here</span>}</span>
+                <span className="ds-name">
+                  {d.name}
+                  <span className={`badge ${d.task === "detection" ? "badge-accent" : "badge-ok"} ds-task`}>
+                    {d.task === "detection" ? "detection" : "classification"}
+                  </span>
+                  {d.id === activeId && <span className="badge badge-accent ds-active">collecting → here</span>}
+                </span>
                 <span className="ds-meta mono">{d.sample_count} samples · {labelSummary(d)}</span>
               </div>
               <span
@@ -344,9 +370,10 @@ function DatasetsPanel({ datasets, classes, activeId }: { datasets: DatasetInfo[
         </div>
       )}
 
-      {selected != null && datasets.some((d) => d.id === selected) && (
+      {selected != null && selectedDs && (
         <SampleGrid
           datasetId={selected}
+          task={selectedDs.task}
           classes={classes}
           onImportEvents={async () => {
             try {
@@ -381,11 +408,13 @@ function DatasetsPanel({ datasets, classes, activeId }: { datasets: DatasetInfo[
 
 function SampleGrid({
   datasetId,
+  task,
   classes,
   onImportEvents,
   importing,
 }: {
   datasetId: number;
+  task: DatasetTask;
   classes: string[];
   onImportEvents: () => void;
   importing: boolean;
@@ -394,6 +423,8 @@ function SampleGrid({
   const samples = useSamples(datasetId, filter || undefined).data ?? [];
   const relabel = useRelabelSample();
   const del = useDeleteSample();
+  const detection = task === "detection";
+  const [annotating, setAnnotating] = useState<number | null>(null);
 
   return (
     <div className="sample-block">
@@ -401,7 +432,7 @@ function SampleGrid({
         <div className="filter-scroll">
           <button className={`chip-filter ${!filter ? "is-on" : ""}`} onClick={() => setFilter("")}>All</button>
           <button className={`chip-filter ${filter === "__unlabeled__" ? "is-on" : ""}`} onClick={() => setFilter("__unlabeled__")}>Unlabeled</button>
-          {classes.map((c) => (
+          {!detection && classes.map((c) => (
             <button key={c} className={`chip-filter ${filter === c ? "is-on" : ""}`} onClick={() => setFilter(c)}>{c}</button>
           ))}
         </div>
@@ -409,6 +440,13 @@ function SampleGrid({
           Import motion events
         </Button>
       </div>
+
+      {detection && (
+        <p className="help-foot mono" style={{ marginTop: 0 }}>
+          Detection dataset — open a sample to draw bounding boxes (where + what). Train once a few
+          samples are annotated.
+        </p>
+      )}
 
       {samples.length === 0 ? (
         <p className="help-foot mono">No samples here yet. Turn on collection, or import motion events.</p>
@@ -422,19 +460,39 @@ function SampleGrid({
                   <IconTrash size={13} />
                 </button>
                 {s.source === "motion" && <span className="sample-src">motion</span>}
+                {detection && s.annotation_count > 0 && (
+                  <span className="sample-boxes">{s.annotation_count} box{s.annotation_count === 1 ? "" : "es"}</span>
+                )}
               </div>
-              <select
-                className={`sample-label ${s.label ? "" : "is-empty"}`}
-                value={s.label ?? ""}
-                onChange={(e) => relabel.mutate({ id: s.id, label: e.target.value || null })}
-              >
-                <option value="">— unlabeled —</option>
-                {classes.map((c) => <option key={c} value={c}>{c}</option>)}
-                {s.label && !classes.includes(s.label) && <option value={s.label}>{s.label}</option>}
-              </select>
+              {detection ? (
+                <button
+                  className={`sample-label sample-annotate ${s.annotation_count ? "" : "is-empty"}`}
+                  onClick={() => setAnnotating(s.id)}
+                >
+                  {s.annotation_count ? `Edit ${s.annotation_count} box${s.annotation_count === 1 ? "" : "es"}` : "Annotate"}
+                </button>
+              ) : (
+                <select
+                  className={`sample-label ${s.label ? "" : "is-empty"}`}
+                  value={s.label ?? ""}
+                  onChange={(e) => relabel.mutate({ id: s.id, label: e.target.value || null })}
+                >
+                  <option value="">— unlabeled —</option>
+                  {classes.map((c) => <option key={c} value={c}>{c}</option>)}
+                  {s.label && !classes.includes(s.label) && <option value={s.label}>{s.label}</option>}
+                </select>
+              )}
             </div>
           ))}
         </div>
+      )}
+
+      {annotating != null && (
+        <AnnotationEditor
+          sampleId={annotating}
+          classes={classes}
+          onClose={() => setAnnotating(null)}
+        />
       )}
     </div>
   );
@@ -449,12 +507,13 @@ function ModelsPanel({ activeModelId }: { activeModelId: number }) {
   const toast = useToast();
   const [byoName, setByoName] = useState("");
   const [byoPath, setByoPath] = useState("");
+  const [byoTask, setByoTask] = useState<DatasetTask>("classification");
   const [confirm, setConfirm] = useState<ModelInfo | null>(null);
 
   const onRegister = async () => {
     if (!byoPath.trim()) return;
     try {
-      await register.mutateAsync({ name: byoName.trim() || "My model", path: byoPath.trim() });
+      await register.mutateAsync({ name: byoName.trim() || "My model", path: byoPath.trim(), task: byoTask });
       setByoName(""); setByoPath("");
       toast.ok("Model added");
     } catch (e) {
@@ -482,6 +541,7 @@ function ModelsPanel({ activeModelId }: { activeModelId: number }) {
               <span className="model-name">{m.name}</span>
               <span className="model-meta mono">
                 <span className={`badge ${m.kind === "base" ? "badge-accent" : m.kind === "trained" ? "badge-ok" : "badge-warn"}`}>{m.kind}</span>
+                {m.task === "detection" ? <span className="badge badge-accent">detection</span> : null}
                 {m.base_model ? ` · ${m.base_model}` : ""} · {fmtAgo(m.created_ts)}
               </span>
             </div>
@@ -511,6 +571,13 @@ function ModelsPanel({ activeModelId }: { activeModelId: number }) {
           <span className="microlabel">Path to .pt file (on this device)</span>
           <input className="tl-input" value={byoPath} placeholder="/path/to/model.pt" onChange={(e) => setByoPath(e.target.value)} />
         </label>
+        <label className="tl-field">
+          <span className="microlabel">Task</span>
+          <select className="tl-select" value={byoTask} onChange={(e) => setByoTask(e.target.value as DatasetTask)}>
+            <option value="classification">Classification</option>
+            <option value="detection">Detection</option>
+          </select>
+        </label>
         <div className="tl-field tl-field-action">
           <Button variant="primary" disabled={!byoPath.trim() || register.isPending} onClick={onRegister}>Add</Button>
         </div>
@@ -518,8 +585,8 @@ function ModelsPanel({ activeModelId }: { activeModelId: number }) {
 
       <div className="kv kv-stack" style={{ marginTop: 12 }}>
         <span className="help-foot mono" style={{ borderTop: 0, paddingTop: 0, margin: 0 }}>
-          <IconInfo size={12} /> Training a model from your datasets runs in the next update — collect &amp;
-          label footage now and it’s ready to train.
+          <IconInfo size={12} /> Detection models draw bounding boxes (where + what) on your live
+          cameras when active; classification models tag each frame with a single label.
         </span>
       </div>
 

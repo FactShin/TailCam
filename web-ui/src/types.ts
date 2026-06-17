@@ -119,14 +119,18 @@ export interface CollectionUpdate {
   active_dataset_id?: number;
 }
 
+export type DatasetTask = "classification" | "detection";
+
 export interface DatasetInfo {
   id: number;
   name: string;
-  task: string;
+  task: DatasetTask;
   created_ts: number;
   note: string;
   sample_count: number;
   label_counts: Record<string, number>;
+  annotated_count: number;
+  box_label_counts: Record<string, number>;
 }
 
 export interface SampleInfo {
@@ -139,12 +143,39 @@ export interface SampleInfo {
   created_ts: number;
   confidence: number | null;
   has_thumb: boolean;
+  annotation_count: number;
+}
+
+// A bounding box, normalized 0..1 (center + size) — matches the backend.
+export interface AnnotationBox {
+  label: string;
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+}
+
+export interface SampleAnnotations {
+  sample_id: number;
+  boxes: AnnotationBox[];
+}
+
+export interface DetectionBox extends AnnotationBox {
+  confidence: number;
+}
+
+export interface DetectionResult {
+  camera_id: string;
+  detector_active: boolean;
+  model_name: string | null;
+  boxes: DetectionBox[];
 }
 
 export interface ModelInfo {
   id: number;
   name: string;
   kind: "base" | "trained" | "byo";
+  task: DatasetTask;
   active: boolean;
   base_model: string;
   classes: string[];

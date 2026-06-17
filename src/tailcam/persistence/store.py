@@ -17,6 +17,7 @@ from tailcam.persistence.models import (
     MediaRecord,
     ModelRecord,
     MotionEventRecord,
+    SampleAnnotationRecord,
     TimelapseAnalysisEventRecord,
     TimelapseRecord,
     TrainingRunRecord,
@@ -149,6 +150,22 @@ _SCHEMA = [
     CREATE INDEX IF NOT EXISTS idx_samples_dataset ON dataset_samples (dataset_id, created_ts DESC);
     """,
     """
+    CREATE TABLE IF NOT EXISTS sample_annotations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sample_id INTEGER NOT NULL,
+        label TEXT NOT NULL,
+        cx REAL NOT NULL,
+        cy REAL NOT NULL,
+        w REAL NOT NULL,
+        h REAL NOT NULL,
+        created_ts REAL NOT NULL,
+        FOREIGN KEY(sample_id) REFERENCES dataset_samples(id) ON DELETE CASCADE
+    );
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_annotations_sample ON sample_annotations (sample_id);
+    """,
+    """
     CREATE TABLE IF NOT EXISTS models (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
@@ -158,7 +175,8 @@ _SCHEMA = [
         base_model TEXT NOT NULL DEFAULT '',
         metrics_json TEXT NOT NULL DEFAULT '{}',
         created_ts REAL NOT NULL,
-        active INTEGER NOT NULL DEFAULT 0
+        active INTEGER NOT NULL DEFAULT 0,
+        task TEXT NOT NULL DEFAULT 'classification'
     );
     """,
     """
@@ -182,7 +200,7 @@ _SCHEMA = [
     CREATE INDEX IF NOT EXISTS idx_runs_created ON training_runs (created_ts DESC);
     """,
 ]
-_CURRENT_VERSION = 7
+_CURRENT_VERSION = 8
 
 # Columns added after v1 — applied to existing DBs via ALTER TABLE on migrate().
 _EVENT_COLUMNS = {
@@ -207,6 +225,11 @@ _TIMELAPSE_COLUMNS = {
     "smooth_quality": "TEXT NOT NULL DEFAULT 'high'",
     "analysis_enabled": "INTEGER NOT NULL DEFAULT 0",
     "analysis_cadence_seconds": "REAL NOT NULL DEFAULT 60",
+}
+
+# Object-detection column added after the v7 models table (older DBs).
+_MODEL_COLUMNS = {
+    "task": "TEXT NOT NULL DEFAULT 'classification'",
 }
 
 
@@ -242,6 +265,11 @@ class Store:
             for col, col_type in _TIMELAPSE_COLUMNS.items():
                 if col not in tl_cols:
                     conn.execute(f"ALTER TABLE timelapses ADD COLUMN {col} {col_type}")
+            # Detection task column added to a pre-existing (v7) models table.
+            model_cols = {r["name"] for r in conn.execute("PRAGMA table_info(models)")}
+            for col, col_type in _MODEL_COLUMNS.items():
+                if col not in model_cols:
+                    conn.execute(f"ALTER TABLE models ADD COLUMN {col} {col_type}")
             row = conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
             if row is None:
                 conn.execute("INSERT INTO schema_version (version) VALUES (?)", (_CURRENT_VERSION,))
@@ -667,18 +695,75 @@ class Store:
         ).fetchall()
         return {(r["label"] or "__unlabeled__"): int(r["n"]) for r in rows}
 
+    # -- detection annotations --------------------------------------------
+    def list_annotations(self, sample_id: int) -> list[SampleAnnotationRecord]:
+        rows = self._conn().execute(
+            "SELECT * FROM sample_annotations WHERE sample_id=? ORDER BY id", (sample_id,)
+        ).fetchall()
+        return [_annotation_from_row(r) for r in rows]
+
+    def replace_annotations(
+        self, sample_id: int, boxes: list[SampleAnnotationRecord]
+    ) -> None:
+        """Atomically swap a sample's boxes for ``boxes`` (the annotation editor
+        sends the whole set on save)."""
+        with self._conn() as conn:
+            conn.execute("DELETE FROM sample_annotations WHERE sample_id=?", (sample_id,))
+            conn.executemany(
+                """
+                INSERT INTO sample_annotations
+                    (sample_id, label, cx, cy, w, h, created_ts)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (sample_id, b.label, b.cx, b.cy, b.w, b.h, b.created_ts)
+                    for b in boxes
+                ],
+            )
+
+    def annotation_counts(self, dataset_id: int) -> dict[int, int]:
+        """Boxes-per-sample for a dataset in one query (avoids an N+1 over the
+        sample grid). Samples with no boxes are simply absent from the map."""
+        rows = self._conn().execute(
+            """
+            SELECT a.sample_id AS sid, COUNT(*) AS n
+            FROM sample_annotations a
+            JOIN dataset_samples s ON s.id = a.sample_id
+            WHERE s.dataset_id = ?
+            GROUP BY a.sample_id
+            """,
+            (dataset_id,),
+        ).fetchall()
+        return {int(r["sid"]): int(r["n"]) for r in rows}
+
+    def dataset_annotation_label_counts(self, dataset_id: int) -> dict[str, int]:
+        """How many boxes carry each class label across a detection dataset."""
+        rows = self._conn().execute(
+            """
+            SELECT a.label AS label, COUNT(*) AS n
+            FROM sample_annotations a
+            JOIN dataset_samples s ON s.id = a.sample_id
+            WHERE s.dataset_id = ?
+            GROUP BY a.label
+            """,
+            (dataset_id,),
+        ).fetchall()
+        return {str(r["label"]): int(r["n"]) for r in rows}
+
     # -- models ------------------------------------------------------------
     def add_model(self, record: ModelRecord) -> int:
         with self._conn() as conn:
             cur = conn.execute(
                 """
                 INSERT INTO models
-                    (name, kind, path, classes_json, base_model, metrics_json, created_ts, active)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (name, kind, path, classes_json, base_model, metrics_json, created_ts,
+                     active, task)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.name, record.kind, record.path, record.classes_json,
                     record.base_model, record.metrics_json, record.created_ts, record.active,
+                    record.task,
                 ),
             )
             return int(cur.lastrowid or 0)
@@ -879,6 +964,20 @@ def _model_from_row(row: sqlite3.Row) -> ModelRecord:
         metrics_json=row["metrics_json"],
         created_ts=row["created_ts"],
         active=row["active"],
+        task=row["task"],
+    )
+
+
+def _annotation_from_row(row: sqlite3.Row) -> SampleAnnotationRecord:
+    return SampleAnnotationRecord(
+        id=row["id"],
+        sample_id=row["sample_id"],
+        label=row["label"],
+        cx=row["cx"],
+        cy=row["cy"],
+        w=row["w"],
+        h=row["h"],
+        created_ts=row["created_ts"],
     )
 
 

@@ -14,11 +14,14 @@ from tailcam.web.deps import get_context
 from tailcam.web.schemas import (
     AIInfo,
     AIUpdate,
+    AnnotationBox,
     CameraInfo,
     CameraSettingsUpdate,
     CollectionUpdate,
     DatasetCreate,
     DatasetInfo,
+    DetectionBox,
+    DetectionResult,
     EngineInfo,
     HostInfo,
     MediaCreatedResponse,
@@ -29,6 +32,8 @@ from tailcam.web.schemas import (
     OkResponse,
     PostprocessInfo,
     PostprocessSettings,
+    SampleAnnotations,
+    SampleAnnotationsUpdate,
     SampleInfo,
     SampleRelabel,
     SystemInfo,
@@ -218,6 +223,40 @@ def stop_recording(camera_id: str, ctx: AppContext = Depends(get_context)) -> Me
     if record is None:
         raise HTTPException(status_code=409, detail="not recording")
     return MediaCreatedResponse(media_id=record.id)
+
+
+@router.post("/cameras/{camera_id:path}/detect", response_model=DetectionResult)
+async def detect_objects(
+    camera_id: str, ctx: AppContext = Depends(get_context)
+) -> DetectionResult:
+    """Run the active detection model on the camera's latest frame and return
+    bounding boxes (where + what). 200 with ``detector_active=false`` when no
+    detection model is active — the UI just shows no overlay."""
+    import anyio
+
+    active_model = ctx.store.active_model()
+    detector_active = ctx.inference.detection_active
+    if not detector_active:
+        return DetectionResult(camera_id=camera_id, detector_active=False)
+    buffer = ctx.manager.get_buffer(camera_id)
+    if buffer is None:
+        raise HTTPException(status_code=404, detail="camera not found")
+    frame = await anyio.to_thread.run_sync(buffer.await_latest, -1, 2.0)
+    if frame is None:
+        raise HTTPException(status_code=503, detail="no frame available")
+    detections = await anyio.to_thread.run_sync(ctx.inference.detect, frame.image)
+    boxes = [
+        DetectionBox(
+            label=d.label, confidence=d.confidence, cx=d.cx, cy=d.cy, w=d.w, h=d.h
+        )
+        for d in (detections or [])
+    ]
+    return DetectionResult(
+        camera_id=camera_id,
+        detector_active=True,
+        model_name=active_model.name if active_model else None,
+        boxes=boxes,
+    )
 
 
 def _media_info(ctx: AppContext, record) -> MediaInfo:
@@ -525,6 +564,11 @@ def set_postprocess(
 
 def _dataset_info(ctx: AppContext, d) -> DatasetInfo:
     counts = ctx.store.dataset_label_counts(d.id)
+    box_counts: dict[str, int] = {}
+    annotated = 0
+    if d.task == "detection":
+        box_counts = ctx.store.dataset_annotation_label_counts(d.id)
+        annotated = len(ctx.store.annotation_counts(d.id))
     return DatasetInfo(
         id=d.id,
         name=d.name,
@@ -533,10 +577,12 @@ def _dataset_info(ctx: AppContext, d) -> DatasetInfo:
         note=d.note,
         sample_count=sum(counts.values()),
         label_counts=counts,
+        annotated_count=annotated,
+        box_label_counts=box_counts,
     )
 
 
-def _sample_info(s) -> SampleInfo:
+def _sample_info(s, ann_count: int = 0) -> SampleInfo:
     return SampleInfo(
         id=s.id,
         dataset_id=s.dataset_id,
@@ -547,6 +593,7 @@ def _sample_info(s) -> SampleInfo:
         created_ts=s.created_ts,
         confidence=s.confidence,
         has_thumb=bool(s.thumb),
+        annotation_count=ann_count,
     )
 
 
@@ -563,6 +610,7 @@ def _model_info(m) -> ModelInfo:
         id=m.id,
         name=m.name,
         kind=m.kind,
+        task=m.task,
         active=bool(m.active),
         base_model=m.base_model,
         classes=classes,
@@ -634,7 +682,7 @@ def list_datasets(ctx: AppContext = Depends(get_context)) -> list[DatasetInfo]:
 
 @router.post("/datasets", response_model=DatasetInfo)
 def create_dataset(body: DatasetCreate, ctx: AppContext = Depends(get_context)) -> DatasetInfo:
-    record = ctx.training.create_dataset(body.name, body.note)
+    record = ctx.training.create_dataset(body.name, body.note, body.task)
     ctx.config.save()
     return _dataset_info(ctx, record)
 
@@ -673,7 +721,11 @@ def list_samples(
     offset: int = 0,
     ctx: AppContext = Depends(get_context),
 ) -> list[SampleInfo]:
-    return [_sample_info(s) for s in ctx.store.list_samples(dataset_id, label, limit, offset)]
+    counts = ctx.store.annotation_counts(dataset_id)
+    return [
+        _sample_info(s, counts.get(s.id or 0, 0))
+        for s in ctx.store.list_samples(dataset_id, label, limit, offset)
+    ]
 
 
 @router.patch("/samples/{sample_id}", response_model=SampleInfo)
@@ -684,7 +736,8 @@ def relabel_sample(
     if s is None:
         raise HTTPException(status_code=404, detail="sample not found")
     ctx.store.set_sample_label(sample_id, body.label)
-    return _sample_info(ctx.store.get_sample(sample_id))
+    updated = ctx.store.get_sample(sample_id)
+    return _sample_info(updated, len(ctx.store.list_annotations(sample_id)))
 
 
 @router.delete("/samples/{sample_id}", response_model=OkResponse)
@@ -692,6 +745,38 @@ def delete_sample(sample_id: int, ctx: AppContext = Depends(get_context)) -> OkR
     if not ctx.training.delete_sample(sample_id):
         raise HTTPException(status_code=404, detail="sample not found")
     return OkResponse(detail="deleted")
+
+
+def _annotation_box(a) -> AnnotationBox:
+    return AnnotationBox(label=a.label, cx=a.cx, cy=a.cy, w=a.w, h=a.h)
+
+
+@router.get("/samples/{sample_id}/annotations", response_model=SampleAnnotations)
+def get_sample_annotations(
+    sample_id: int, ctx: AppContext = Depends(get_context)
+) -> SampleAnnotations:
+    if ctx.store.get_sample(sample_id) is None:
+        raise HTTPException(status_code=404, detail="sample not found")
+    boxes = [_annotation_box(a) for a in ctx.store.list_annotations(sample_id)]
+    return SampleAnnotations(sample_id=sample_id, boxes=boxes)
+
+
+@router.put("/samples/{sample_id}/annotations", response_model=SampleAnnotations)
+def set_sample_annotations(
+    sample_id: int,
+    body: SampleAnnotationsUpdate,
+    ctx: AppContext = Depends(get_context),
+) -> SampleAnnotations:
+    """Replace a detection sample's bounding boxes (the annotation editor sends
+    the full set on save)."""
+    stored = ctx.training.set_annotations(
+        sample_id, [b.model_dump() for b in body.boxes]
+    )
+    if stored is None:
+        raise HTTPException(status_code=404, detail="sample not found")
+    return SampleAnnotations(
+        sample_id=sample_id, boxes=[_annotation_box(a) for a in stored]
+    )
 
 
 @router.get("/models", response_model=list[ModelInfo])
@@ -702,7 +787,7 @@ def list_models(ctx: AppContext = Depends(get_context)) -> list[ModelInfo]:
 @router.post("/models", response_model=ModelInfo)
 def register_model(body: ModelRegister, ctx: AppContext = Depends(get_context)) -> ModelInfo:
     """Register a bring-your-own model file (.pt) by path."""
-    record = ctx.training.register_byo(body.name, body.path)
+    record = ctx.training.register_byo(body.name, body.path, body.task)
     if record is None:
         raise HTTPException(status_code=400, detail="model file not found at that path")
     return _model_info(record)

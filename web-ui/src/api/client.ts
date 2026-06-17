@@ -90,7 +90,11 @@ export const updateCollection = (body: import("../types").CollectionUpdate) =>
   });
 
 export const getDatasets = () => jsonFetch<import("../types").DatasetInfo[]>("/api/datasets");
-export const createDataset = (body: { name: string; note?: string }) =>
+export const createDataset = (body: {
+  name: string;
+  note?: string;
+  task?: import("../types").DatasetTask;
+}) =>
   jsonFetch<import("../types").DatasetInfo>("/api/datasets", {
     method: "POST",
     body: JSON.stringify(body),
@@ -114,8 +118,24 @@ export const deleteSample = (id: number) =>
 export const sampleThumbUrl = (id: number) => `/datasets/sample/${id}/thumbnail`;
 export const sampleImageUrl = (id: number) => `/datasets/sample/${id}/image`;
 
+export const getAnnotations = (sampleId: number) =>
+  jsonFetch<import("../types").SampleAnnotations>(`/api/samples/${sampleId}/annotations`);
+export const setAnnotations = (sampleId: number, boxes: import("../types").AnnotationBox[]) =>
+  jsonFetch<import("../types").SampleAnnotations>(`/api/samples/${sampleId}/annotations`, {
+    method: "PUT",
+    body: JSON.stringify({ boxes }),
+  });
+export const detectObjects = (prefix: string, id: string) =>
+  jsonFetch<import("../types").DetectionResult>(`${prefix}/api/cameras/${id}/detect`, {
+    method: "POST",
+  });
+
 export const getModels = () => jsonFetch<import("../types").ModelInfo[]>("/api/models");
-export const registerModel = (body: { name: string; path: string }) =>
+export const registerModel = (body: {
+  name: string;
+  path: string;
+  task?: import("../types").DatasetTask;
+}) =>
   jsonFetch<import("../types").ModelInfo>("/api/models", {
     method: "POST",
     body: JSON.stringify(body),
