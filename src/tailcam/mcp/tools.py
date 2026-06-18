@@ -473,6 +473,210 @@ async def _import_events_to_dataset(ctx: ToolContext, args: dict[str, Any]) -> T
 
 
 # --------------------------------------------------------------------------
+# ollama model management
+# --------------------------------------------------------------------------
+async def _list_ollama_models(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    info = await ctx.client.ollama_models()
+    installed = info.get("installed", [])
+    reach = "reachable" if info.get("reachable") else "unreachable"
+    summary = (
+        f"Ollama {reach} at {info.get('base_url')}: {len(installed)} model(s) installed; "
+        f"active analyzer model is {info.get('active_model')}."
+    )
+    return ToolResult(summary, {"ok": True, "ollama": info})
+
+
+async def _pull_ollama_model(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    _require_confirm(args, ctx.config.require_confirm_for_writes)
+    model = _str_arg(args, "model")
+    info = await ctx.client.pull_ollama_model(model)
+    ctx.record_action(action="pull_ollama_model", target=model, result="success")
+    return ToolResult(
+        f"Pulled '{model}' into Ollama ({len(info.get('installed', []))} model(s) now installed).",
+        {"ok": True, "ollama": info},
+    )
+
+
+async def _load_ollama_model(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    model = _str_arg(args, "model")
+    ai = await ctx.client.load_ollama_model(model)
+    ctx.record_action(action="load_ollama_model", target=model, result="success")
+    return ToolResult(f"Started (warmed) Ollama model '{model}'.", {"ok": True, "ai": ai})
+
+
+# --------------------------------------------------------------------------
+# dataset / sample management
+# --------------------------------------------------------------------------
+async def _create_dataset(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    name = _str_arg(args, "name")
+    body = {"name": name, "note": args.get("note", ""), "task": args.get("task", "classification")}
+    ds = await ctx.client.create_dataset(body)
+    ctx.record_action(
+        action="create_dataset", target=f"dataset:{ds.get('id')}", result="success",
+        metadata={"task": body["task"]},
+    )
+    return ToolResult(
+        f"Created dataset #{ds.get('id')} '{ds.get('name')}' ({ds.get('task')}).",
+        {"ok": True, "dataset": ds},
+    )
+
+
+async def _delete_dataset(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    _require_confirm(args, ctx.config.require_confirm_for_writes)
+    dataset_id = int(args["dataset_id"])
+    await ctx.client.delete_dataset(dataset_id)
+    ctx.record_action(action="delete_dataset", target=f"dataset:{dataset_id}", result="success")
+    return ToolResult(f"Deleted dataset #{dataset_id}.", {"ok": True, "dataset_id": dataset_id})
+
+
+async def _get_dataset(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    dataset_id = int(args["dataset_id"])
+    ds = await ctx.client.dataset(dataset_id)
+    summary = (
+        f"Dataset #{ds.get('id')} '{ds.get('name')}' ({ds.get('task')}): "
+        f"{ds.get('sample_count')} samples, labels {ds.get('label_counts')}."
+    )
+    return ToolResult(summary, {"ok": True, "dataset": ds})
+
+
+async def _list_dataset_samples(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    dataset_id = int(args["dataset_id"])
+    limit = _clamp(args.get("limit", 50), 1, 500)
+    offset = _clamp(args.get("offset", 0), 0, 10**6)
+    samples = await ctx.client.dataset_samples(
+        dataset_id, label=args.get("label"), limit=limit, offset=offset
+    )
+    return ToolResult(
+        f"{len(samples)} sample(s) in dataset #{dataset_id}.",
+        {"ok": True, "samples": samples},
+    )
+
+
+async def _relabel_sample(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    sample_id = int(args["sample_id"])
+    label = args.get("label")
+    sample = await ctx.client.relabel_sample(sample_id, label)
+    ctx.record_action(
+        action="relabel_sample", target=f"sample:{sample_id}", result="success",
+        metadata={"label": label},
+    )
+    return ToolResult(
+        f"Relabeled sample #{sample_id} to {label!r}.", {"ok": True, "sample": sample}
+    )
+
+
+async def _delete_sample(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    sample_id = int(args["sample_id"])
+    await ctx.client.delete_sample(sample_id)
+    ctx.record_action(action="delete_sample", target=f"sample:{sample_id}", result="success")
+    return ToolResult(f"Deleted sample #{sample_id}.", {"ok": True, "sample_id": sample_id})
+
+
+# --------------------------------------------------------------------------
+# model lifecycle
+# --------------------------------------------------------------------------
+async def _list_models(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    models = await ctx.client.models()
+    lines = [
+        f"- #{m.get('id')} {m.get('name')} ({m.get('kind')}/{m.get('task')})"
+        f"{' [active]' if m.get('active') else ''}"
+        for m in models
+    ]
+    summary = f"{len(models)} model(s):\n" + "\n".join(lines)
+    return ToolResult(summary, {"ok": True, "models": models})
+
+
+async def _register_model(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    body = {
+        "name": _str_arg(args, "name"),
+        "path": _str_arg(args, "path"),
+        "task": args.get("task", "classification"),
+    }
+    model = await ctx.client.register_model(body)
+    ctx.record_action(
+        action="register_model", target=f"model:{model.get('id')}", result="success"
+    )
+    return ToolResult(
+        f"Registered model #{model.get('id')} '{model.get('name')}'.",
+        {"ok": True, "model": model},
+    )
+
+
+async def _activate_model(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    model_id = int(args["model_id"])
+    model = await ctx.client.activate_model(model_id)
+    ctx.record_action(action="activate_model", target=f"model:{model_id}", result="success")
+    return ToolResult(
+        f"Activated model #{model_id} for motion analysis.", {"ok": True, "model": model}
+    )
+
+
+async def _deactivate_model(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    await ctx.client.deactivate_model()
+    ctx.record_action(action="deactivate_model", target="model", result="success")
+    return ToolResult("Deactivated trained model; using the default analyzer (Ollama).",
+                      {"ok": True})
+
+
+async def _delete_model(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    _require_confirm(args, ctx.config.require_confirm_for_writes)
+    model_id = int(args["model_id"])
+    await ctx.client.delete_model(model_id)
+    ctx.record_action(action="delete_model", target=f"model:{model_id}", result="success")
+    return ToolResult(f"Deleted model #{model_id}.", {"ok": True, "model_id": model_id})
+
+
+# --------------------------------------------------------------------------
+# training runs
+# --------------------------------------------------------------------------
+async def _start_training_run(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    _require_confirm(args, ctx.config.require_confirm_for_writes)
+    body: dict[str, Any] = {"dataset_id": int(args["dataset_id"])}
+    for key in ("base_model", "epochs", "image_size"):
+        if args.get(key) is not None:
+            body[key] = args[key]
+    run = await ctx.client.start_run(body)
+    ctx.record_action(
+        action="start_training_run", target=f"dataset:{body['dataset_id']}", result="success",
+        metadata={"run_id": run.get("id"), "base_model": run.get("base_model"),
+                  "epochs": run.get("epochs")},
+    )
+    return ToolResult(
+        f"Started training run #{run.get('id')} on dataset #{body['dataset_id']} "
+        f"({run.get('base_model')}, {run.get('epochs')} epochs).",
+        {"ok": True, "run": run},
+    )
+
+
+async def _list_training_runs(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    runs = await ctx.client.runs()
+    lines = [
+        f"- run #{r.get('id')} dataset #{r.get('dataset_id')}: {r.get('status')} "
+        f"(epoch {r.get('epoch')}/{r.get('epochs')})"
+        for r in runs[:15]
+    ]
+    summary = f"{len(runs)} training run(s):\n" + "\n".join(lines)
+    return ToolResult(summary, {"ok": True, "runs": runs})
+
+
+async def _get_training_run(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    run_id = int(args["run_id"])
+    run = await ctx.client.run(run_id)
+    summary = (
+        f"Run #{run.get('id')}: {run.get('status')} "
+        f"(epoch {run.get('epoch')}/{run.get('epochs')}), metrics {run.get('metrics')}."
+    )
+    return ToolResult(summary, {"ok": True, "run": run})
+
+
+async def _stop_training_run(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    run_id = int(args["run_id"])
+    run = await ctx.client.stop_run(run_id)
+    ctx.record_action(action="stop_training_run", target=f"run:{run_id}", result="success")
+    return ToolResult(f"Stopped training run #{run_id}.", {"ok": True, "run": run})
+
+
+# --------------------------------------------------------------------------
 # incident / workflow tools
 # --------------------------------------------------------------------------
 async def _summarize_fleet_health(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
@@ -768,6 +972,93 @@ def build_tools() -> list[Tool]:
              _obj({"dataset_id": {"type": "integer"}, "confirm": {"type": "boolean"}},
                   ["dataset_id"]),
              _import_events_to_dataset, min_role=TailCamRole.ADMIN, write=True),
+        # ollama model management
+        Tool("list_ollama_models", "List Ollama models",
+             "Models installed in the configured Ollama backend, plus reachability.",
+             _NO_INPUT, _list_ollama_models),
+        Tool("pull_ollama_model", "Pull Ollama model",
+             "Download a model into Ollama (can take minutes). Requires confirm=true.",
+             _obj({"model": {"type": "string"}, "confirm": {"type": "boolean"}}, ["model"]),
+             _pull_ollama_model, min_role=TailCamRole.ADMIN, write=True),
+        Tool("load_ollama_model", "Start Ollama model",
+             "Warm a model into Ollama's memory ('start' it) for fast first inference.",
+             _obj({"model": {"type": "string"}}, ["model"]),
+             _load_ollama_model, min_role=TailCamRole.ADMIN, write=True),
+        # dataset / sample management
+        Tool("create_dataset", "Create dataset",
+             "Create a training dataset (classification or detection).",
+             _obj({"name": {"type": "string"},
+                   "note": {"type": "string"},
+                   "task": {"type": "string", "enum": ["classification", "detection"]}},
+                  ["name"]),
+             _create_dataset, min_role=TailCamRole.ADMIN, write=True),
+        Tool("delete_dataset", "Delete dataset",
+             "Delete a dataset and its samples. Requires confirm=true.",
+             _obj({"dataset_id": {"type": "integer"}, "confirm": {"type": "boolean"}},
+                  ["dataset_id"]),
+             _delete_dataset, min_role=TailCamRole.ADMIN, write=True),
+        Tool("get_dataset", "Get dataset",
+             "One dataset's labels, counts, and task type.",
+             _obj({"dataset_id": {"type": "integer"}}, ["dataset_id"]), _get_dataset),
+        Tool("list_dataset_samples", "List dataset samples",
+             "Samples in a dataset, optionally filtered by label.",
+             _obj({"dataset_id": {"type": "integer"},
+                   "label": {"type": "string"},
+                   "limit": {"type": "integer", "minimum": 1, "maximum": 500},
+                   "offset": {"type": "integer", "minimum": 0}}, ["dataset_id"]),
+             _list_dataset_samples),
+        Tool("relabel_sample", "Relabel sample",
+             "Set or clear a sample's label (pass label=null to clear).",
+             {"type": "object",
+              "properties": {"sample_id": {"type": "integer"},
+                             "label": {"type": ["string", "null"]}},
+              "required": ["sample_id"], "additionalProperties": False},
+             _relabel_sample, min_role=TailCamRole.ADMIN, write=True),
+        Tool("delete_sample", "Delete sample",
+             "Delete one sample from its dataset.",
+             _obj({"sample_id": {"type": "integer"}}, ["sample_id"]),
+             _delete_sample, min_role=TailCamRole.ADMIN, write=True),
+        # model lifecycle
+        Tool("list_models", "List models",
+             "Trained, base, and bring-your-own models with active state.",
+             _NO_INPUT, _list_models),
+        Tool("register_model", "Register model",
+             "Register a bring-your-own model file (.pt) by path.",
+             _obj({"name": {"type": "string"}, "path": {"type": "string"},
+                   "task": {"type": "string", "enum": ["classification", "detection"]}},
+                  ["name", "path"]),
+             _register_model, min_role=TailCamRole.ADMIN, write=True),
+        Tool("activate_model", "Activate model",
+             "Use a trained/BYO model for motion analysis instead of Ollama.",
+             _obj({"model_id": {"type": "integer"}}, ["model_id"]),
+             _activate_model, min_role=TailCamRole.ADMIN, write=True),
+        Tool("deactivate_model", "Deactivate model",
+             "Fall back to the default analyzer (Ollama).",
+             _NO_INPUT, _deactivate_model, min_role=TailCamRole.ADMIN, write=True),
+        Tool("delete_model", "Delete model",
+             "Delete a trained/BYO model. Requires confirm=true.",
+             _obj({"model_id": {"type": "integer"}, "confirm": {"type": "boolean"}},
+                  ["model_id"]),
+             _delete_model, min_role=TailCamRole.ADMIN, write=True),
+        # training runs
+        Tool("start_training_run", "Start training run",
+             "Fine-tune a model on a dataset (needs the training engine). confirm=true.",
+             _obj({"dataset_id": {"type": "integer"},
+                   "base_model": {"type": "string"},
+                   "epochs": {"type": "integer", "minimum": 1},
+                   "image_size": {"type": "integer", "minimum": 32},
+                   "confirm": {"type": "boolean"}}, ["dataset_id"]),
+             _start_training_run, min_role=TailCamRole.ADMIN, write=True),
+        Tool("list_training_runs", "List training runs",
+             "All training runs with status and progress.",
+             _NO_INPUT, _list_training_runs),
+        Tool("get_training_run", "Get training run",
+             "One training run's status, progress, metrics, and log.",
+             _obj({"run_id": {"type": "integer"}}, ["run_id"]), _get_training_run),
+        Tool("stop_training_run", "Stop training run",
+             "Stop a running or queued training run.",
+             _obj({"run_id": {"type": "integer"}}, ["run_id"]),
+             _stop_training_run, min_role=TailCamRole.ADMIN, write=True),
         # incident / workflow
         Tool("summarize_fleet_health", "Summarize fleet health",
              "Prioritized cross-fleet summary of node health, cameras, and issues.",

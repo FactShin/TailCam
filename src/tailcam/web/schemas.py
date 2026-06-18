@@ -102,6 +102,17 @@ class AIUpdate(BaseModel):
     base_url: str | None = None
 
 
+class OllamaModelsInfo(BaseModel):
+    reachable: bool
+    base_url: str = ""
+    active_model: str = ""
+    installed: list[str] = Field(default_factory=list)
+
+
+class AIModelRequest(BaseModel):
+    model: str = Field(min_length=1, max_length=200)
+
+
 class TimelapseStartRequest(BaseModel):
     name: str | None = None
     interval_seconds: float | None = Field(default=None, ge=0.1, le=3600)

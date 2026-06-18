@@ -224,6 +224,127 @@ async def test_capture_snapshot_records_audit(mcp_env):
     assert "mcp.capture_snapshot" in actions
 
 
+# -- granular AI / training control ---------------------------------------
+async def test_dataset_lifecycle_and_audit(mcp_env):
+    app, ctx = mcp_env
+    server, client = _server(app, ADMIN, audit_store=ctx.store)
+    try:
+        created = await _call(server, "tools/call", name="create_dataset",
+                              arguments={"name": "agents", "task": "classification"})
+        ds_id = created["result"]["structuredContent"]["dataset"]["id"]
+        got = await _call(server, "tools/call", name="get_dataset",
+                          arguments={"dataset_id": ds_id})
+        deleted = await _call(server, "tools/call", name="delete_dataset",
+                              arguments={"dataset_id": ds_id, "confirm": True})
+    finally:
+        await client.aclose()
+    assert created["result"]["isError"] is False
+    assert got["result"]["structuredContent"]["dataset"]["id"] == ds_id
+    assert deleted["result"]["structuredContent"]["ok"] is True
+    actions = {r.action for r in AuditLog(ctx.store).list()}
+    assert {"mcp.create_dataset", "mcp.delete_dataset"} <= actions
+
+
+async def test_delete_dataset_requires_confirm(mcp_env):
+    app, ctx = mcp_env
+    server, client = _server(app, ADMIN)
+    try:
+        created = await _call(server, "tools/call", name="create_dataset",
+                              arguments={"name": "x"})
+        ds_id = created["result"]["structuredContent"]["dataset"]["id"]
+        res = await _call(server, "tools/call", name="delete_dataset",
+                          arguments={"dataset_id": ds_id})
+    finally:
+        await client.aclose()
+    assert res["result"]["structuredContent"]["error"]["code"] == errors.CONFIRMATION_REQUIRED
+
+
+async def test_start_training_run_confirm_then_engine_state(mcp_env):
+    app, ctx = mcp_env
+    server, client = _server(app, ADMIN)
+    try:
+        created = await _call(server, "tools/call", name="create_dataset",
+                              arguments={"name": "train"})
+        ds_id = created["result"]["structuredContent"]["dataset"]["id"]
+        no_confirm = await _call(server, "tools/call", name="start_training_run",
+                                 arguments={"dataset_id": ds_id})
+        confirmed = await _call(server, "tools/call", name="start_training_run",
+                                arguments={"dataset_id": ds_id, "confirm": True})
+    finally:
+        await client.aclose()
+    no_confirm_code = no_confirm["result"]["structuredContent"]["error"]["code"]
+    assert no_confirm_code == errors.CONFIRMATION_REQUIRED
+    # Engine isn't installed in CI: a clean normalized error, not a crash.
+    assert confirmed["result"]["isError"] is True
+    assert confirmed["result"]["structuredContent"]["error"]["code"] in (
+        errors.INVALID_RESPONSE, errors.NOT_RUNNING
+    )
+
+
+async def test_training_tools_denied_for_viewer(mcp_env):
+    app, _ = mcp_env
+    server, client = _server(app, VIEWER)
+    try:
+        res = await _call(server, "tools/call", name="create_dataset", arguments={"name": "x"})
+    finally:
+        await client.aclose()
+    assert res["result"]["structuredContent"]["error"]["code"] == errors.ADMIN_REQUIRED
+
+
+async def test_list_ollama_models_when_unreachable(mcp_env):
+    app, _ = mcp_env
+    server, client = _server(app, ADMIN)
+    try:
+        res = await _call(server, "tools/call", name="list_ollama_models", arguments={})
+    finally:
+        await client.aclose()
+    ollama = res["result"]["structuredContent"]["ollama"]
+    assert ollama["reachable"] is False
+    assert ollama["installed"] == []
+
+
+async def test_pull_ollama_model_unreachable_is_peer_error(mcp_env):
+    app, _ = mcp_env
+    server, client = _server(app, ADMIN)
+    try:
+        res = await _call(server, "tools/call", name="pull_ollama_model",
+                          arguments={"model": "moondream", "confirm": True})
+    finally:
+        await client.aclose()
+    assert res["result"]["structuredContent"]["error"]["code"] == errors.PEER_UNREACHABLE
+
+
+async def test_model_lifecycle_tools_present(mcp_env):
+    app, _ = mcp_env
+    server, client = _server(app, ADMIN)
+    try:
+        names = {t["name"] for t in (await _call(server, "tools/list"))["result"]["tools"]}
+    finally:
+        await client.aclose()
+    expected = {
+        "list_ollama_models", "pull_ollama_model", "load_ollama_model",
+        "create_dataset", "delete_dataset", "get_dataset", "list_dataset_samples",
+        "relabel_sample", "delete_sample", "list_models", "register_model",
+        "activate_model", "deactivate_model", "delete_model",
+        "start_training_run", "list_training_runs", "get_training_run", "stop_training_run",
+    }
+    assert expected <= names
+
+
+# -- new REST endpoints ----------------------------------------------------
+def test_rest_ai_models_endpoint(client):
+    resp = client.get("/api/ai/models")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["reachable"] is False
+    assert body["active_model"]
+
+
+def test_rest_ai_pull_unreachable_returns_502(client):
+    resp = client.post("/api/ai/pull", json={"model": "moondream"})
+    assert resp.status_code == 502
+
+
 # -- client error normalization -------------------------------------------
 async def test_client_normalizes_unknown_camera(mcp_env):
     app, _ = mcp_env

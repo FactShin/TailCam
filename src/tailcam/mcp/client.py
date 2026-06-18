@@ -118,6 +118,9 @@ class TailcamClient:
     async def patch(self, path: str, *, json: Any | None = None) -> Any:
         return await self.request("PATCH", path, json=json)
 
+    async def delete(self, path: str) -> Any:
+        return await self.request("DELETE", path)
+
     # -- system / fleet ----------------------------------------------------
     async def system(self) -> dict[str, Any]:
         return await self.get("/api/system")
@@ -221,11 +224,73 @@ class TailcamClient:
     async def update_collection(self, body: dict[str, Any]) -> dict[str, Any]:
         return await self.post("/api/training/collection", json=body)
 
+    async def ollama_models(self) -> dict[str, Any]:
+        return await self.get("/api/ai/models")
+
+    async def pull_ollama_model(self, model: str) -> dict[str, Any]:
+        return await self.post("/api/ai/pull", json={"model": model})
+
+    async def load_ollama_model(self, model: str) -> dict[str, Any]:
+        return await self.post("/api/ai/load", json={"model": model})
+
+    # -- datasets / samples ------------------------------------------------
     async def datasets(self) -> list[dict[str, Any]]:
         return await self.get("/api/datasets")
 
+    async def dataset(self, dataset_id: int) -> dict[str, Any]:
+        return await self.get(f"/api/datasets/{int(dataset_id)}")
+
+    async def create_dataset(self, body: dict[str, Any]) -> dict[str, Any]:
+        return await self.post("/api/datasets", json=body)
+
+    async def delete_dataset(self, dataset_id: int) -> dict[str, Any]:
+        return await self.delete(f"/api/datasets/{int(dataset_id)}")
+
     async def import_events(self, dataset_id: int) -> dict[str, Any]:
         return await self.post(f"/api/datasets/{int(dataset_id)}/import-events")
+
+    async def dataset_samples(
+        self, dataset_id: int, *, label: str | None = None, limit: int = 200, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        return await self.get(
+            f"/api/datasets/{int(dataset_id)}/samples",
+            params={"label": label, "limit": limit, "offset": offset},
+        )
+
+    async def relabel_sample(self, sample_id: int, label: str | None) -> dict[str, Any]:
+        return await self.patch(f"/api/samples/{int(sample_id)}", json={"label": label})
+
+    async def delete_sample(self, sample_id: int) -> dict[str, Any]:
+        return await self.delete(f"/api/samples/{int(sample_id)}")
+
+    # -- models ------------------------------------------------------------
+    async def models(self) -> list[dict[str, Any]]:
+        return await self.get("/api/models")
+
+    async def register_model(self, body: dict[str, Any]) -> dict[str, Any]:
+        return await self.post("/api/models", json=body)
+
+    async def activate_model(self, model_id: int) -> dict[str, Any]:
+        return await self.post(f"/api/models/{int(model_id)}/activate")
+
+    async def deactivate_model(self) -> dict[str, Any]:
+        return await self.post("/api/models/deactivate")
+
+    async def delete_model(self, model_id: int) -> dict[str, Any]:
+        return await self.delete(f"/api/models/{int(model_id)}")
+
+    # -- training runs -----------------------------------------------------
+    async def start_run(self, body: dict[str, Any]) -> dict[str, Any]:
+        return await self.post("/api/training/runs", json=body)
+
+    async def runs(self) -> list[dict[str, Any]]:
+        return await self.get("/api/training/runs")
+
+    async def run(self, run_id: int) -> dict[str, Any]:
+        return await self.get(f"/api/training/runs/{int(run_id)}")
+
+    async def stop_run(self, run_id: int) -> dict[str, Any]:
+        return await self.post(f"/api/training/runs/{int(run_id)}/stop")
 
 
 def _clean(params: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -241,14 +306,26 @@ def _status_error(response: httpx.Response, path: str) -> TailcamMcpError:
         code = errors.ADMIN_REQUIRED if "admin" in detail.lower() else errors.UNAUTHORIZED
         return TailcamMcpError(code, detail or "not authorized", status_code=status)
     if status == 404:
-        code = errors.NODE_UNKNOWN if "/nodes/" in path else errors.CAMERA_UNKNOWN
+        if "/nodes/" in path:
+            code = errors.NODE_UNKNOWN
+        elif "/cameras/" in path:
+            code = errors.CAMERA_UNKNOWN
+        else:
+            code = errors.INVALID_REQUEST
         return TailcamMcpError(code, detail or "not found", status_code=status)
-    if status in (502, 503, 504):
+    if status in (502, 504):
         return TailcamMcpError(
             errors.PEER_UNREACHABLE,
-            detail or "upstream node unreachable",
+            detail or "upstream unreachable",
             status_code=status,
             retryable=True,
+        )
+    if status == 503:
+        return TailcamMcpError(
+            errors.INVALID_RESPONSE,
+            detail or "service unavailable",
+            status_code=status,
+            retryable=False,
         )
     return TailcamMcpError(
         errors.INVALID_RESPONSE,

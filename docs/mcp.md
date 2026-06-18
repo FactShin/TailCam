@@ -64,20 +64,61 @@ it on demand.
 
 ### Tools
 
-Read tools (`get_system_status`, `list_fleet_nodes`, `get_node_health`,
+**Read** (`get_system_status`, `list_fleet_nodes`, `get_node_health`,
 `list_cameras`, `inspect_camera`, `list_recent_events`, `list_recent_media`,
-`get_ai_status`, `get_audit_log`), camera actions (`capture_snapshot`,
-`start_recording`, `stop_recording`, `set_motion_detection`,
-`update_camera_settings`, `restart_camera`), node/fleet actions (`reload_node`,
-`reload_fleet_nodes`, `check_fleet_version_drift`, `prepare_fleet_admin_plan`),
-AI/training tools (`set_ai_config`, `test_ai_connection`,
-`set_training_collection`, `list_training_datasets`, `import_events_to_dataset`),
-and higher-level workflows (`summarize_fleet_health`, `find_offline_cameras`,
+`get_ai_status`, `get_audit_log`).
+
+**Camera actions** (`capture_snapshot`, `start_recording`, `stop_recording`,
+`set_motion_detection`, `update_camera_settings`, `restart_camera`).
+
+**Node/fleet actions** (`reload_node`, `reload_fleet_nodes`,
+`check_fleet_version_drift`, `prepare_fleet_admin_plan`).
+
+**AI & Ollama** — high-level (`set_ai_config`, `test_ai_connection`,
+`get_ai_status`) plus granular model control:
+
+- `list_ollama_models` — what's installed in the configured Ollama, and reachability.
+- `pull_ollama_model` — download a model into Ollama (`confirm=true`; can take minutes).
+- `load_ollama_model` — warm/"start" a model into Ollama's memory for fast first inference.
+- `set_ai_config` — enable analysis and pick the model/base URL (`confirm=true`).
+
+**Training & datasets** — configure and drive training sessions end to end:
+
+- `set_training_collection` — auto-collect frames from cameras into a dataset.
+- `create_dataset` / `get_dataset` / `delete_dataset` / `list_dataset_samples`.
+- `import_events_to_dataset`, `relabel_sample`, `delete_sample`.
+- `start_training_run` (`confirm=true`), `list_training_runs`, `get_training_run`,
+  `stop_training_run`.
+
+**Models** (`list_models`, `register_model`, `activate_model`,
+`deactivate_model`, `delete_model`).
+
+**Workflows** (`summarize_fleet_health`, `find_offline_cameras`,
 `investigate_motion_event`, `prepare_incident_report`,
 `suggest_retention_cleanup`).
 
 Tools are filtered by the caller's role: viewers see read tools, operators add
-camera actions, admins see everything.
+camera actions, admins see everything (including all AI/training/model control).
+
+### Example: spin up local AI from an agent
+
+A typical "get AI running" flow an agent can drive entirely over MCP:
+
+1. `list_ollama_models` — check reachability and what's already installed.
+2. `pull_ollama_model { "model": "moondream", "confirm": true }` — download it.
+3. `load_ollama_model { "model": "moondream" }` — warm it into memory.
+4. `set_ai_config { "enabled": true, "model": "moondream", "confirm": true }`.
+5. `test_ai_connection` — confirm reachable + model present.
+
+### Example: configure a training session
+
+1. `create_dataset { "name": "front-door", "task": "detection" }`.
+2. `set_training_collection { "enabled": true, "active_dataset_id": <id> }` (or
+   `import_events_to_dataset`).
+3. `start_training_run { "dataset_id": <id>, "epochs": 30, "confirm": true }`.
+4. `get_training_run { "run_id": <id> }` to poll status/metrics; `stop_training_run`
+   to cancel.
+5. `activate_model { "model_id": <id> }` once the run completes.
 
 ### Resources
 
