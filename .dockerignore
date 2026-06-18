@@ -1,0 +1,23 @@
+# Build context hygiene for the TailCam image.
+.git
+.github
+**/__pycache__/
+**/*.pyc
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Node — the web UI is rebuilt inside the image's web stage.
+web-ui/node_modules/
+
+# Tooling caches and tests aren't needed in the image.
+tests/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Repo-level docs sources (the in-app wiki markdown lives under web-ui/ and is
+# bundled by the web build, so it is NOT excluded here).
+docs/
