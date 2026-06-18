@@ -77,6 +77,33 @@ python3 -m venv .venv && .venv/bin/pip install git+https://github.com/factshin/t
 tailcam run
 ```
 
+## Docker
+
+Run TailCam fully isolated in a container. The image bundles TailCam, the
+dashboard, Tailscale, and the OpenCV/ffmpeg libraries.
+
+```bash
+# local-only — reach it on the host at http://localhost:8088/
+docker compose up -d
+
+# or join your tailnet and serve over Tailscale
+TS_AUTHKEY=tskey-auth-xxxx docker compose up -d
+```
+
+With `TS_AUTHKEY` set, the container starts `tailscaled`, joins your tailnet as
+`tailcam`, and serves at `https://tailcam.<tailnet>.ts.net:8443/` — the same
+experience as a native install, plus full verified-admin access. Without it,
+TailCam runs local-only on the published port.
+
+Pass a webcam with `--device /dev/video0:/dev/video0` (**Linux hosts only** —
+Docker Desktop on macOS/Windows can't see host USB cameras; use a native install
+there, or `TAILCAM_SYNTHETIC=1` to test). Data, config, and Tailscale identity
+persist in named volumes. Build directly with `docker build -t tailcam .`.
+
+Full details — networking modes, persistence, env vars, and troubleshooting — are
+in the in-app **Docs → Running in Docker** page and [`docs/docker.md`](#) (also
+served at `/docs/docker`).
+
 ## Usage
 
 | Command | Description |

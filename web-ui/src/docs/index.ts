@@ -3,6 +3,7 @@
 
 import overview from "./md/overview.md?raw";
 import installation from "./md/installation.md?raw";
+import docker from "./md/docker.md?raw";
 import quickstart from "./md/quickstart.md?raw";
 import cameras from "./md/cameras.md?raw";
 import motion from "./md/motion-detection.md?raw";
@@ -36,6 +37,8 @@ export const DOCS: DocPage[] = [
     summary: "What TailCam is and where to go next." },
   { slug: "installation", title: "Installation", group: "Getting started", body: installation,
     summary: "Install TailCam, optional extras, and Tailscale." },
+  { slug: "docker", title: "Running in Docker", group: "Getting started", body: docker,
+    summary: "Run TailCam isolated in a container, with Tailscale." },
   { slug: "quickstart", title: "Quick start", group: "Getting started", body: quickstart,
     summary: "From install to a live, remotely-viewable camera." },
 
