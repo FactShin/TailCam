@@ -1,0 +1,35 @@
+# TailCam in Docker. See docs/docker.md (or the in-app Docs → "Docker" page).
+#
+#   docker compose up -d
+#
+# Set TS_AUTHKEY (a Tailscale auth key) to join your tailnet and serve over
+# Tailscale; omit it to run local-only on the published port. Pass a webcam with
+# the `devices` entry (Linux hosts only).
+
+services:
+  tailcam:
+    build: .
+    # Or use a published image instead of building:
+    # image: ghcr.io/factshin/tailcam:latest
+    container_name: tailcam
+    restart: unless-stopped
+    ports:
+      - "8088:8088"            # local/LAN access; tailnet access goes via Tailscale
+    environment:
+      TS_AUTHKEY: "${TS_AUTHKEY:-}"   # Tailscale auth key (omit for local-only)
+      TS_HOSTNAME: "tailcam"          # tailnet node name
+      # TS_EXTRA_ARGS: "--advertise-tags=tag:tailcam"
+    volumes:
+      - tailcam-data:/data            # database + recordings/snapshots/timelapse
+      - tailcam-config:/config        # config.toml
+      - tailcam-tsstate:/var/lib/tailscale  # Tailscale node identity (persist it!)
+    devices:
+      - "/dev/video0:/dev/video0"     # a USB webcam (Linux hosts only; add more as needed)
+      - "/dev/net/tun:/dev/net/tun"   # kernel networking for Tailscale (else userspace)
+    cap_add:
+      - NET_ADMIN                     # required for Tailscale kernel networking
+
+volumes:
+  tailcam-data:
+  tailcam-config:
+  tailcam-tsstate:

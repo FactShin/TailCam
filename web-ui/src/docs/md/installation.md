@@ -3,6 +3,9 @@
 TailCam runs on Linux, macOS, and Windows. It needs Python 3.10+ and a webcam
 (or the built-in synthetic camera for testing).
 
+> Prefer containers? TailCam has a dedicated Docker image that bundles Tailscale
+> and all media libraries — see [Running in Docker](docker).
+
 ## Install
 
 TailCam is distributed as a Python package. Install it with `pip` (a virtual
