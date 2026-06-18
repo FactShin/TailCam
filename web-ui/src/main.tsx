@@ -7,6 +7,7 @@ import { AppShell } from "./app/AppShell";
 import { ToastProvider } from "./components/toast";
 import { CameraDetail } from "./screens/CameraDetail";
 import { Dashboard } from "./screens/Dashboard";
+import { Docs } from "./screens/Docs";
 import { Events } from "./screens/Events";
 import { Gallery } from "./screens/Gallery";
 import { Models } from "./screens/Models";
@@ -36,6 +37,8 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/training" element={<Training />} />
               <Route path="/models" element={<Models />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/docs" element={<Docs />} />
+              <Route path="/docs/:slug" element={<Docs />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </AppShell>

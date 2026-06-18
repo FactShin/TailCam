@@ -1,0 +1,88 @@
+# Troubleshooting
+
+Start with the built-in diagnostics:
+
+```bash
+tailcam doctor
+```
+
+It reports resolved paths, detected cameras, Tailscale state, and common
+problems. `tailcam status` shows cameras, peers, and access URLs.
+
+## No cameras found
+
+- Click **Refresh** on the Cameras screen or run `tailcam cameras`.
+- **Linux:** ensure your user can access `/dev/video*` (often the `video` group).
+- **macOS:** grant camera permission to your terminal/Python in System Settings →
+  Privacy & Security → Camera.
+- **Windows:** allow desktop apps to access the camera in Privacy settings.
+- No hardware? Test with `TAILCAM_SYNTHETIC=1 tailcam run`.
+- Phantom devices hidden earlier? Use **Restore hidden**. See [Cameras](cameras).
+
+## A camera is "offline" or "degraded"
+
+- Another app may be holding the device — close it.
+- Use **Restart** on the camera (`POST /api/cameras/{id}/restart`).
+- Check `last_error` on the camera (shown in detail view / `GET /api/cameras/{id}`).
+
+## "Port already in use"
+
+TailCam is probably already running as the background service. Check with
+`tailcam doctor`, or run on a different port: `tailcam run --port <n>`. See the
+[CLI reference](cli).
+
+## Can't reach TailCam from another device
+
+- Confirm Tailscale is up on **both** devices: `tailscale status`.
+- Confirm serving: `tailcam tailscale status` and check the access URL in
+  **Settings** or `tailcam status`.
+- Remember the [two ports](tailscale): the tailnet HTTPS port (8443 default) is
+  not the local bind port (8088).
+- If you ran `tailcam run --no-tailscale`, it isn't being served — restart without
+  that flag.
+
+## AI labels not appearing
+
+- Is `[ai] enabled` true? Check `GET /api/ai` — is Ollama `reachable` and the
+  `model_present`?
+- Pull the model: `ollama pull moondream` (or use the MCP `pull_ollama_model`).
+- Remember AI only runs on **motion events** — enable [motion
+  detection](motion-detection) first.
+- Cross-host Ollama? Make sure `base_url` points at a reachable tailnet host. See
+  [AI analysis](ai-analysis).
+
+## Training page is empty / "engine not installed"
+
+The training engine (Ultralytics/PyTorch) isn't installed. Install it to enable
+[Training](training). `start_training_run` returns a clear error until then.
+
+## Timelapse smoothing looks wrong or fails
+
+- The default `ffmpeg` engine works everywhere. If you selected `rife` without
+  `rife-ncnn-vulkan` installed, TailCam **falls back to ffmpeg** automatically.
+- Check available engines: `GET /api/postprocess`. See [Timelapse](timelapse).
+
+## A peer node isn't showing up
+
+- Both nodes must be on the same tailnet and online.
+- Give discovery a moment (peers are cached and refreshed periodically).
+- Pin it explicitly via `peers.static` or `TAILCAM_PEERS`. See [Fleet](fleet).
+
+## An agent can't connect (MCP)
+
+- Local: is a node running, and is `TAILCAM_URL` correct? Try `tailcam mcp stdio`
+  manually.
+- Remote: is `mcp.http_enabled` true, and are you hitting the Tailscale URL with a
+  verified identity? Unverified callers get 401. See [MCP security](mcp-security).
+- Admin tools denied? The caller's tailnet role isn't `admin`. See
+  [Security](security).
+
+## Config got into a bad state
+
+A malformed config is backed up to `*.bad` and defaults are used. Fix it and
+`tailcam restart`, or reset with `tailcam config --reset`.
+
+## Still stuck?
+
+Capture `tailcam doctor` output and the server logs (in the data directory). See
+the [FAQ](faq) for common questions.

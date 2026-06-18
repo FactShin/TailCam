@@ -7,6 +7,7 @@ import { CommandPalette } from "../components/CommandPalette";
 import { VideoWall } from "../components/VideoWall";
 import { fmtBytes } from "../lib/format";
 import {
+  IconBook,
   IconBrain,
   IconChevL,
   IconChevR,
@@ -30,6 +31,7 @@ const NAV: { to: string; label: string; icon: (p: IconProps) => JSX.Element; key
   { to: "/training", label: "Training", icon: IconBrain, key: "5" },
   { to: "/models", label: "Models", icon: IconChip, key: "6" },
   { to: "/settings", label: "Settings", icon: IconSettings, key: "7" },
+  { to: "/docs", label: "Docs", icon: IconBook, key: "8" },
 ];
 
 const isActive = (path: string, to: string) =>
