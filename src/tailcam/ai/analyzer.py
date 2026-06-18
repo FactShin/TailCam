@@ -22,6 +22,9 @@ log = get_logger(__name__)
 
 _VALID_LABELS = {"person", "animal", "vehicle", "package", "plant", "nothing"}
 
+# Model downloads can be large; allow a generous blocking window for /api/pull.
+_PULL_TIMEOUT = 1800.0
+
 
 @dataclass
 class Analysis:
@@ -115,3 +118,45 @@ class OllamaAnalyzer:
             return (True, want if present else None)
         except (httpx.HTTPError, ValueError):
             return (False, None)
+
+    def installed_models(self) -> tuple[bool, list[str]]:
+        """(reachable, installed model names). Independent of the enabled flag so
+        an agent can inspect Ollama before turning analysis on. Never raises."""
+        try:
+            r = httpx.get(f"{self.config.base_url.rstrip('/')}/api/tags", timeout=4.0)
+            r.raise_for_status()
+            names = [m.get("name", "") for m in r.json().get("models", []) if m.get("name")]
+            return (True, sorted(names))
+        except (httpx.HTTPError, ValueError):
+            return (False, [])
+
+    def pull(self, model: str) -> tuple[bool, str]:
+        """Download a model into Ollama (blocking; can take minutes). Returns
+        (ok, status_or_error). Run from a worker thread."""
+        try:
+            r = httpx.post(
+                f"{self.config.base_url.rstrip('/')}/api/pull",
+                json={"model": model, "stream": False},
+                timeout=_PULL_TIMEOUT,
+            )
+            r.raise_for_status()
+            status = str(r.json().get("status", "")) if r.content else ""
+            return (True, status or "success")
+        except (httpx.HTTPError, ValueError) as exc:
+            log.debug("Ollama pull failed: %s", exc)
+            return (False, str(exc))
+
+    def load(self, model: str) -> bool:
+        """Warm a model into memory ('start' it) via an empty generate. Run from a
+        worker thread. Returns False if Ollama is unreachable or the model absent."""
+        try:
+            r = httpx.post(
+                f"{self.config.base_url.rstrip('/')}/api/generate",
+                json={"model": model, "prompt": "", "stream": False, "keep_alive": "10m"},
+                timeout=60.0,
+            )
+            r.raise_for_status()
+            return True
+        except (httpx.HTTPError, ValueError) as exc:
+            log.debug("Ollama load failed: %s", exc)
+            return False
