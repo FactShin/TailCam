@@ -13,6 +13,7 @@ from tailcam.web.context import AppContext
 from tailcam.web.deps import get_context
 from tailcam.web.schemas import (
     AIInfo,
+    AIModelRequest,
     AIUpdate,
     AnnotationBox,
     CameraInfo,
@@ -30,6 +31,7 @@ from tailcam.web.schemas import (
     ModelRegister,
     MotionEventInfo,
     OkResponse,
+    OllamaModelsInfo,
     PostprocessInfo,
     PostprocessSettings,
     SampleAnnotations,
@@ -938,6 +940,50 @@ async def update_ai(update: AIUpdate, ctx: AppContext = Depends(get_context)) ->
     if update.base_url is not None and update.base_url.strip():
         ai.base_url = update.base_url.strip().rstrip("/")
     ctx.config.save()
+    return await _ai_info(ctx)
+
+
+async def _ollama_models_info(ctx: AppContext) -> OllamaModelsInfo:
+    import anyio
+
+    reachable, installed = await anyio.to_thread.run_sync(ctx.analyzer.installed_models)
+    return OllamaModelsInfo(
+        reachable=reachable,
+        base_url=ctx.config.ai.base_url,
+        active_model=ctx.config.ai.model,
+        installed=installed,
+    )
+
+
+@router.get("/ai/models", response_model=OllamaModelsInfo)
+async def ai_models(ctx: AppContext = Depends(get_context)) -> OllamaModelsInfo:
+    """List models installed in the configured Ollama backend."""
+    return await _ollama_models_info(ctx)
+
+
+@router.post("/ai/pull", response_model=OllamaModelsInfo)
+async def ai_pull(
+    body: AIModelRequest, ctx: AppContext = Depends(get_context)
+) -> OllamaModelsInfo:
+    """Download a model into Ollama (can take minutes for large models)."""
+    import anyio
+
+    ok, status = await anyio.to_thread.run_sync(ctx.analyzer.pull, body.model)
+    if not ok:
+        raise HTTPException(status_code=502, detail=f"ollama pull failed: {status}")
+    return await _ollama_models_info(ctx)
+
+
+@router.post("/ai/load", response_model=AIInfo)
+async def ai_load(body: AIModelRequest, ctx: AppContext = Depends(get_context)) -> AIInfo:
+    """Warm a model into Ollama's memory ('start' it) for fast first inference."""
+    import anyio
+
+    ok = await anyio.to_thread.run_sync(ctx.analyzer.load, body.model)
+    if not ok:
+        raise HTTPException(
+            status_code=502, detail="ollama load failed (model present and reachable?)"
+        )
     return await _ai_info(ctx)
 
 

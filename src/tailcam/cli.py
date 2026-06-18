@@ -21,6 +21,8 @@ app = typer.Typer(
 )
 tailscale_app = typer.Typer(help="Tailscale integration commands.", no_args_is_help=True)
 app.add_typer(tailscale_app, name="tailscale")
+mcp_app = typer.Typer(help="Model Context Protocol server for agents.", no_args_is_help=True)
+app.add_typer(mcp_app, name="mcp")
 
 console = Console()
 
@@ -516,6 +518,24 @@ def migrate() -> None:
     for line in actions:
         typer.echo(line)
     typer.echo(f"Migrated {len(actions)} item(s) from AnyCam to TailCam.")
+
+
+@mcp_app.command("stdio")
+def mcp_stdio() -> None:
+    """Run the TailCam MCP server over stdio (for Codex, Claude Desktop, Hermes).
+
+    Connects to a running TailCam node at $TAILCAM_URL (default
+    http://127.0.0.1:8088) and speaks MCP on stdin/stdout. Add this to your MCP
+    client config as command "tailcam", args ["mcp", "stdio"].
+    """
+    setup_logging()
+    config = AppConfig.load()
+    if not config.mcp.enabled:
+        typer.echo("MCP is disabled in config ([mcp] enabled = false).", err=True)
+        raise typer.Exit(code=1)
+    from tailcam.mcp.transport_stdio import run_stdio
+
+    run_stdio(config)
 
 
 @app.command()
