@@ -65,6 +65,9 @@ export const IconCamera = (p: IconProps) => (
 export const IconFilm = (p: IconProps) => (
   <Icon {...p}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4" /></Icon>
 );
+export const IconBook = (p: IconProps) => (
+  <Icon {...p}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4H6.5A2.5 2.5 0 0 0 4 6.5z" /><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5" /><path d="M8 8h8M8 11.5h6" /></Icon>
+);
 export const IconSettings = (p: IconProps) => (
   <Icon {...p}><circle cx="12" cy="12" r="3" /><path d="M19.4 13.5a7.8 7.8 0 0 0 0-3l1.7-1.3-1.7-3-2 .8a7.6 7.6 0 0 0-2.6-1.5L14.5 3h-5l-.3 2.3a7.6 7.6 0 0 0-2.6 1.5l-2-.8-1.7 3 1.7 1.3a7.8 7.8 0 0 0 0 3L1.9 14.8l1.7 3 2-.8a7.6 7.6 0 0 0 2.6 1.5L9.5 21h5l.3-2.3a7.6 7.6 0 0 0 2.6-1.5l2 .8 1.7-3z" /></Icon>
 );

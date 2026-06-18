@@ -34,7 +34,15 @@ def create_app(config: AppConfig | None = None, context: AppContext | None = Non
         ctx.shutdown()
         await ctx.aclose()
 
-    app = FastAPI(title="TailCam", lifespan=lifespan)
+    # Relocate FastAPI's interactive API docs off /docs so the in-app wiki can
+    # own that path (the "Docs" nav item). Swagger UI stays available at
+    # /api-docs, ReDoc at /api-redoc, and the schema at /openapi.json.
+    app = FastAPI(
+        title="TailCam",
+        lifespan=lifespan,
+        docs_url="/api-docs",
+        redoc_url="/api-redoc",
+    )
     app.state.ctx = ctx
     app.state.templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
