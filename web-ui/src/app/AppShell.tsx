@@ -14,6 +14,7 @@ import {
   IconChip,
   IconFilm,
   IconGrid,
+  IconMore,
   IconMotion,
   IconSearch,
   IconSettings,
@@ -33,6 +34,11 @@ const NAV: { to: string; label: string; icon: (p: IconProps) => JSX.Element; key
   { to: "/settings", label: "Settings", icon: IconSettings, key: "7" },
   { to: "/docs", label: "Docs", icon: IconBook, key: "8" },
 ];
+
+// Mobile bottom bar shows the primary destinations; the rest live in a "More"
+// sheet so the bar stays uncluttered and evenly spaced.
+const PRIMARY_NAV = NAV.slice(0, 4);
+const OVERFLOW_NAV = NAV.slice(4);
 
 const isActive = (path: string, to: string) =>
   to === "/" ? path === "/" || path.startsWith("/camera/") : path.startsWith(to);
@@ -131,6 +137,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const sys = useSystem().data;
   const [palOpen, setPalOpen] = useState(false);
   const [wallOpen, setWallOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem("tailcam.nav") === "collapsed"; } catch { return false; }
   });
@@ -239,16 +246,58 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
 
       <nav className="tabbar" aria-label="Primary">
-        {NAV.map((n) => {
+        {PRIMARY_NAV.map((n) => {
           const Ic = n.icon;
           const active = isActive(path, n.to);
           return (
             <button key={n.to} className={`tab ${active ? "is-on" : ""}`} onClick={() => navigate(n.to)} aria-current={active ? "page" : undefined}>
-              <Ic size={20} /><span>{n.label}</span>
+              <span className="tab-ico"><Ic size={21} /></span><span>{n.label}</span>
             </button>
           );
         })}
+        <button
+          className={`tab ${OVERFLOW_NAV.some((n) => isActive(path, n.to)) ? "is-on" : ""}`}
+          onClick={() => setMoreOpen(true)}
+          aria-haspopup="dialog"
+          aria-expanded={moreOpen}
+        >
+          <span className="tab-ico"><IconMore size={21} /></span><span>More</span>
+        </button>
       </nav>
+
+        {moreOpen && (
+          <div className="sheet-root" role="dialog" aria-label="More navigation" onClick={() => setMoreOpen(false)}>
+            <div className="sheet-backdrop" />
+            <div className="sheet" onClick={(e) => e.stopPropagation()}>
+              <div className="sheet-grab" />
+              <div className="sheet-title">More</div>
+              <div className="sheet-grid">
+                {OVERFLOW_NAV.map((n) => {
+                  const Ic = n.icon;
+                  const active = isActive(path, n.to);
+                  return (
+                    <button
+                      key={n.to}
+                      className={`sheet-link ${active ? "is-on" : ""}`}
+                      onClick={() => { navigate(n.to); setMoreOpen(false); }}
+                    >
+                      <Ic size={21} /><span>{n.label}</span>
+                    </button>
+                  );
+                })}
+                <button className="sheet-link" onClick={() => { setWallOpen(true); setMoreOpen(false); }}>
+                  <IconWall size={21} /><span>Video wall</span>
+                </button>
+              </div>
+              <div className="sheet-foot">
+                <span className={`led ${sys?.tailscale_running ? "ok" : "err"}`} />
+                <span>{sys?.host ?? "—"}</span>
+                <span className="grow" />
+                <span>TailCam v{sys?.version ?? "—"}</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         <CommandPalette open={palOpen} onClose={() => setPalOpen(false)} onOpenWall={() => setWallOpen(true)} />
         {wallOpen && <VideoWall onClose={() => setWallOpen(false)} />}
