@@ -155,21 +155,27 @@ button { font-family: inherit; color: inherit; cursor: pointer; }
 .tele-hide-sm { display: none !important; }
 @container appframe (min-width: 700px) { .tele-hide-sm { display: flex !important; } }
 
-/* bottom tab bar (mobile) */
+/* bottom tab bar (mobile) — 4 primary destinations + More, evenly spaced */
 .tabbar {
-  display: flex; border-top: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg1) 94%, transparent);
-  backdrop-filter: blur(12px);
-  padding: 5px 6px calc(5px + env(safe-area-inset-bottom)); z-index: 6;
+  display: flex; gap: 2px; border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg1) 92%, transparent);
+  backdrop-filter: blur(16px);
+  padding: 7px 8px calc(7px + env(safe-area-inset-bottom)); z-index: 6;
 }
 .tab {
-  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
-  background: none; border: 0; padding: 7px 2px; min-height: 50px; color: var(--faint);
-  font-family: var(--mono); font-size: 8.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
-  border-radius: var(--r-sm); transition: color 0.15s;
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  background: none; border: 0; padding: 4px 2px; min-height: 54px; color: var(--faint);
+  font-family: var(--mono); font-size: 9px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  border-radius: 14px; transition: color 0.18s;
 }
+.tab .tab-ico {
+  display: grid; place-items: center; width: 46px; height: 28px; border-radius: 10px;
+  transition: background 0.18s, transform 0.18s;
+}
+.tab:active .tab-ico { transform: scale(0.92); }
 .tab.is-on { color: var(--accent); }
-.tab.is-on svg { filter: drop-shadow(0 0 7px var(--accent-glow)); }
+.tab.is-on .tab-ico { background: var(--accent-soft); }
+.tab.is-on svg { filter: drop-shadow(0 0 6px var(--accent-glow)); }
 
 .side-foot, .collapse-btn { display: none; }
 
@@ -238,6 +244,7 @@ button { font-family: inherit; color: inherit; cursor: pointer; }
 
   .brand-mobile { display: none; }
   .tabbar { display: none; }
+  .sheet-root { display: none; }
   .topbar { padding: 0 var(--pad); }
 }
 
@@ -656,10 +663,13 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .event-desc { margin-top: 3px; font-size: 12.5px; color: var(--muted); }
 
 /* ===== settings ===== */
-.settings-grid { display: grid; gap: var(--gap); grid-template-columns: 1fr; }
+.settings-grid { display: grid; gap: var(--gap); grid-template-columns: 1fr; align-items: start; }
 @container appframe (min-width: 760px) { .settings-grid { grid-template-columns: 1fr 1fr; } .panel-help { grid-column: 1 / -1; } }
-.panel { background: var(--bg1); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; box-shadow: var(--card-shadow); }
-.panel-title { display: flex; align-items: center; gap: 9px; font-weight: 650; font-size: 14.5px; margin-bottom: 12px; white-space: nowrap; }
+.panel { background: var(--bg1); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; box-shadow: var(--card-shadow); }
+.panel-title { display: flex; align-items: center; gap: 9px; font-weight: 650; font-size: 14.5px; margin-bottom: 14px; white-space: nowrap; }
+/* Even, consistent spacing for screens that stack panels directly. */
+.screen > .panel { margin-bottom: var(--gap); }
+.screen > .panel:last-child { margin-bottom: 0; }
 .panel-title svg { color: var(--accent); }
 .kv { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--hair); }
 .kv:first-of-type { border-top: 0; }
@@ -815,10 +825,31 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .run-bar-fill { display: block; height: 100%; background: var(--accent-grad); transition: width 0.4s var(--ease); }
 .run-meta { color: var(--muted); font-size: 11px; }
 
-/* 7 nav items — let the mobile tab bar scroll rather than crush labels. */
-.tabbar { overflow-x: auto; scrollbar-width: none; }
-.tabbar::-webkit-scrollbar { display: none; }
-.tabbar .tab { flex: 1 0 auto; min-width: 56px; }
+/* ===== mobile "More" sheet ===== */
+.sheet-root { position: absolute; inset: 0; z-index: 40; display: flex; align-items: flex-end; }
+.sheet-backdrop { position: absolute; inset: 0; background: rgba(3, 4, 12, 0.62); backdrop-filter: blur(3px); animation: sheetFade 0.2s ease; }
+@keyframes sheetFade { from { opacity: 0; } }
+.sheet {
+  position: relative; z-index: 2; width: 100%;
+  background: var(--bg1); border-top: 1px solid var(--border-2);
+  border-radius: 22px 22px 0 0; padding: 10px 16px calc(18px + env(safe-area-inset-bottom));
+  box-shadow: 0 -22px 55px rgba(3, 4, 12, 0.55); animation: sheetUp 0.26s var(--ease) both;
+}
+@keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.sheet-grab { width: 38px; height: 4px; border-radius: 4px; background: var(--border-2); margin: 4px auto 14px; }
+.sheet-title { font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); margin: 0 4px 12px; }
+.sheet-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
+.sheet-link {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 16px; padding: 18px 8px;
+  color: var(--muted); font-size: 12px; font-weight: 600; min-height: 82px;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.12s;
+}
+.sheet-link:hover { background: var(--bg3); color: var(--text); }
+.sheet-link:active { transform: scale(0.97); }
+.sheet-link.is-on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); background: var(--accent-soft); }
+.sheet-foot { display: flex; align-items: center; gap: 8px; margin-top: 16px; padding-top: 13px; border-top: 1px solid var(--hair); font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.sheet-foot .grow { flex: 1; }
 
 /* ===== toasts ===== */
 .toast-wrap { position: absolute; left: 0; right: 0; bottom: 16px; display: flex; flex-direction: column; align-items: center; gap: 8px; z-index: 60; pointer-events: none; padding: 0 14px; }
