@@ -4,6 +4,35 @@ TailCam ships a container image so you can run it fully isolated — no Python
 environment to manage on the host. The image bundles TailCam, the web dashboard,
 [Tailscale](tailscale), and the OpenCV/ffmpeg runtime libraries.
 
+## One-line install
+
+The fastest path on a Linux host with Docker. It pulls the prebuilt image and
+starts a container with persistent volumes:
+
+```bash
+# local-only (open http://localhost:8088/)
+curl -fsSL https://raw.githubusercontent.com/factshin/tailcam/main/install-docker.sh | bash
+
+# join your tailnet and serve over Tailscale
+curl -fsSL https://raw.githubusercontent.com/factshin/tailcam/main/install-docker.sh | bash -s -- --authkey tskey-auth-xxxx
+```
+
+Flags: `--authkey KEY`, `--hostname NAME`, `--port N`, `--device /dev/videoN`
+(repeatable), `--image REF`, `--name NAME`, `--no-tailscale`. The script
+auto-detects `/dev/video0`, replaces any existing container, and keeps your data
+in named volumes.
+
+## Prebuilt image
+
+Images are published to the GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/factshin/tailcam:latest
+```
+
+Tags: `latest` (newest `main`), `X.Y.Z` / `X.Y` (releases), and `sha-<short>`.
+Images are multi-arch — `linux/amd64` and `linux/arm64` (Raspberry Pi).
+
 ## Quick start (Docker Compose)
 
 From a checkout of the repo:

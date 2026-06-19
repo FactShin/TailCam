@@ -82,6 +82,24 @@ tailcam run
 Run TailCam fully isolated in a container. The image bundles TailCam, the
 dashboard, Tailscale, and the OpenCV/ffmpeg libraries.
 
+**One-liner** (Linux host with Docker) — pulls the prebuilt image and runs it:
+
+```bash
+# local-only (open http://localhost:8088/)
+curl -fsSL https://raw.githubusercontent.com/factshin/tailcam/main/install-docker.sh | bash
+
+# join your tailnet and serve over Tailscale
+curl -fsSL https://raw.githubusercontent.com/factshin/tailcam/main/install-docker.sh | bash -s -- --authkey tskey-auth-xxxx
+```
+
+**Prebuilt image** (multi-arch — amd64 + arm64/Raspberry Pi):
+
+```bash
+docker pull ghcr.io/factshin/tailcam:latest
+```
+
+**Docker Compose** (from a repo checkout):
+
 ```bash
 # local-only — reach it on the host at http://localhost:8088/
 docker compose up -d
