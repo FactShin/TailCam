@@ -14,6 +14,7 @@ from tailcam.web.deps import get_context
 from tailcam.web.schemas import (
     AIInfo,
     AIModelRequest,
+    AIPullStatus,
     AIUpdate,
     AnnotationBox,
     CameraInfo,
@@ -961,17 +962,32 @@ async def ai_models(ctx: AppContext = Depends(get_context)) -> OllamaModelsInfo:
     return await _ollama_models_info(ctx)
 
 
-@router.post("/ai/pull", response_model=OllamaModelsInfo)
+def _pull_status(state) -> AIPullStatus:
+    return AIPullStatus(
+        model=state.model, active=state.active, status=state.status,
+        completed=state.completed, total=state.total, percent=state.percent,
+        detail=state.detail, error=state.error,
+    )
+
+
+@router.post("/ai/pull", response_model=AIPullStatus)
 async def ai_pull(
     body: AIModelRequest, ctx: AppContext = Depends(get_context)
-) -> OllamaModelsInfo:
-    """Download a model into Ollama (can take minutes for large models)."""
+) -> AIPullStatus:
+    """Start downloading a model into Ollama (runs in the background; poll
+    GET /ai/pull for progress). Large vision models can take several minutes."""
     import anyio
 
-    ok, status = await anyio.to_thread.run_sync(ctx.analyzer.pull, body.model)
-    if not ok:
-        raise HTTPException(status_code=502, detail=f"ollama pull failed: {status}")
-    return await _ollama_models_info(ctx)
+    reachable, _ = await anyio.to_thread.run_sync(ctx.analyzer.installed_models)
+    if not reachable:
+        raise HTTPException(status_code=502, detail="Ollama is not reachable")
+    return _pull_status(ctx.pulls.start(body.model))
+
+
+@router.get("/ai/pull", response_model=AIPullStatus)
+async def ai_pull_status(ctx: AppContext = Depends(get_context)) -> AIPullStatus:
+    """Current model-download progress (for the UI's progress bar)."""
+    return _pull_status(ctx.pulls.status())
 
 
 @router.post("/ai/load", response_model=AIInfo)

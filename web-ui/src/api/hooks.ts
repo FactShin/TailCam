@@ -225,6 +225,40 @@ export function useUpdateAi() {
   });
 }
 
+export function useOllamaModels() {
+  return useQuery({ queryKey: ["ai-models"], queryFn: api.getOllamaModels, refetchInterval: 15_000 });
+}
+
+export function usePullModel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (model: string) => api.pullModel(model),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["ai-pull"] });
+      qc.invalidateQueries({ queryKey: ["ai-models"] });
+    },
+  });
+}
+
+export function usePullProgress() {
+  return useQuery({
+    queryKey: ["ai-pull"],
+    queryFn: api.getPullProgress,
+    // Poll fast while a download is active; stop when idle.
+    refetchInterval: (q) => (q.state.data?.active ? 1000 : false),
+  });
+}
+
+export function useLoadModel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (model: string) => api.loadModel(model),
+    onSuccess: (data) => {
+      qc.setQueryData(["ai"], data);
+    },
+  });
+}
+
 export function useRefreshCameras() {
   const qc = useQueryClient();
   return useMutation({

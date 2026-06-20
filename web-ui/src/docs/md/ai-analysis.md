@@ -5,6 +5,11 @@ TailCam can label motion events with a **local** vision model via
 on a machine you control, on your tailnet. Cheap pixel [motion](motion-detection)
 gates the model, so it's only consulted a frame or two per event.
 
+> **The easiest way to set this up is the in-app AI section.** Open **AI** in the
+> nav: it shows a live setup checklist (with the exact commands), lets you
+> **download a model with one click**, pick which model to use, and enable
+> analysis — without leaving the UI. This page is the deeper reference.
+
 ## How it works
 
 1. Motion produces an event with a representative frame.

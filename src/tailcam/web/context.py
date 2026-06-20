@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 
 from tailcam.ai.analyzer import OllamaAnalyzer
+from tailcam.ai.pull import ModelPuller
 from tailcam.camera.manager import CameraManager
 from tailcam.cluster.service import ClusterService, resolve_local_host
 from tailcam.config import AppConfig
@@ -35,6 +36,7 @@ class AppContext:
         self.gallery = MediaGallery(self.store)
         self.event_log = EventLog(self.store)
         self.analyzer = OllamaAnalyzer(config.ai)
+        self.pulls = ModelPuller(config.ai)
         self.printer_analyzer = PrinterAnalyzer(config.ai)
         self.timelapse_analysis = TimelapseAnalysisQueue(self.store, self.printer_analyzer)
         self.timelapse = TimelapseService(

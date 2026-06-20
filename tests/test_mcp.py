@@ -345,6 +345,15 @@ def test_rest_ai_pull_unreachable_returns_502(client):
     assert resp.status_code == 502
 
 
+def test_rest_ai_pull_progress_idle(client):
+    resp = client.get("/api/ai/pull")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["active"] is False
+    assert body["status"] == "idle"
+    assert body["percent"] == 0.0
+
+
 # -- client error normalization -------------------------------------------
 async def test_client_normalizes_unknown_camera(mcp_env):
     app, _ = mcp_env

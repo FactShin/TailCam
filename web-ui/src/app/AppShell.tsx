@@ -7,6 +7,7 @@ import { CommandPalette } from "../components/CommandPalette";
 import { VideoWall } from "../components/VideoWall";
 import { fmtBytes } from "../lib/format";
 import {
+  IconAi,
   IconBook,
   IconBrain,
   IconChevL,
@@ -28,11 +29,12 @@ const NAV: { to: string; label: string; icon: (p: IconProps) => JSX.Element; key
   { to: "/", label: "Cameras", icon: IconGrid, key: "1" },
   { to: "/gallery", label: "Gallery", icon: IconFilm, key: "2" },
   { to: "/events", label: "Events", icon: IconMotion, key: "3" },
-  { to: "/timelapse", label: "Timelapse", icon: IconTimelapse, key: "4" },
-  { to: "/training", label: "Training", icon: IconBrain, key: "5" },
-  { to: "/models", label: "Models", icon: IconChip, key: "6" },
-  { to: "/settings", label: "Settings", icon: IconSettings, key: "7" },
-  { to: "/docs", label: "Docs", icon: IconBook, key: "8" },
+  { to: "/ai", label: "AI", icon: IconAi, key: "4" },
+  { to: "/timelapse", label: "Timelapse", icon: IconTimelapse, key: "5" },
+  { to: "/training", label: "Training", icon: IconBrain, key: "6" },
+  { to: "/models", label: "Models", icon: IconChip, key: "7" },
+  { to: "/settings", label: "Settings", icon: IconSettings, key: "8" },
+  { to: "/docs", label: "Docs", icon: IconBook, key: "9" },
 ];
 
 // Mobile bottom bar shows the primary destinations; the rest live in a "More"
