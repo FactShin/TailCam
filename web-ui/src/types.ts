@@ -92,6 +92,24 @@ export interface AIUpdate {
   base_url?: string;
 }
 
+export interface OllamaModelsInfo {
+  reachable: boolean;
+  base_url: string;
+  active_model: string;
+  installed: string[];
+}
+
+export interface AIPullStatus {
+  model: string;
+  active: boolean;
+  status: "idle" | "pulling" | "success" | "error";
+  completed: number;
+  total: number;
+  percent: number;
+  detail: string;
+  error: string | null;
+}
+
 // -- model training --
 
 export interface TrainingInfo {

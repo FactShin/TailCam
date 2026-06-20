@@ -143,6 +143,25 @@ if (-not $NoTailscale) {
   }
 }
 
+# AI motion labeling (optional, local Ollama)
+Write-Host ""
+Info "AI motion labeling (optional)"
+$ollama = Get-Command ollama -ErrorAction SilentlyContinue
+if ($ollama) {
+  $models = (& ollama list 2>$null | Out-String)
+  if ($models -match 'moondream|llava|minicpm-v|llama3.2-vision|bakllava') {
+    Write-Host "    Ollama is installed and a vision model is downloaded."
+  } else {
+    Warn "Ollama is installed, but no vision model is downloaded yet. Get one:"
+    Write-Host "        ollama pull moondream"
+  }
+} else {
+  Write-Host "    To label what your cameras see (person / animal / vehicle...), install Ollama"
+  Write-Host "    from https://ollama.com/download/windows, then download a model:"
+  Write-Host "        ollama pull moondream"
+}
+Write-Host "    You can also do all of this from the TailCam UI -> AI."
+
 Write-Host ""
 Info "TailCam installed."
 & $TailcamBin status

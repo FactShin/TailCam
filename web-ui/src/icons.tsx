@@ -71,6 +71,9 @@ export const IconBook = (p: IconProps) => (
 export const IconMore = (p: IconProps) => (
   <Icon {...p}><circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" /><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none" /></Icon>
 );
+export const IconAi = (p: IconProps) => (
+  <Icon {...p}><path d="M12 3l1.7 4.5L18 9l-4.3 1.5L12 15l-1.7-4.5L6 9l4.3-1.5z" /><path d="M18.5 14l.9 2.2 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" /></Icon>
+);
 export const IconSettings = (p: IconProps) => (
   <Icon {...p}><circle cx="12" cy="12" r="3" /><path d="M19.4 13.5a7.8 7.8 0 0 0 0-3l1.7-1.3-1.7-3-2 .8a7.6 7.6 0 0 0-2.6-1.5L14.5 3h-5l-.3 2.3a7.6 7.6 0 0 0-2.6 1.5l-2-.8-1.7 3 1.7 1.3a7.8 7.8 0 0 0 0 3L1.9 14.8l1.7 3 2-.8a7.6 7.6 0 0 0 2.6 1.5L9.5 21h5l.3-2.3a7.6 7.6 0 0 0 2.6-1.5l2 .8 1.7-3z" /></Icon>
 );

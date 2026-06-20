@@ -113,6 +113,17 @@ class AIModelRequest(BaseModel):
     model: str = Field(min_length=1, max_length=200)
 
 
+class AIPullStatus(BaseModel):
+    model: str = ""
+    active: bool = False  # a download is in progress
+    status: str = "idle"  # idle | pulling | success | error
+    completed: int = 0
+    total: int = 0
+    percent: float = 0.0
+    detail: str = ""
+    error: str | None = None
+
+
 class TimelapseStartRequest(BaseModel):
     name: str | None = None
     interval_seconds: float | None = Field(default=None, ge=0.1, le=3600)

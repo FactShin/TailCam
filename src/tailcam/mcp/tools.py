@@ -489,11 +489,12 @@ async def _list_ollama_models(ctx: ToolContext, args: dict[str, Any]) -> ToolRes
 async def _pull_ollama_model(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     _require_confirm(args, ctx.config.require_confirm_for_writes)
     model = _str_arg(args, "model")
-    info = await ctx.client.pull_ollama_model(model)
+    status = await ctx.client.pull_ollama_model(model)
     ctx.record_action(action="pull_ollama_model", target=model, result="success")
     return ToolResult(
-        f"Pulled '{model}' into Ollama ({len(info.get('installed', []))} model(s) now installed).",
-        {"ok": True, "ollama": info},
+        f"Started downloading '{model}' into Ollama (runs in the background; "
+        f"check list_ollama_models or get_ai_status to confirm it's installed).",
+        {"ok": True, "pull": status},
     )
 
 
