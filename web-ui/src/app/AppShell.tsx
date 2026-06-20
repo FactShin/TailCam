@@ -266,30 +266,30 @@ export function AppShell({ children }: { children: ReactNode }) {
       </nav>
 
         {moreOpen && (
-          <div className="sheet-root" role="dialog" aria-label="More navigation" onClick={() => setMoreOpen(false)}>
-            <div className="sheet-backdrop" />
-            <div className="sheet" onClick={(e) => e.stopPropagation()}>
-              <div className="sheet-grab" />
-              <div className="sheet-title">More</div>
-              <div className="sheet-grid">
+          <div className="navsheet-root" role="dialog" aria-label="More navigation" onClick={() => setMoreOpen(false)}>
+            <div className="navsheet-backdrop" />
+            <div className="navsheet" onClick={(e) => e.stopPropagation()}>
+              <div className="navsheet-grab" />
+              <div className="navsheet-title">More</div>
+              <div className="navsheet-grid">
                 {OVERFLOW_NAV.map((n) => {
                   const Ic = n.icon;
                   const active = isActive(path, n.to);
                   return (
                     <button
                       key={n.to}
-                      className={`sheet-link ${active ? "is-on" : ""}`}
+                      className={`navsheet-link ${active ? "is-on" : ""}`}
                       onClick={() => { navigate(n.to); setMoreOpen(false); }}
                     >
                       <Ic size={21} /><span>{n.label}</span>
                     </button>
                   );
                 })}
-                <button className="sheet-link" onClick={() => { setWallOpen(true); setMoreOpen(false); }}>
+                <button className="navsheet-link" onClick={() => { setWallOpen(true); setMoreOpen(false); }}>
                   <IconWall size={21} /><span>Video wall</span>
                 </button>
               </div>
-              <div className="sheet-foot">
+              <div className="navsheet-foot">
                 <span className={`led ${sys?.tailscale_running ? "ok" : "err"}`} />
                 <span>{sys?.host ?? "—"}</span>
                 <span className="grow" />

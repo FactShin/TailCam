@@ -244,7 +244,7 @@ button { font-family: inherit; color: inherit; cursor: pointer; }
 
   .brand-mobile { display: none; }
   .tabbar { display: none; }
-  .sheet-root { display: none; }
+  .navsheet-root { display: none; }
   .topbar { padding: 0 var(--pad); }
 }
 
@@ -825,31 +825,34 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .run-bar-fill { display: block; height: 100%; background: var(--accent-grad); transition: width 0.4s var(--ease); }
 .run-meta { color: var(--muted); font-size: 11px; }
 
-/* ===== mobile "More" sheet ===== */
-.sheet-root { position: absolute; inset: 0; z-index: 40; display: flex; align-items: flex-end; }
-.sheet-backdrop { position: absolute; inset: 0; background: rgba(3, 4, 12, 0.62); backdrop-filter: blur(3px); animation: sheetFade 0.2s ease; }
-@keyframes sheetFade { from { opacity: 0; } }
-.sheet {
+/* ===== mobile "More" sheet (namespaced to avoid clashing with the .sheet component) ===== */
+.navsheet-root { position: absolute; inset: 0; z-index: 40; display: flex; align-items: flex-end; }
+/* Solid dim, NOT backdrop-filter: a blurred backdrop over the live MJPEG stream
+   pegs the iOS compositor and freezes the UI. */
+.navsheet-backdrop { position: absolute; inset: 0; background: rgba(3, 4, 12, 0.78); cursor: pointer; -webkit-tap-highlight-color: transparent; animation: navsheetFade 0.2s ease; }
+@keyframes navsheetFade { from { opacity: 0; } }
+.navsheet {
   position: relative; z-index: 2; width: 100%;
   background: var(--bg1); border-top: 1px solid var(--border-2);
   border-radius: 22px 22px 0 0; padding: 10px 16px calc(18px + env(safe-area-inset-bottom));
-  box-shadow: 0 -22px 55px rgba(3, 4, 12, 0.55); animation: sheetUp 0.26s var(--ease) both;
+  box-shadow: 0 -22px 55px rgba(3, 4, 12, 0.55); animation: navsheetUp 0.26s var(--ease) both;
 }
-@keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
-.sheet-grab { width: 38px; height: 4px; border-radius: 4px; background: var(--border-2); margin: 4px auto 14px; }
-.sheet-title { font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); margin: 0 4px 12px; }
-.sheet-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
-.sheet-link {
+@keyframes navsheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.navsheet-grab { width: 38px; height: 4px; border-radius: 4px; background: var(--border-2); margin: 4px auto 14px; }
+.navsheet-title { font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); margin: 0 4px 12px; }
+.navsheet-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
+.navsheet-link {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;
   background: var(--bg2); border: 1px solid var(--border); border-radius: 16px; padding: 18px 8px;
-  color: var(--muted); font-size: 12px; font-weight: 600; min-height: 82px;
+  color: var(--muted); font-size: 12px; font-weight: 600; min-height: 82px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
   transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.12s;
 }
-.sheet-link:hover { background: var(--bg3); color: var(--text); }
-.sheet-link:active { transform: scale(0.97); }
-.sheet-link.is-on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); background: var(--accent-soft); }
-.sheet-foot { display: flex; align-items: center; gap: 8px; margin-top: 16px; padding-top: 13px; border-top: 1px solid var(--hair); font-family: var(--mono); font-size: 10px; color: var(--muted); }
-.sheet-foot .grow { flex: 1; }
+.navsheet-link:hover { background: var(--bg3); color: var(--text); }
+.navsheet-link:active { transform: scale(0.97); }
+.navsheet-link.is-on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); background: var(--accent-soft); }
+.navsheet-foot { display: flex; align-items: center; gap: 8px; margin-top: 16px; padding-top: 13px; border-top: 1px solid var(--hair); font-family: var(--mono); font-size: 10px; color: var(--muted); }
+.navsheet-foot .grow { flex: 1; }
 
 /* ===== toasts ===== */
 .toast-wrap { position: absolute; left: 0; right: 0; bottom: 16px; display: flex; flex-direction: column; align-items: center; gap: 8px; z-index: 60; pointer-events: none; padding: 0 14px; }
