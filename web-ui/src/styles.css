@@ -1018,3 +1018,78 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
   .docs-side { position: static; }
   .docs-main { padding: 18px; }
 }
+
+/* ===== AI Studio ===== */
+.ais-status { display: inline-flex; align-items: center; gap: 7px; padding: 6px 13px; border-radius: 999px; font-family: var(--mono); font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; background: var(--bg2); border: 1px solid var(--border); color: var(--faint); }
+.ais-status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+.ais-status.on { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
+.ais-status.on .dot { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.ais-status.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); }
+.ais-status.warn .dot { background: var(--warn); }
+
+.ais-progress-label { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.ais-steps { display: grid; gap: 10px; }
+.ais-step { display: flex; gap: 14px; padding: 14px; border-radius: 14px; background: var(--bg2); border: 1px solid var(--border); }
+.ais-step.done { background: color-mix(in srgb, var(--ok) 8%, var(--bg2)); border-color: color-mix(in srgb, var(--ok) 28%, var(--border)); }
+.ais-step-mark { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-family: var(--mono); font-weight: 700; font-size: 14px; background: var(--bg0); border: 1px solid var(--border-2); color: var(--muted); }
+.ais-step.done .ais-step-mark { background: var(--ok); border-color: var(--ok); color: #042; }
+.ais-step-body { min-width: 0; flex: 1; }
+.ais-step-title { font-weight: 650; font-size: 15px; }
+.ais-step-text { color: var(--muted); font-size: 13.5px; margin: 3px 0 9px; }
+.ais-step.done .ais-step-text { margin-bottom: 0; }
+.ais-link { display: inline-block; color: var(--accent); font-size: 13px; font-weight: 600; margin-top: 4px; }
+
+.cmdbox { display: inline-flex; align-items: center; gap: 10px; width: 100%; max-width: 520px; margin: 0 0 8px; padding: 9px 12px; background: #06070f; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; text-align: left; transition: border-color 0.15s; }
+.cmdbox:hover { border-color: var(--border-2); }
+.cmdbox-pfx { color: var(--accent3, var(--ok)); font-family: var(--mono); font-size: 13px; flex: none; }
+.cmdbox code { flex: 1; font-family: var(--mono); font-size: 12.5px; color: #cfd8f7; overflow-x: auto; white-space: nowrap; }
+.cmdbox-copy { flex: none; display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); }
+.cmdbox:hover .cmdbox-copy { color: var(--text); }
+
+.ais-how { display: flex; align-items: stretch; gap: 12px; }
+.ais-how-step { flex: 1; display: flex; gap: 11px; align-items: flex-start; }
+.ais-how-step > div:last-child { display: flex; flex-direction: column; }
+.ais-how-step b { font-size: 13.5px; }
+.ais-how-step span { color: var(--muted); font-size: 12.5px; line-height: 1.4; }
+.ais-how-ic { flex: none; width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border)); color: var(--accent); }
+.ais-how-arrow { align-self: center; color: var(--faint); font-size: 18px; }
+.ais-labels { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--hair); }
+.ais-label-chip { font-family: var(--mono); font-size: 11px; padding: 4px 11px; border-radius: 999px; background: var(--bg2); border: 1px solid var(--border); color: var(--muted); }
+@container appframe (max-width: 720px) { .ais-how { flex-direction: column; } .ais-how-arrow { transform: rotate(90deg); } }
+
+.ais-intro { color: var(--muted); font-size: 13.5px; margin: 0 0 14px; line-height: 1.55; }
+.ais-conn { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; padding: 3px 9px; border-radius: 999px; }
+.ais-conn.on { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.ais-conn.off { color: var(--faint); background: var(--bg2); }
+
+.ais-cards { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@container appframe (min-width: 720px) { .ais-cards { grid-template-columns: 1fr 1fr; } }
+.ais-card { display: flex; flex-direction: column; gap: 9px; padding: 16px; border-radius: 14px; background: var(--bg2); border: 1px solid var(--border); }
+.ais-card.active { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent); }
+.ais-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ais-card-name { font-weight: 700; font-size: 15.5px; }
+.ais-badge { font-family: var(--mono); font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 3px 8px; border-radius: 999px; }
+.ais-badge.rec { background: var(--accent-soft); color: var(--accent); }
+.ais-badge.ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+.ais-badge.active { background: var(--accent-grad); color: #fff; }
+.ais-card-blurb { color: var(--muted); font-size: 13px; margin: 0; line-height: 1.5; flex: 1; }
+.ais-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ais-chip { font-family: var(--mono); font-size: 10px; padding: 3px 9px; border-radius: 7px; background: var(--bg0); border: 1px solid var(--border); color: var(--muted); }
+.ais-card-actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.ais-card-actions .cmdbox { margin: 0; max-width: none; flex: 1; min-width: 160px; }
+
+.ais-pull { display: flex; flex-direction: column; gap: 6px; }
+.ais-pull-bar { height: 7px; border-radius: 4px; background: var(--bg0); overflow: hidden; border: 1px solid var(--border); }
+.ais-pull-bar span { display: block; height: 100%; background: var(--accent-grad); transition: width 0.5s var(--ease); border-radius: 4px; }
+.ais-pull-text { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+.ais-conn-form { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
+@container appframe (max-width: 560px) { .ais-conn-form { grid-template-columns: 1fr; } }
+
+.ais-train { display: flex; align-items: center; gap: 14px; }
+.ais-train-ic { flex: none; width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border)); color: var(--accent); }
+.ais-train-text { flex: 1; display: flex; flex-direction: column; }
+.ais-train-text b { font-size: 14.5px; }
+.ais-train-text span { color: var(--muted); font-size: 13px; }
+@container appframe (max-width: 560px) { .ais-train { flex-direction: column; align-items: flex-start; } }
+.ais-foot { color: var(--faint); font-family: var(--mono); font-size: 10.5px; text-align: center; margin: 18px 0 4px; letter-spacing: 0.03em; }

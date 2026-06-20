@@ -5,6 +5,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { AppShell } from "./app/AppShell";
 import { ToastProvider } from "./components/toast";
+import { AiStudio } from "./screens/AiStudio";
 import { CameraDetail } from "./screens/CameraDetail";
 import { Dashboard } from "./screens/Dashboard";
 import { Docs } from "./screens/Docs";
@@ -33,6 +34,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/camera/:host/:cid" element={<CameraDetail />} />
               <Route path="/gallery" element={<Gallery />} />
               <Route path="/events" element={<Events />} />
+              <Route path="/ai" element={<AiStudio />} />
               <Route path="/timelapse" element={<Timelapse />} />
               <Route path="/training" element={<Training />} />
               <Route path="/models" element={<Models />} />

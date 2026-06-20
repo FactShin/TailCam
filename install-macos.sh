@@ -116,6 +116,26 @@ ensure_tailscale() {
     "$TAILCAM_BIN" tailscale serve || warn "Run 'tailscale up' then 'tailcam tailscale serve'; the UI is available locally meanwhile."
 }
 
+# --- AI motion labeling (optional, local Ollama) ----------------------------
+ensure_ai_hint() {
+    local rec="moondream"
+    echo
+    log "AI motion labeling (optional)"
+    if have ollama; then
+        if ollama list 2>/dev/null | grep -qiE 'moondream|llava|minicpm-v|llama3.2-vision|bakllava'; then
+            echo "    ✓ Ollama is installed and a vision model is downloaded."
+        else
+            warn "Ollama is installed, but no vision model is downloaded yet. Get one:"
+            echo "        ollama pull ${rec}"
+        fi
+    else
+        echo "    To label what your cameras see (person / animal / vehicle…), install Ollama"
+        echo "    from https://ollama.com/download, then download a model:"
+        echo "        ollama pull ${rec}"
+    fi
+    echo "    You can also do all of this from the TailCam UI → AI."
+}
+
 log "Installing TailCam on macOS (ref=${REF}, port=${PORT})"
 ensure_python
 install_tailcam
@@ -123,6 +143,7 @@ remove_legacy_anycam
 link_cli
 setup_service
 ensure_tailscale
+ensure_ai_hint
 echo
 log "TailCam installed."
 "$TAILCAM_BIN" status || true

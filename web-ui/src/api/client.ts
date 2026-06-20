@@ -79,6 +79,20 @@ export const getUpdate = () =>
 export const getAi = () => jsonFetch<import("../types").AIInfo>("/api/ai");
 export const updateAi = (body: import("../types").AIUpdate) =>
   jsonFetch<import("../types").AIInfo>("/api/ai", { method: "POST", body: JSON.stringify(body) });
+export const getOllamaModels = () =>
+  jsonFetch<import("../types").OllamaModelsInfo>("/api/ai/models");
+export const pullModel = (model: string) =>
+  jsonFetch<import("../types").AIPullStatus>("/api/ai/pull", {
+    method: "POST",
+    body: JSON.stringify({ model }),
+  });
+export const getPullProgress = () =>
+  jsonFetch<import("../types").AIPullStatus>("/api/ai/pull");
+export const loadModel = (model: string) =>
+  jsonFetch<import("../types").AIInfo>("/api/ai/load", {
+    method: "POST",
+    body: JSON.stringify({ model }),
+  });
 
 // ---- model training ----
 
