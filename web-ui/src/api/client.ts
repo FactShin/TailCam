@@ -94,6 +94,18 @@ export const loadModel = (model: string) =>
     body: JSON.stringify({ model }),
   });
 
+// ---- notifications ----
+
+export const getNotifications = () =>
+  jsonFetch<import("../types").NotificationsInfo>("/api/notifications");
+export const updateNotifications = (body: import("../types").NotificationsUpdate) =>
+  jsonFetch<import("../types").NotificationsInfo>("/api/notifications", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+export const testNotification = () =>
+  jsonFetch<{ ok: boolean; detail?: string }>("/api/notifications/test", { method: "POST" });
+
 // ---- model training ----
 
 export const getTraining = () => jsonFetch<import("../types").TrainingInfo>("/api/training");

@@ -150,6 +150,26 @@ class TrainingConfig:
 
 
 @dataclass
+class NotificationsConfig:
+    # Push alerts to Discord, Telegram, and/or a generic webhook (the latter is
+    # the route for a personal bot like Hermes/OpenClaw — TailCam POSTs a JSON
+    # event your bot can filter and forward). All channels are independent.
+    enabled: bool = False
+    discord_webhook: str = ""
+    telegram_token: str = ""
+    telegram_chat_id: str = ""
+    webhook_url: str = ""  # generic JSON webhook (your bot, n8n, etc.)
+    # Which events fire a notification.
+    notify_motion: bool = True
+    notify_camera_offline: bool = True
+    notify_training: bool = True
+    # Motion filters, so you're not spammed.
+    min_confidence: float = 0.0  # 0..1; skip AI labels below this
+    labels: list[str] = field(default_factory=list)  # allowlist; empty = all labels
+    cooldown_seconds: float = 60.0  # per-camera quiet period between motion alerts
+
+
+@dataclass
 class MCPConfig:
     # Model Context Protocol server: exposes cameras, events, media, health, and
     # admin workflows to agents (Codex, Claude, OpenClaw/Hermes). ``tailcam mcp
@@ -178,6 +198,7 @@ class AppConfig:
     ai: AIConfig = field(default_factory=AIConfig)
     timelapse: TimelapseConfig = field(default_factory=TimelapseConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
+    notifications: NotificationsConfig = field(default_factory=NotificationsConfig)
     mcp: MCPConfig = field(default_factory=MCPConfig)
 
     @classmethod
@@ -216,6 +237,7 @@ class AppConfig:
             ai=AIConfig(**raw.get("ai", {})),
             timelapse=TimelapseConfig(**raw.get("timelapse", {})),
             training=TrainingConfig(**raw.get("training", {})),
+            notifications=NotificationsConfig(**raw.get("notifications", {})),
             mcp=MCPConfig(**raw.get("mcp", {})),
         )
 
@@ -231,6 +253,7 @@ class AppConfig:
             "ai": asdict(self.ai),
             "timelapse": asdict(self.timelapse),
             "training": asdict(self.training),
+            "notifications": asdict(self.notifications),
             "mcp": asdict(self.mcp),
         }
 

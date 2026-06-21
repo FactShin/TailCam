@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { useAi, useCameras, useHosts, useSystem } from "../api/hooks";
+import { NotificationsSettings } from "../components/NotificationsSettings";
 import { useToast } from "../components/toast";
 import { IconCheck, IconCopy, IconDevice, IconInfo, IconServer, IconWifi, IconWifiOff } from "../icons";
 import { fmtBytes } from "../lib/format";
@@ -124,6 +125,8 @@ export function Settings() {
             <code className="url-code mono">{sys.local_url}</code>
           </div>
         </div>
+
+        <NotificationsSettings />
 
         <div className="panel panel-help">
           <div className="panel-title"><IconDevice size={16} /> Access from another device</div>

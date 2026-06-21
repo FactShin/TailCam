@@ -31,6 +31,8 @@ from tailcam.web.schemas import (
     ModelInfo,
     ModelRegister,
     MotionEventInfo,
+    NotificationsInfo,
+    NotificationsUpdate,
     OkResponse,
     OllamaModelsInfo,
     PostprocessInfo,
@@ -1001,6 +1003,50 @@ async def ai_load(body: AIModelRequest, ctx: AppContext = Depends(get_context)) 
             status_code=502, detail="ollama load failed (model present and reachable?)"
         )
     return await _ai_info(ctx)
+
+
+def _notifications_info(ctx: AppContext) -> NotificationsInfo:
+    from dataclasses import asdict
+
+    return NotificationsInfo(
+        **asdict(ctx.config.notifications),
+        channels=ctx.notifications.channels_configured(),
+    )
+
+
+@router.get("/notifications", response_model=NotificationsInfo)
+def notifications_info(ctx: AppContext = Depends(get_context)) -> NotificationsInfo:
+    """Current notification settings + which channels are configured."""
+    return _notifications_info(ctx)
+
+
+@router.post("/notifications", response_model=NotificationsInfo)
+def update_notifications(
+    body: NotificationsUpdate, ctx: AppContext = Depends(get_context)
+) -> NotificationsInfo:
+    """Update notification channels, triggers, and filters (persisted, live)."""
+    cfg = ctx.config.notifications
+    for key, value in body.model_dump(exclude_unset=True).items():
+        setattr(cfg, key, value)
+    ctx.config.save()
+    return _notifications_info(ctx)
+
+
+@router.post("/notifications/test", response_model=OkResponse)
+async def test_notification(ctx: AppContext = Depends(get_context)) -> OkResponse:
+    """Send a test notification to every configured channel."""
+    import anyio
+
+    channels = ctx.notifications.channels_configured()
+    if not channels:
+        raise HTTPException(
+            status_code=400, detail="No channels configured — add Discord, Telegram, or a webhook."
+        )
+    result = await anyio.to_thread.run_sync(ctx.notifications.send_test)
+    failed = [name for name, ok in result.get("results", {}).items() if not ok]
+    if failed:
+        raise HTTPException(status_code=502, detail=f"Test failed for: {', '.join(failed)}")
+    return OkResponse(detail=f"Test sent to {', '.join(channels)}")
 
 
 @router.get("/update", response_model=UpdateInfo)
