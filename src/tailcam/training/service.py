@@ -52,12 +52,14 @@ class TrainingService:
         config: TrainingConfig,
         analyzer,
         host: str,
+        notifier=None,
     ) -> None:
         self._manager = manager
         self._store = store
         self._config = config
         self._analyzer = analyzer
         self._host = host
+        self._notifier = notifier
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
@@ -446,12 +448,28 @@ class TrainingService:
                 metrics_json=json.dumps(metrics), ended_ts=time.time(),
             )
             log.info("training run %s complete -> model %s", run_id, model_id)
+            self._notify_run(run_id, dataset_id, "complete", model_id, metrics)
         except Exception as exc:
             log.exception("training run %s failed: %s", run_id, exc)
             self._store.update_run(run_id, status="error", log=str(exc)[:500], ended_ts=time.time())
+            self._notify_run(run_id, dataset_id, "error", None, None)
         finally:
             with self._lock:
                 self._run_stops.pop(run_id, None)
+
+    def _notify_run(
+        self, run_id: int, dataset_id: int, status: str,
+        model_id: int | None, metrics: dict | None,
+    ) -> None:
+        if self._notifier is None:
+            return
+        try:
+            self._notifier.notify_training(
+                run_id=run_id, dataset_id=dataset_id, status=status,
+                model_id=model_id, metrics=metrics,
+            )
+        except Exception as exc:  # never let notification break training
+            log.debug("training notification failed: %s", exc)
 
 
 def _clamp01(value: object) -> float:

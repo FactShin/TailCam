@@ -259,6 +259,22 @@ export function useLoadModel() {
   });
 }
 
+export function useNotifications() {
+  return useQuery({ queryKey: ["notifications"], queryFn: api.getNotifications });
+}
+
+export function useUpdateNotifications() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: import("../types").NotificationsUpdate) => api.updateNotifications(body),
+    onSuccess: (data) => qc.setQueryData(["notifications"], data),
+  });
+}
+
+export function useTestNotification() {
+  return useMutation({ mutationFn: api.testNotification });
+}
+
 export function useRefreshCameras() {
   const qc = useQueryClient();
   return useMutation({

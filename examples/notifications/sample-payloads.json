@@ -1,0 +1,48 @@
+{
+  "_comment": "Examples of the JSON TailCam POSTs to your generic webhook (Settings -> Notifications -> Generic webhook). Fields after the common ones depend on `kind`.",
+  "motion": {
+    "source": "tailcam",
+    "kind": "motion",
+    "title": "Person · front-door",
+    "body": "person (94%)",
+    "severity": "warning",
+    "ts": 1718900000.0,
+    "camera_id": "front-door",
+    "label": "person",
+    "confidence": 0.94,
+    "event_id": 123
+  },
+  "camera": {
+    "source": "tailcam",
+    "kind": "camera",
+    "title": "Camera offline: Garage",
+    "body": "Garage is offline.",
+    "severity": "warning",
+    "ts": 1718900100.0,
+    "camera_id": "garage",
+    "status": "offline"
+  },
+  "node": {
+    "source": "tailcam",
+    "kind": "node",
+    "title": "Node offline: garage-pi",
+    "body": "Fleet node garage-pi is unreachable.",
+    "severity": "warning",
+    "ts": 1718900200.0,
+    "node_key": "garage-pi",
+    "online": false
+  },
+  "training": {
+    "source": "tailcam",
+    "kind": "training",
+    "title": "Training complete · run #7",
+    "body": "Run #7 (dataset #2) complete. top1=0.97",
+    "severity": "success",
+    "ts": 1718900300.0,
+    "run_id": 7,
+    "dataset_id": 2,
+    "status": "complete",
+    "model_id": 12,
+    "metrics": { "top1": 0.97 }
+  }
+}

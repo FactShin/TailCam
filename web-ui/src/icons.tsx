@@ -74,6 +74,9 @@ export const IconMore = (p: IconProps) => (
 export const IconAi = (p: IconProps) => (
   <Icon {...p}><path d="M12 3l1.7 4.5L18 9l-4.3 1.5L12 15l-1.7-4.5L6 9l4.3-1.5z" /><path d="M18.5 14l.9 2.2 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" /></Icon>
 );
+export const IconBell = (p: IconProps) => (
+  <Icon {...p}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></Icon>
+);
 export const IconSettings = (p: IconProps) => (
   <Icon {...p}><circle cx="12" cy="12" r="3" /><path d="M19.4 13.5a7.8 7.8 0 0 0 0-3l1.7-1.3-1.7-3-2 .8a7.6 7.6 0 0 0-2.6-1.5L14.5 3h-5l-.3 2.3a7.6 7.6 0 0 0-2.6 1.5l-2-.8-1.7 3 1.7 1.3a7.8 7.8 0 0 0 0 3L1.9 14.8l1.7 3 2-.8a7.6 7.6 0 0 0 2.6 1.5L9.5 21h5l.3-2.3a7.6 7.6 0 0 0 2.6-1.5l2 .8 1.7-3z" /></Icon>
 );
