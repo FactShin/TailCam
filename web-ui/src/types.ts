@@ -110,6 +110,25 @@ export interface AIPullStatus {
   error: string | null;
 }
 
+// -- notifications --
+
+export interface NotificationsInfo {
+  enabled: boolean;
+  discord_webhook: string;
+  telegram_token: string;
+  telegram_chat_id: string;
+  webhook_url: string;
+  notify_motion: boolean;
+  notify_camera_offline: boolean;
+  notify_training: boolean;
+  min_confidence: number;
+  labels: string[];
+  cooldown_seconds: number;
+  channels: string[];
+}
+
+export type NotificationsUpdate = Partial<Omit<NotificationsInfo, "channels">>;
+
 // -- model training --
 
 export interface TrainingInfo {

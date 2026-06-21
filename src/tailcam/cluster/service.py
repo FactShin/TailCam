@@ -157,6 +157,11 @@ class ClusterService:
     async def peers(self) -> list[Peer]:
         return await self.refresh()
 
+    def cached_peers(self) -> list[Peer]:
+        """Last-known peers without triggering a probe (kept fresh by normal API
+        traffic). Used by the offline monitor to detect node up/down transitions."""
+        return list(self._peers)
+
     def peer_base(self, key: str) -> str | None:
         peer = self._by_key.get(key)
         return peer.base_url if peer else None

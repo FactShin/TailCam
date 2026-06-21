@@ -7,6 +7,7 @@ from __future__ import annotations
 import threading
 import time
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 import cv2
 
@@ -17,6 +18,9 @@ from tailcam.logging_setup import get_logger
 from tailcam.media.recorder import RecordingService
 from tailcam.motion.detector import MotionDetector
 from tailcam.motion.events import EventLog
+
+if TYPE_CHECKING:
+    from tailcam.notify.service import NotificationService
 
 log = get_logger(__name__)
 
@@ -30,6 +34,7 @@ class MotionWorker:
         event_log: EventLog,
         recorder: RecordingService | None = None,
         analyzer: FrameAnalyzer | None = None,
+        notifier: NotificationService | None = None,
     ) -> None:
         self.camera_id = camera_id
         self.buffer = buffer
@@ -37,6 +42,7 @@ class MotionWorker:
         self._event_log = event_log
         self._recorder = recorder
         self._analyzer = analyzer
+        self._notifier = notifier
         self._detector = MotionDetector(config.sensitivity, config.min_area)
         self._stop = threading.Event()
         self._thread = threading.Thread(
@@ -50,6 +56,7 @@ class MotionWorker:
         """Save the trigger frame as the event thumbnail and (if AI is enabled)
         label it with the vision model. Runs in its own thread — never blocks
         the detection loop, and tolerates any failure."""
+        thumb_path: str | None = None
         try:
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
             safe = self.camera_id.replace("/", "_")
@@ -62,14 +69,21 @@ class MotionWorker:
             if ok:
                 thumb.write_bytes(buf.tobytes())
                 self._event_log.set_thumb(event_id, str(thumb))
+                thumb_path = str(thumb)
         except Exception as exc:  # pragma: no cover - defensive
             log.debug("event thumbnail failed: %s", exc)
+        label = description = None
+        confidence = None
         if self._analyzer and self._analyzer.enabled:
             result = self._analyzer.analyze(image)
             if result is not None:
-                self._event_log.set_analysis(
-                    event_id, result.label, result.description, result.confidence
-                )
+                label, description, confidence = result.label, result.description, result.confidence
+                self._event_log.set_analysis(event_id, label, description, confidence)
+        if self._notifier is not None:
+            self._notifier.notify_motion(
+                camera_id=self.camera_id, label=label, confidence=confidence,
+                description=description, event_id=event_id, image_path=thumb_path,
+            )
 
     def start(self) -> None:
         self._thread.start()

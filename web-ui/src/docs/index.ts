@@ -11,6 +11,7 @@ import recording from "./md/recording-media.md?raw";
 import timelapse from "./md/timelapse.md?raw";
 import ai from "./md/ai-analysis.md?raw";
 import training from "./md/training.md?raw";
+import notifications from "./md/notifications.md?raw";
 import tailscale from "./md/tailscale.md?raw";
 import fleet from "./md/fleet.md?raw";
 import security from "./md/security.md?raw";
@@ -55,6 +56,8 @@ export const DOCS: DocPage[] = [
     summary: "Label motion events locally with Ollama." },
   { slug: "training", title: "Training & models", group: "Intelligence", body: training,
     summary: "Datasets, training runs, and model lifecycle." },
+  { slug: "notifications", title: "Notifications", group: "Intelligence", body: notifications,
+    summary: "Discord / Telegram / webhook alerts for motion, offline, and training." },
 
   { slug: "tailscale", title: "Tailscale setup", group: "Network & fleet", body: tailscale,
     summary: "Serving over the tailnet, ports, and identity." },

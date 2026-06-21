@@ -15,6 +15,7 @@ from tailcam.media.recorder import RecordingService
 from tailcam.media.snapshot import SnapshotService
 from tailcam.motion.events import EventLog
 from tailcam.motion.worker import MotionWorker
+from tailcam.notify.service import NotificationService
 from tailcam.persistence.store import Store
 from tailcam.streaming.mjpeg import MJPEGBackend
 from tailcam.tailscale.client import TailscaleClient
@@ -48,8 +49,10 @@ class AppContext:
         self.tailscale = TailscaleClient()
         self.mjpeg = MJPEGBackend()
         self.local_host = resolve_local_host(self.tailscale)
+        self.notifications = NotificationService(config.notifications)
         self.training = TrainingService(
-            self.manager, self.store, config.training, self.analyzer, self.local_host
+            self.manager, self.store, config.training, self.analyzer, self.local_host,
+            notifier=self.notifications,
         )
         # Motion analysis routes through the active trained/BYO model if set, else Ollama.
         self.inference = InferenceRouter(self.store, config.training, self.analyzer)
@@ -59,6 +62,11 @@ class AppContext:
         self.served = False
         self._motion_workers: dict[str, MotionWorker] = {}
         self._lock = threading.Lock()
+        # Offline-detection monitor (camera + fleet-node up/down transitions).
+        self._notify_stop = threading.Event()
+        self._notify_thread: threading.Thread | None = None
+        self._cam_status: dict[str, str] = {}
+        self._peer_online: dict[str, bool] = {}
 
     def startup(self) -> None:
         stale = self.store.close_stale_motion_events()
@@ -75,6 +83,7 @@ class AppContext:
         # Eager-start workers so status reflects reality from the first poll
         # (the UI only streams cameras that report online).
         self.manager.start_all()
+        self._start_notify_monitor()
         if self.config.tailscale.auto_serve and self.tailscale.status().running:
             https_port = self.config.tailscale.serve_port
             self.served = self.tailscale.serve(self.config.server.port, https_port)
@@ -86,6 +95,7 @@ class AppContext:
                 )
 
     def shutdown(self) -> None:
+        self._stop_notify_monitor()
         for worker in list(self._motion_workers.values()):
             worker.stop()
         self._motion_workers.clear()
@@ -93,6 +103,51 @@ class AppContext:
         self.timelapse.shutdown()
         self.training.shutdown()
         self.manager.stop_all()
+
+    # -- offline monitor ---------------------------------------------------
+    def _start_notify_monitor(self) -> None:
+        if self._notify_thread is not None:
+            return
+        self._notify_stop.clear()
+        self._notify_thread = threading.Thread(
+            target=self._notify_monitor_loop, name="notify-monitor", daemon=True
+        )
+        self._notify_thread.start()
+
+    def _stop_notify_monitor(self) -> None:
+        self._notify_stop.set()
+        thread = self._notify_thread
+        if thread is not None:
+            thread.join(timeout=3.0)
+        self._notify_thread = None
+
+    def _notify_monitor_loop(self) -> None:
+        """Poll camera + fleet-node status and fire on up/down transitions.
+
+        The first observation of each subject only seeds the baseline (no alert),
+        so we never notify for state that was already true at startup.
+        """
+        while not self._notify_stop.is_set():
+            try:
+                for cam in self.manager.list():
+                    cid = cam.descriptor.id
+                    status = self.manager.status(cid).value
+                    prev = self._cam_status.get(cid)
+                    if prev is not None and status != prev:
+                        self.notifications.notify_camera_status(
+                            camera_id=cid, name=cid, old=prev, new=status
+                        )
+                    self._cam_status[cid] = status
+                for peer in self.cluster.cached_peers():
+                    prev_online = self._peer_online.get(peer.key)
+                    if prev_online is not None and peer.online != prev_online:
+                        self.notifications.notify_node_status(
+                            node_key=peer.key, host=peer.host, online=peer.online
+                        )
+                    self._peer_online[peer.key] = peer.online
+            except Exception as exc:  # never let the monitor die
+                log.debug("notify monitor: %s", exc)
+            self._notify_stop.wait(8.0)
 
     async def aclose(self) -> None:
         await self.cluster.aclose()
@@ -110,7 +165,7 @@ class AppContext:
                 return False
             worker = MotionWorker(
                 camera_id, buffer, self.config.motion, self.event_log, self.recorder,
-                analyzer=self.inference,
+                analyzer=self.inference, notifier=self.notifications,
             )
             worker.start()
             self._motion_workers[camera_id] = worker

@@ -437,6 +437,35 @@ class NodeActionResponse(BaseModel):
     health: NodeHealthInfo
 
 
+class NotificationsInfo(BaseModel):
+    enabled: bool = False
+    discord_webhook: str = ""
+    telegram_token: str = ""
+    telegram_chat_id: str = ""
+    webhook_url: str = ""
+    notify_motion: bool = True
+    notify_camera_offline: bool = True
+    notify_training: bool = True
+    min_confidence: float = 0.0
+    labels: list[str] = Field(default_factory=list)
+    cooldown_seconds: float = 60.0
+    channels: list[str] = Field(default_factory=list)  # which channels are configured
+
+
+class NotificationsUpdate(BaseModel):
+    enabled: bool | None = None
+    discord_webhook: str | None = None
+    telegram_token: str | None = None
+    telegram_chat_id: str | None = None
+    webhook_url: str | None = None
+    notify_motion: bool | None = None
+    notify_camera_offline: bool | None = None
+    notify_training: bool | None = None
+    min_confidence: float | None = None
+    labels: list[str] | None = None
+    cooldown_seconds: float | None = None
+
+
 class OkResponse(BaseModel):
     ok: bool = True
     detail: str | None = None
