@@ -17,6 +17,7 @@ from tailcam.motion.events import EventLog
 from tailcam.motion.worker import MotionWorker
 from tailcam.notify.service import NotificationService
 from tailcam.persistence.store import Store
+from tailcam.plugins.registry import PluginRegistry
 from tailcam.streaming.mjpeg import MJPEGBackend
 from tailcam.tailscale.client import TailscaleClient
 from tailcam.timelapse.analyzer import PrinterAnalyzer, TimelapseAnalysisQueue
@@ -36,7 +37,14 @@ class AppContext:
         self.recorder = RecordingService(self.manager, self.store)
         self.gallery = MediaGallery(self.store)
         self.event_log = EventLog(self.store)
-        self.analyzer = OllamaAnalyzer(config.ai)
+        # Plugins extend AI providers + notification channels (pluggy registry).
+        self.plugins = PluginRegistry(
+            disabled=config.plugins.disabled, load_dropins=config.plugins.load_dropins
+        )
+        provider = self.plugins.analyzer_provider(config.ai.provider)
+        if provider is None:
+            provider = self.plugins.analyzer_provider("ollama")
+        self.analyzer = provider.build(config.ai) if provider else OllamaAnalyzer(config.ai)
         self.pulls = ModelPuller(config.ai)
         self.printer_analyzer = PrinterAnalyzer(config.ai)
         self.timelapse_analysis = TimelapseAnalysisQueue(self.store, self.printer_analyzer)
@@ -49,7 +57,9 @@ class AppContext:
         self.tailscale = TailscaleClient()
         self.mjpeg = MJPEGBackend()
         self.local_host = resolve_local_host(self.tailscale)
-        self.notifications = NotificationService(config.notifications)
+        self.notifications = NotificationService(
+            config.notifications, channels=self.plugins.notification_channels()
+        )
         self.training = TrainingService(
             self.manager, self.store, config.training, self.analyzer, self.local_host,
             notifier=self.notifications,

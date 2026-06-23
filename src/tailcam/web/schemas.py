@@ -94,12 +94,42 @@ class AIInfo(BaseModel):
     model: str
     model_present: bool
     base_url: str = ""
+    provider: str = "ollama"
 
 
 class AIUpdate(BaseModel):
     enabled: bool | None = None
     model: str | None = None
     base_url: str | None = None
+    provider: str | None = None
+
+
+class PluginEntry(BaseModel):
+    id: str
+    name: str
+    kind: str  # ai | notification | other
+    description: str = ""
+    version: str = ""
+    builtin: bool = False
+
+
+class ProviderEntry(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+
+
+class ChannelEntry(BaseModel):
+    id: str
+    name: str
+
+
+class PluginsInfo(BaseModel):
+    plugins: list[PluginEntry] = Field(default_factory=list)
+    analyzer_providers: list[ProviderEntry] = Field(default_factory=list)
+    notification_channels: list[ChannelEntry] = Field(default_factory=list)
+    active_provider: str = "ollama"
+    errors: list[str] = Field(default_factory=list)
 
 
 class OllamaModelsInfo(BaseModel):

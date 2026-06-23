@@ -259,6 +259,10 @@ export function useLoadModel() {
   });
 }
 
+export function usePlugins() {
+  return useQuery({ queryKey: ["plugins"], queryFn: api.getPlugins });
+}
+
 export function useNotifications() {
   return useQuery({ queryKey: ["notifications"], queryFn: api.getNotifications });
 }

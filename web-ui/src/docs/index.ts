@@ -12,6 +12,7 @@ import timelapse from "./md/timelapse.md?raw";
 import ai from "./md/ai-analysis.md?raw";
 import training from "./md/training.md?raw";
 import notifications from "./md/notifications.md?raw";
+import plugins from "./md/plugins.md?raw";
 import tailscale from "./md/tailscale.md?raw";
 import fleet from "./md/fleet.md?raw";
 import security from "./md/security.md?raw";
@@ -79,6 +80,8 @@ export const DOCS: DocPage[] = [
     summary: "Every tailcam command and environment variable." },
   { slug: "configuration", title: "Configuration", group: "Reference", body: configuration,
     summary: "Every config section and setting." },
+  { slug: "plugins", title: "Plugins", group: "Reference", body: plugins,
+    summary: "Extend TailCam with AI providers and notification channels." },
   { slug: "api", title: "API reference", group: "Reference", body: api,
     summary: "REST, streams, management, and MCP endpoints." },
   { slug: "troubleshooting", title: "Troubleshooting", group: "Reference", body: troubleshooting,

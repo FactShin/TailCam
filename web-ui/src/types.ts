@@ -110,6 +110,25 @@ export interface AIPullStatus {
   error: string | null;
 }
 
+// -- plugins --
+
+export interface PluginEntry {
+  id: string;
+  name: string;
+  kind: string;
+  description: string;
+  version: string;
+  builtin: boolean;
+}
+
+export interface PluginsInfo {
+  plugins: PluginEntry[];
+  analyzer_providers: { id: string; name: string; description: string }[];
+  notification_channels: { id: string; name: string }[];
+  active_provider: string;
+  errors: string[];
+}
+
 // -- notifications --
 
 export interface NotificationsInfo {
