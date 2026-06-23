@@ -94,6 +94,10 @@ export const loadModel = (model: string) =>
     body: JSON.stringify({ model }),
   });
 
+// ---- plugins ----
+
+export const getPlugins = () => jsonFetch<import("../types").PluginsInfo>("/api/plugins");
+
 // ---- notifications ----
 
 export const getNotifications = () =>

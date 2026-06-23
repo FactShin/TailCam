@@ -40,25 +40,23 @@ class NotificationEvent:
 
 
 class NotificationService:
-    def __init__(self, config: NotificationsConfig) -> None:
+    def __init__(self, config: NotificationsConfig, channels: list | None = None) -> None:
         self._config = config  # live reference — UI edits take effect immediately
         self._lock = threading.Lock()
         self._last_motion: dict[str, float] = {}  # per-camera cooldown
+        if channels is None:
+            # Default to the built-in channels (lazy import avoids an import cycle).
+            from tailcam.plugins.builtin.channels import builtin_channels
+
+            channels = builtin_channels()
+        self._channels = list(channels)
 
     @property
     def config(self) -> NotificationsConfig:
         return self._config
 
     def channels_configured(self) -> list[str]:
-        c = self._config
-        out: list[str] = []
-        if c.discord_webhook.strip():
-            out.append("discord")
-        if c.telegram_token.strip() and c.telegram_chat_id.strip():
-            out.append("telegram")
-        if c.webhook_url.strip():
-            out.append("webhook")
-        return out
+        return [ch.id for ch in self._channels if ch.configured(self._config)]
 
     # -- triggers ----------------------------------------------------------
     def _motion_event(
@@ -174,16 +172,10 @@ class NotificationService:
         threading.Thread(target=self._send_all, args=(event,), daemon=True).start()
 
     def _send_all(self, event: NotificationEvent) -> dict[str, bool]:
-        c = self._config
         results: dict[str, bool] = {}
-        if c.discord_webhook.strip():
-            results["discord"] = _safe(_send_discord, c.discord_webhook.strip(), event)
-        if c.telegram_token.strip() and c.telegram_chat_id.strip():
-            results["telegram"] = _safe(
-                _send_telegram, c.telegram_token.strip(), c.telegram_chat_id.strip(), event
-            )
-        if c.webhook_url.strip():
-            results["webhook"] = _safe(_send_webhook, c.webhook_url.strip(), event)
+        for ch in self._channels:
+            if ch.configured(self._config):
+                results[ch.id] = _safe(ch.send, event, self._config)
         return results
 
 
@@ -208,7 +200,7 @@ def _read_image(path: str | None) -> bytes | None:
     return None
 
 
-def _send_discord(webhook: str, event: NotificationEvent) -> None:
+def send_discord(webhook: str, event: NotificationEvent) -> None:
     embed: dict[str, Any] = {
         "title": event.title[:256],
         "description": event.body[:2000],
@@ -228,7 +220,7 @@ def _send_discord(webhook: str, event: NotificationEvent) -> None:
     r.raise_for_status()
 
 
-def _send_telegram(token: str, chat_id: str, event: NotificationEvent) -> None:
+def send_telegram(token: str, chat_id: str, event: NotificationEvent) -> None:
     base = f"https://api.telegram.org/bot{token}"
     text = f"<b>{_esc(event.title)}</b>\n{_esc(event.body)}"
     img = _read_image(event.image_path)
@@ -248,7 +240,7 @@ def _send_telegram(token: str, chat_id: str, event: NotificationEvent) -> None:
     r.raise_for_status()
 
 
-def _send_webhook(url: str, event: NotificationEvent) -> None:
+def send_webhook(url: str, event: NotificationEvent) -> None:
     payload = {
         "source": "tailcam",
         "kind": event.kind,
