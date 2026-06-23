@@ -1103,3 +1103,16 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .notif-trig { display: inline-flex; align-items: center; gap: 9px; font-size: 13.5px; color: var(--text); font-weight: 550; }
 .notif-actions { display: flex; gap: 10px; margin-top: 16px; }
 .notif-grid input[type="range"] { width: 100%; accent-color: var(--accent); }
+
+/* ===== Plugins panel ===== */
+.plug-list { display: grid; gap: 9px; margin-bottom: 4px; }
+.plug-row { display: flex; align-items: center; gap: 13px; padding: 12px 14px; border-radius: 12px; background: var(--bg2); border: 1px solid var(--border); }
+.plug-ic { flex: none; width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border)); color: var(--accent); }
+.plug-main { flex: 1; min-width: 0; }
+.plug-name { font-weight: 650; font-size: 14px; }
+.plug-desc { color: var(--muted); font-size: 12.5px; margin-top: 1px; }
+.plug-badges { display: flex; gap: 6px; flex: none; }
+.plug-summary { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--hair); font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.plug-summary b { color: var(--text); font-weight: 600; }
+.plug-errors { margin-top: 12px; display: grid; gap: 6px; }
+.plug-err { color: var(--warn); font-family: var(--mono); font-size: 11.5px; }

@@ -539,6 +539,37 @@ def mcp_stdio() -> None:
 
 
 @app.command()
+def plugins() -> None:
+    """List installed TailCam plugins (AI providers + notification channels)."""
+    from tailcam.plugins.registry import PluginRegistry
+
+    config = AppConfig.load()
+    reg = PluginRegistry(
+        disabled=config.plugins.disabled, load_dropins=config.plugins.load_dropins
+    )
+    table = Table(title="Plugins", title_style="bold", header_style="bold cyan")
+    table.add_column("Plugin")
+    table.add_column("Kind")
+    table.add_column("Source")
+    table.add_column("Description")
+    for info in sorted(reg.plugin_infos(), key=lambda i: (i.kind, i.id)):
+        table.add_row(
+            info.name, info.kind,
+            "built-in" if info.builtin else "external",
+            info.description,
+        )
+    console.print(table)
+    providers = ", ".join(p.id for p in reg.analyzer_providers())
+    channels = ", ".join(c.id for c in reg.notification_channels())
+    console.print(f"[dim]AI providers:[/dim] {providers}")
+    console.print(f"[dim]Notification channels:[/dim] {channels}")
+    console.print(f"[dim]Active AI provider:[/dim] {config.ai.provider}")
+    if reg.errors:
+        for err in reg.errors:
+            console.print(f"[yellow]plugin error:[/yellow] {err}")
+
+
+@app.command()
 def version() -> None:
     """Print the TailCam version."""
     typer.echo(__version__)

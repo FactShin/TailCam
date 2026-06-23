@@ -76,6 +76,9 @@ class AIConfig:
     # Local vision-model analysis of motion events via Ollama. Cheap pixel
     # motion gates this, so the model is only consulted a frame or two per event.
     enabled: bool = False
+    # Which analyzer provider plugin powers motion labeling. "ollama" is built in;
+    # other providers can be added as plugins (see [plugins]).
+    provider: str = "ollama"
     # Ollama endpoint. localhost when TailCam + Ollama run on the same box; point
     # at a tailnet host (e.g. http://mac-mini.your-tailnet.ts.net:11434) to let
     # one machine analyze the whole fleet's events.
@@ -150,6 +153,16 @@ class TrainingConfig:
 
 
 @dataclass
+class PluginsConfig:
+    # Plugin system. Plugins extend TailCam with extra AI analyzer providers and
+    # notification channels, discovered via Python entry points (pip-installed)
+    # and a drop-in folder. ``disabled`` lists plugin ids to skip; ``load_dropins``
+    # toggles loading single-file plugins from the config dir's ``plugins/`` folder.
+    disabled: list[str] = field(default_factory=list)
+    load_dropins: bool = True
+
+
+@dataclass
 class NotificationsConfig:
     # Push alerts to Discord, Telegram, and/or a generic webhook (the latter is
     # the route for a personal bot like Hermes/OpenClaw — TailCam POSTs a JSON
@@ -198,6 +211,7 @@ class AppConfig:
     ai: AIConfig = field(default_factory=AIConfig)
     timelapse: TimelapseConfig = field(default_factory=TimelapseConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
+    plugins: PluginsConfig = field(default_factory=PluginsConfig)
     notifications: NotificationsConfig = field(default_factory=NotificationsConfig)
     mcp: MCPConfig = field(default_factory=MCPConfig)
 
@@ -237,6 +251,7 @@ class AppConfig:
             ai=AIConfig(**raw.get("ai", {})),
             timelapse=TimelapseConfig(**raw.get("timelapse", {})),
             training=TrainingConfig(**raw.get("training", {})),
+            plugins=PluginsConfig(**raw.get("plugins", {})),
             notifications=NotificationsConfig(**raw.get("notifications", {})),
             mcp=MCPConfig(**raw.get("mcp", {})),
         )
@@ -253,6 +268,7 @@ class AppConfig:
             "ai": asdict(self.ai),
             "timelapse": asdict(self.timelapse),
             "training": asdict(self.training),
+            "plugins": asdict(self.plugins),
             "notifications": asdict(self.notifications),
             "mcp": asdict(self.mcp),
         }

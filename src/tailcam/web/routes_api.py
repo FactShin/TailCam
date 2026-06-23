@@ -19,6 +19,7 @@ from tailcam.web.schemas import (
     AnnotationBox,
     CameraInfo,
     CameraSettingsUpdate,
+    ChannelEntry,
     CollectionUpdate,
     DatasetCreate,
     DatasetInfo,
@@ -35,8 +36,11 @@ from tailcam.web.schemas import (
     NotificationsUpdate,
     OkResponse,
     OllamaModelsInfo,
+    PluginEntry,
+    PluginsInfo,
     PostprocessInfo,
     PostprocessSettings,
+    ProviderEntry,
     SampleAnnotations,
     SampleAnnotationsUpdate,
     SampleInfo,
@@ -909,10 +913,19 @@ async def system_reload(ctx: AppContext = Depends(get_context)) -> list[CameraIn
     return await _aggregate_cameras(ctx, "all")
 
 
+def _is_ollama(ctx: AppContext) -> bool:
+    """Whether the active analyzer is the built-in Ollama provider (the only one
+    that supports the model pull/list/load endpoints)."""
+    return ctx.config.ai.provider == "ollama" and hasattr(ctx.analyzer, "health")
+
+
 async def _ai_info(ctx: AppContext) -> AIInfo:
     import anyio
 
-    reachable, model = await anyio.to_thread.run_sync(ctx.analyzer.health)
+    if _is_ollama(ctx):
+        reachable, model = await anyio.to_thread.run_sync(ctx.analyzer.health)
+    else:
+        reachable, model = False, None
     ai = ctx.config.ai
     return AIInfo(
         enabled=ai.enabled,
@@ -920,6 +933,7 @@ async def _ai_info(ctx: AppContext) -> AIInfo:
         model=ai.model,
         model_present=model is not None,
         base_url=ai.base_url,
+        provider=ai.provider,
     )
 
 
@@ -942,6 +956,8 @@ async def update_ai(update: AIUpdate, ctx: AppContext = Depends(get_context)) ->
         ai.model = update.model.strip()
     if update.base_url is not None and update.base_url.strip():
         ai.base_url = update.base_url.strip().rstrip("/")
+    if update.provider is not None and update.provider.strip():
+        ai.provider = update.provider.strip()  # takes effect on restart
     ctx.config.save()
     return await _ai_info(ctx)
 
@@ -949,6 +965,10 @@ async def update_ai(update: AIUpdate, ctx: AppContext = Depends(get_context)) ->
 async def _ollama_models_info(ctx: AppContext) -> OllamaModelsInfo:
     import anyio
 
+    if not _is_ollama(ctx):
+        return OllamaModelsInfo(
+            reachable=False, base_url=ctx.config.ai.base_url, active_model=ctx.config.ai.model
+        )
     reachable, installed = await anyio.to_thread.run_sync(ctx.analyzer.installed_models)
     return OllamaModelsInfo(
         reachable=reachable,
@@ -980,6 +1000,8 @@ async def ai_pull(
     GET /ai/pull for progress). Large vision models can take several minutes."""
     import anyio
 
+    if not _is_ollama(ctx):
+        raise HTTPException(status_code=400, detail="Active AI provider is not Ollama")
     reachable, _ = await anyio.to_thread.run_sync(ctx.analyzer.installed_models)
     if not reachable:
         raise HTTPException(status_code=502, detail="Ollama is not reachable")
@@ -997,6 +1019,8 @@ async def ai_load(body: AIModelRequest, ctx: AppContext = Depends(get_context)) 
     """Warm a model into Ollama's memory ('start' it) for fast first inference."""
     import anyio
 
+    if not _is_ollama(ctx):
+        raise HTTPException(status_code=400, detail="Active AI provider is not Ollama")
     ok = await anyio.to_thread.run_sync(ctx.analyzer.load, body.model)
     if not ok:
         raise HTTPException(
@@ -1047,6 +1071,27 @@ async def test_notification(ctx: AppContext = Depends(get_context)) -> OkRespons
     if failed:
         raise HTTPException(status_code=502, detail=f"Test failed for: {', '.join(failed)}")
     return OkResponse(detail=f"Test sent to {', '.join(channels)}")
+
+
+@router.get("/plugins", response_model=PluginsInfo)
+def plugins_info(ctx: AppContext = Depends(get_context)) -> PluginsInfo:
+    """Installed plugins plus the AI providers and notification channels they
+    contribute. Plugins are added via pip (entry points) or the drop-in folder."""
+    from dataclasses import asdict
+
+    reg = ctx.plugins
+    return PluginsInfo(
+        plugins=[PluginEntry(**asdict(info)) for info in reg.plugin_infos()],
+        analyzer_providers=[
+            ProviderEntry(id=p.id, name=p.name, description=getattr(p, "description", ""))
+            for p in reg.analyzer_providers()
+        ],
+        notification_channels=[
+            ChannelEntry(id=c.id, name=c.name) for c in reg.notification_channels()
+        ],
+        active_provider=ctx.config.ai.provider,
+        errors=reg.errors,
+    )
 
 
 @router.get("/update", response_model=UpdateInfo)
