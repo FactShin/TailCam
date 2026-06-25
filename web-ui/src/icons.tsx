@@ -40,21 +40,8 @@ const Icon = ({
   </svg>
 );
 
-// TailCam mark — lens reticle.
-export const Logo = ({ size = 28, className = "" }: { size?: number; className?: string }) => (
-  <svg width={size} height={size} viewBox="0 0 48 48" fill="none" className={className} aria-hidden="true">
-    <defs>
-      <linearGradient id="tcg" x1="6" y1="6" x2="42" y2="42" gradientUnits="userSpaceOnUse">
-        <stop stopColor="#5b7fff" />
-        <stop offset="1" stopColor="#9b5cff" />
-      </linearGradient>
-    </defs>
-    <circle cx="24" cy="24" r="19" stroke="url(#tcg)" strokeWidth="2.5" strokeDasharray="22 8" strokeDashoffset="11" strokeLinecap="round" />
-    <path d="M24 1.5v5M24 41.5v5M1.5 24h5M41.5 24h5" stroke="url(#tcg)" strokeWidth="2.5" strokeLinecap="round" />
-    <circle cx="24" cy="24" r="9" fill="url(#tcg)" />
-    <circle cx="20.5" cy="20.5" r="2.6" fill="#dff0ff" opacity="0.9" />
-  </svg>
-);
+// TailCam mark — lens reticle (final master art, layered for the boot loader).
+export { TailcamMark as Logo } from "./brand/mark";
 
 export const IconGrid = (p: IconProps) => (
   <Icon {...p}><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></Icon>

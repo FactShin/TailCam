@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 
-import { Logo } from "../icons";
+import { TailcamMark } from "../brand/mark";
 
-/** Short "systems nominal" boot sweep, shown once per browser session. */
+/** Short lens-focus boot animation, shown once per browser session. */
 export function BootOverlay() {
   const [show, setShow] = useState(() => {
     try { return !sessionStorage.getItem("tailcam.booted"); } catch { return true; }
@@ -11,7 +11,7 @@ export function BootOverlay() {
   useEffect(() => {
     if (!show) return;
     try { sessionStorage.setItem("tailcam.booted", "1"); } catch { /* ignore */ }
-    const t = setTimeout(() => setShow(false), 2100);
+    const t = setTimeout(() => setShow(false), 2500);
     return () => clearTimeout(t);
   }, [show]);
 
@@ -19,8 +19,9 @@ export function BootOverlay() {
   return (
     <div className="boot" aria-hidden="true">
       <div className="boot-inner">
-        <span className="boot-logo"><Logo size={56} /></span>
-        <span className="boot-line">TAILCAM · SYSTEMS NOMINAL</span>
+        <span className="boot-mark"><TailcamMark animated size={112} /></span>
+        <span className="boot-word">TailCam</span>
+        <span className="boot-line">SYSTEMS NOMINAL</span>
         <span className="boot-bar"><i /></span>
       </div>
     </div>
