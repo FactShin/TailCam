@@ -11,6 +11,7 @@ import recording from "./md/recording-media.md?raw";
 import timelapse from "./md/timelapse.md?raw";
 import ai from "./md/ai-analysis.md?raw";
 import training from "./md/training.md?raw";
+import homeAutomation from "./md/home-automation.md?raw";
 import notifications from "./md/notifications.md?raw";
 import plugins from "./md/plugins.md?raw";
 import tailscale from "./md/tailscale.md?raw";
@@ -59,6 +60,9 @@ export const DOCS: DocPage[] = [
     summary: "Datasets, training runs, and model lifecycle." },
   { slug: "notifications", title: "Notifications", group: "Intelligence", body: notifications,
     summary: "Discord / Telegram / webhook alerts for motion, offline, and training." },
+
+  { slug: "home-automation", title: "Home automation", group: "Network & fleet", body: homeAutomation,
+    summary: "Apple HomeKit cameras + Home Assistant (MJPEG cameras and MQTT)." },
 
   { slug: "tailscale", title: "Tailscale setup", group: "Network & fleet", body: tailscale,
     summary: "Serving over the tailnet, ports, and identity." },
