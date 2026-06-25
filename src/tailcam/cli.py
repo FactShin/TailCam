@@ -570,6 +570,35 @@ def plugins() -> None:
 
 
 @app.command()
+def homekit() -> None:
+    """Show the Apple HomeKit bridge configuration and readiness."""
+    import shutil
+
+    from tailcam.integrations.homekit import HomeKitBridge, valid_pin
+
+    config = AppConfig.load()
+    cfg = config.homekit
+    table = Table(title="Apple HomeKit", title_style="bold", header_style="bold cyan")
+    table.add_column("Setting")
+    table.add_column("Value")
+    table.add_row("Enabled", "yes" if cfg.enabled else "no")
+    table.add_row("Bridge name", cfg.bridge_name)
+    table.add_row("Setup code", cfg.pin if valid_pin(cfg.pin) else "(generated on first enable)")
+    table.add_row("Port", str(cfg.port))
+    table.add_row("Cameras", ", ".join(cfg.cameras) or "all")
+    hap = "installed" if HomeKitBridge.available() else "missing — pip install 'tailcam[homekit]'"
+    table.add_row("HAP-python", hap)
+    ff = "found" if shutil.which(cfg.ffmpeg) else f"missing — install ffmpeg ({cfg.ffmpeg})"
+    table.add_row("ffmpeg (live video)", ff)
+    console.print(table)
+    console.print(
+        "[dim]Pair in the Home app: + → Add Accessory → More options, then scan the QR "
+        "from Settings → Integrations (or type the setup code). Apple Home consumes "
+        "camera video over HAP — Matter does not carry camera streams.[/dim]"
+    )
+
+
+@app.command()
 def version() -> None:
     """Print the TailCam version."""
     typer.echo(__version__)

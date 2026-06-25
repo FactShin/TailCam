@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import threading
+from typing import cast
 
 from tailcam.ai.analyzer import OllamaAnalyzer
 from tailcam.ai.pull import ModelPuller
 from tailcam.camera.manager import CameraManager
 from tailcam.cluster.service import ClusterService, resolve_local_host
 from tailcam.config import AppConfig
+from tailcam.integrations.homeassistant import MqttPublisher
+from tailcam.integrations.homekit import HomeKitBridge
 from tailcam.logging_setup import get_logger
 from tailcam.media.gallery import MediaGallery
 from tailcam.media.recorder import RecordingService
@@ -26,6 +29,29 @@ from tailcam.training.inference import InferenceRouter
 from tailcam.training.service import TrainingService
 
 log = get_logger(__name__)
+
+
+class _MotionFanout:
+    """Routes a motion event to notifications and (if enabled) HA MQTT, so the
+    motion worker stays unaware of either. Anything other than ``notify_motion``
+    falls through to the underlying notification service."""
+
+    def __init__(self, notifications: NotificationService, ctx: AppContext) -> None:
+        self._notifications = notifications
+        self._ctx = ctx
+
+    def notify_motion(self, **kw: object) -> None:
+        self._notifications.notify_motion(**kw)  # type: ignore[arg-type]
+        mqtt = self._ctx.ha_mqtt
+        if mqtt is not None:
+            mqtt.publish_motion(
+                camera_id=kw.get("camera_id"),  # type: ignore[arg-type]
+                label=kw.get("label"),  # type: ignore[arg-type]
+                confidence=kw.get("confidence"),  # type: ignore[arg-type]
+            )
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._notifications, name)
 
 
 class AppContext:
@@ -60,6 +86,14 @@ class AppContext:
         self.notifications = NotificationService(
             config.notifications, channels=self.plugins.notification_channels()
         )
+        # Home-automation integrations (Apple HomeKit via HAP, Home Assistant via
+        # MJPEG cameras + optional MQTT discovery). Constructed always; started in
+        # startup() only when enabled.
+        self.homekit = HomeKitBridge(self)
+        self.ha_mqtt: MqttPublisher | None = (
+            MqttPublisher(self) if config.homeassistant.enabled else None
+        )
+        self._motion_fanout = _MotionFanout(self.notifications, self)
         self.training = TrainingService(
             self.manager, self.store, config.training, self.analyzer, self.local_host,
             notifier=self.notifications,
@@ -94,6 +128,10 @@ class AppContext:
         # (the UI only streams cameras that report online).
         self.manager.start_all()
         self._start_notify_monitor()
+        if self.config.homekit.enabled:
+            self.homekit.start()
+        if self.ha_mqtt is not None:
+            self.ha_mqtt.start()
         if self.config.tailscale.auto_serve and self.tailscale.status().running:
             https_port = self.config.tailscale.serve_port
             self.served = self.tailscale.serve(self.config.server.port, https_port)
@@ -106,6 +144,9 @@ class AppContext:
 
     def shutdown(self) -> None:
         self._stop_notify_monitor()
+        self.homekit.stop()
+        if self.ha_mqtt is not None:
+            self.ha_mqtt.stop()
         for worker in list(self._motion_workers.values()):
             worker.stop()
         self._motion_workers.clear()
@@ -147,6 +188,10 @@ class AppContext:
                         self.notifications.notify_camera_status(
                             camera_id=cid, name=cid, old=prev, new=status
                         )
+                        if self.ha_mqtt is not None:
+                            self.ha_mqtt.publish_camera_state(
+                                camera_id=cid, online=(status == "online")
+                            )
                     self._cam_status[cid] = status
                 for peer in self.cluster.cached_peers():
                     prev_online = self._peer_online.get(peer.key)
@@ -175,7 +220,8 @@ class AppContext:
                 return False
             worker = MotionWorker(
                 camera_id, buffer, self.config.motion, self.event_log, self.recorder,
-                analyzer=self.inference, notifier=self.notifications,
+                analyzer=self.inference,
+                notifier=cast("NotificationService", self._motion_fanout),
             )
             worker.start()
             self._motion_workers[camera_id] = worker

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs>
+ <linearGradient id="grad" gradientUnits="userSpaceOnUse" x1="84" y1="206" x2="430" y2="306">
+   <stop offset="0" stop-color="#0E74FF"></stop><stop offset="0.5" stop-color="#5A38F2"></stop><stop offset="1" stop-color="#9C20EE"></stop>
+ </linearGradient>
+ <radialGradient id="lensShade" gradientUnits="userSpaceOnUse" cx="214" cy="214" r="134">
+   <stop offset="0.62" stop-color="#000" stop-opacity="0"></stop><stop offset="1" stop-color="#08052a" stop-opacity="0.18"></stop>
+ </radialGradient>
+ <radialGradient id="pupilG" gradientUnits="userSpaceOnUse" cx="242" cy="242" r="64">
+   <stop offset="0" stop-color="#251d57"></stop><stop offset="1" stop-color="#120c33"></stop>
+ </radialGradient>
+ <radialGradient id="appbg" gradientUnits="userSpaceOnUse" cx="256" cy="200" r="360">
+   <stop offset="0" stop-color="#1a1740"></stop><stop offset="1" stop-color="#0a0820"></stop>
+ </radialGradient>
+ </defs><g fill="none" stroke="url(#grad)" stroke-width="27" stroke-linecap="round"><path d="M 413.875 307.297 A 166 166 0 0 1 307.297 413.875"></path><path d="M 204.703 413.875 A 166 166 0 0 1 98.125 307.297"></path><path d="M 98.125 204.703 A 166 166 0 0 1 204.703 98.125"></path><path d="M 307.297 98.125 A 166 166 0 0 1 413.875 204.703"></path><path d="M 394 256 L 450 256"></path><path d="M 256 394 L 256 450"></path><path d="M 118 256 L 62 256"></path><path d="M 256 118 L 256 62"></path></g></svg>

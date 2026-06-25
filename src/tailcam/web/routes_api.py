@@ -26,7 +26,13 @@ from tailcam.web.schemas import (
     DetectionBox,
     DetectionResult,
     EngineInfo,
+    HACameraEntry,
+    HomeAssistantStatus,
+    HomeAssistantUpdate,
+    HomeKitStatus,
+    HomeKitUpdate,
     HostInfo,
+    IntegrationsInfo,
     MediaCreatedResponse,
     MediaInfo,
     ModelInfo,
@@ -1092,6 +1098,108 @@ def plugins_info(ctx: AppContext = Depends(get_context)) -> PluginsInfo:
         active_provider=ctx.config.ai.provider,
         errors=reg.errors,
     )
+
+
+def _homeassistant_status(ctx: AppContext) -> HomeAssistantStatus:
+    from tailcam.integrations.base import public_base_url
+    from tailcam.integrations.homeassistant import MqttPublisher, camera_entries, camera_yaml
+
+    cfg = ctx.config.homeassistant
+    return HomeAssistantStatus(
+        enabled=cfg.enabled,
+        mqtt_available=MqttPublisher.available(),
+        mqtt_configured=bool(cfg.mqtt_host.strip()),
+        mqtt_connected=bool(ctx.ha_mqtt is not None and ctx.ha_mqtt.connected),
+        mqtt_host=cfg.mqtt_host,
+        mqtt_port=cfg.mqtt_port,
+        mqtt_username=cfg.mqtt_username,
+        mqtt_tls=cfg.mqtt_tls,
+        discovery_prefix=cfg.discovery_prefix,
+        node_id=cfg.node_id,
+        publish_motion=cfg.publish_motion,
+        publish_status=cfg.publish_status,
+        base_url=public_base_url(ctx),
+        cameras=[HACameraEntry(**e) for e in camera_entries(ctx)],
+        yaml=camera_yaml(ctx),
+    )
+
+
+@router.get("/integrations", response_model=IntegrationsInfo)
+def integrations_info(ctx: AppContext = Depends(get_context)) -> IntegrationsInfo:
+    """Apple HomeKit + Home Assistant integration status, pairing info, and the
+    ready-to-paste Home Assistant camera config."""
+    return IntegrationsInfo(
+        homekit=HomeKitStatus(**ctx.homekit.status()),
+        homeassistant=_homeassistant_status(ctx),
+    )
+
+
+@router.post("/integrations/homekit", response_model=HomeKitStatus)
+def update_homekit(update: HomeKitUpdate, ctx: AppContext = Depends(get_context)) -> HomeKitStatus:
+    """Enable/configure the Apple HomeKit bridge (persisted). Re-(starts) the
+    bridge so changes (cameras, name, pin) take effect immediately."""
+    from tailcam.integrations.homekit import generate_pin
+
+    cfg = ctx.config.homekit
+    if update.regenerate_pin:
+        cfg.pin = generate_pin()
+    if update.bridge_name is not None and update.bridge_name.strip():
+        cfg.bridge_name = update.bridge_name.strip()
+    if update.port is not None:
+        cfg.port = update.port
+    if update.cameras is not None:
+        cfg.cameras = update.cameras
+    if update.enabled is not None:
+        cfg.enabled = update.enabled
+    ctx.config.save()
+    if cfg.enabled:
+        ctx.homekit.restart()
+    else:
+        ctx.homekit.stop()
+    return HomeKitStatus(**ctx.homekit.status())
+
+
+@router.post("/integrations/homekit/reset", response_model=HomeKitStatus)
+def reset_homekit(ctx: AppContext = Depends(get_context)) -> HomeKitStatus:
+    """Forget all paired controllers so HomeKit can be paired from scratch."""
+    ctx.homekit.reset_pairing()
+    return HomeKitStatus(**ctx.homekit.status())
+
+
+@router.post("/integrations/homeassistant", response_model=HomeAssistantStatus)
+def update_homeassistant(
+    update: HomeAssistantUpdate, ctx: AppContext = Depends(get_context)
+) -> HomeAssistantStatus:
+    """Configure the Home Assistant integration (persisted). (Re)connects the
+    optional MQTT discovery publisher."""
+    from tailcam.integrations.homeassistant import MqttPublisher
+
+    cfg = ctx.config.homeassistant
+    for field_name in (
+        "mqtt_host", "mqtt_username", "mqtt_password", "discovery_prefix", "node_id",
+    ):
+        value = getattr(update, field_name)
+        if value is not None:
+            setattr(cfg, field_name, value.strip())
+    if update.mqtt_port is not None:
+        cfg.mqtt_port = update.mqtt_port
+    if update.mqtt_tls is not None:
+        cfg.mqtt_tls = update.mqtt_tls
+    if update.publish_motion is not None:
+        cfg.publish_motion = update.publish_motion
+    if update.publish_status is not None:
+        cfg.publish_status = update.publish_status
+    if update.enabled is not None:
+        cfg.enabled = update.enabled
+    ctx.config.save()
+    # Restart MQTT to apply (it no-ops when not enabled / no broker / no paho).
+    if ctx.ha_mqtt is not None:
+        ctx.ha_mqtt.stop()
+        ctx.ha_mqtt = None
+    if cfg.enabled and cfg.mqtt_host.strip():
+        ctx.ha_mqtt = MqttPublisher(ctx)
+        ctx.ha_mqtt.start()
+    return _homeassistant_status(ctx)
 
 
 @router.get("/update", response_model=UpdateInfo)

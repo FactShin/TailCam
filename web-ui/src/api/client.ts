@@ -98,6 +98,25 @@ export const loadModel = (model: string) =>
 
 export const getPlugins = () => jsonFetch<import("../types").PluginsInfo>("/api/plugins");
 
+// ---- integrations (HomeKit / Home Assistant) ----
+
+export const getIntegrations = () =>
+  jsonFetch<import("../types").IntegrationsInfo>("/api/integrations");
+export const updateHomeKit = (body: import("../types").HomeKitUpdate) =>
+  jsonFetch<import("../types").HomeKitStatus>("/api/integrations/homekit", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+export const resetHomeKit = () =>
+  jsonFetch<import("../types").HomeKitStatus>("/api/integrations/homekit/reset", {
+    method: "POST",
+  });
+export const updateHomeAssistant = (body: import("../types").HomeAssistantUpdate) =>
+  jsonFetch<import("../types").HomeAssistantStatus>("/api/integrations/homeassistant", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
 // ---- notifications ----
 
 export const getNotifications = () =>

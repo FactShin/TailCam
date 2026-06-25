@@ -263,6 +263,34 @@ export function usePlugins() {
   return useQuery({ queryKey: ["plugins"], queryFn: api.getPlugins });
 }
 
+export function useIntegrations() {
+  return useQuery({ queryKey: ["integrations"], queryFn: api.getIntegrations, refetchInterval: 15000 });
+}
+
+export function useUpdateHomeKit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: import("../types").HomeKitUpdate) => api.updateHomeKit(body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["integrations"] }),
+  });
+}
+
+export function useResetHomeKit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.resetHomeKit(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["integrations"] }),
+  });
+}
+
+export function useUpdateHomeAssistant() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: import("../types").HomeAssistantUpdate) => api.updateHomeAssistant(body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["integrations"] }),
+  });
+}
+
 export function useNotifications() {
   return useQuery({ queryKey: ["notifications"], queryFn: api.getNotifications });
 }
