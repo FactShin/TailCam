@@ -129,6 +129,74 @@ export interface PluginsInfo {
   errors: string[];
 }
 
+// -- home-automation integrations --
+
+export interface HomeKitStatus {
+  enabled: boolean;
+  available: boolean;
+  ffmpeg_present: boolean;
+  running: boolean;
+  paired: boolean;
+  pin: string;
+  setup_uri: string | null;
+  setup_qr: string | null;
+  bridge_name: string;
+  port: number;
+  selected: string[];
+  cameras: { id: string; name: string }[];
+}
+
+export interface HomeKitUpdate {
+  enabled?: boolean;
+  bridge_name?: string;
+  port?: number;
+  cameras?: string[];
+  regenerate_pin?: boolean;
+}
+
+export interface HACameraEntry {
+  camera_id: string;
+  name: string;
+  mjpeg_url: string;
+  still_image_url: string;
+}
+
+export interface HomeAssistantStatus {
+  enabled: boolean;
+  mqtt_available: boolean;
+  mqtt_configured: boolean;
+  mqtt_connected: boolean;
+  mqtt_host: string;
+  mqtt_port: number;
+  mqtt_username: string;
+  mqtt_tls: boolean;
+  discovery_prefix: string;
+  node_id: string;
+  publish_motion: boolean;
+  publish_status: boolean;
+  base_url: string;
+  cameras: HACameraEntry[];
+  yaml: string;
+}
+
+export interface HomeAssistantUpdate {
+  enabled?: boolean;
+  mqtt_host?: string;
+  mqtt_port?: number;
+  mqtt_username?: string;
+  mqtt_password?: string;
+  mqtt_tls?: boolean;
+  discovery_prefix?: string;
+  node_id?: string;
+  publish_motion?: boolean;
+  publish_status?: boolean;
+}
+
+export interface IntegrationsInfo {
+  homekit: HomeKitStatus;
+  homeassistant: HomeAssistantStatus;
+}
+
 // -- notifications --
 
 export interface NotificationsInfo {

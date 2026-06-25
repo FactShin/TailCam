@@ -132,6 +132,80 @@ class PluginsInfo(BaseModel):
     errors: list[str] = Field(default_factory=list)
 
 
+# -- home-automation integrations --
+
+
+class IntegrationCamera(BaseModel):
+    id: str
+    name: str
+
+
+class HomeKitStatus(BaseModel):
+    enabled: bool
+    available: bool  # HAP-python installed
+    ffmpeg_present: bool  # needed on the host for live video
+    running: bool
+    paired: bool
+    pin: str = ""
+    setup_uri: str | None = None
+    setup_qr: str | None = None  # inline SVG of the pairing QR
+    bridge_name: str = "TailCam"
+    port: int = 51826
+    selected: list[str] = Field(default_factory=list)  # configured subset; [] = all
+    cameras: list[IntegrationCamera] = Field(default_factory=list)  # all available cameras
+
+
+class HomeKitUpdate(BaseModel):
+    enabled: bool | None = None
+    bridge_name: str | None = None
+    port: int | None = None
+    cameras: list[str] | None = None
+    regenerate_pin: bool | None = None
+
+
+class HACameraEntry(BaseModel):
+    camera_id: str
+    name: str
+    mjpeg_url: str
+    still_image_url: str
+
+
+class HomeAssistantStatus(BaseModel):
+    enabled: bool
+    mqtt_available: bool  # paho-mqtt installed
+    mqtt_configured: bool  # broker host set
+    mqtt_connected: bool
+    mqtt_host: str = ""
+    mqtt_port: int = 1883
+    mqtt_username: str = ""
+    mqtt_tls: bool = False
+    discovery_prefix: str = "homeassistant"
+    node_id: str = "tailcam"
+    publish_motion: bool = True
+    publish_status: bool = True
+    base_url: str = ""
+    cameras: list[HACameraEntry] = Field(default_factory=list)
+    yaml: str = ""
+
+
+class HomeAssistantUpdate(BaseModel):
+    enabled: bool | None = None
+    mqtt_host: str | None = None
+    mqtt_port: int | None = None
+    mqtt_username: str | None = None
+    mqtt_password: str | None = None
+    mqtt_tls: bool | None = None
+    discovery_prefix: str | None = None
+    node_id: str | None = None
+    publish_motion: bool | None = None
+    publish_status: bool | None = None
+
+
+class IntegrationsInfo(BaseModel):
+    homekit: HomeKitStatus
+    homeassistant: HomeAssistantStatus
+
+
 class OllamaModelsInfo(BaseModel):
     reachable: bool
     base_url: str = ""

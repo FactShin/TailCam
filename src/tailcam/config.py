@@ -200,6 +200,46 @@ class MCPConfig:
 
 
 @dataclass
+class HomeKitConfig:
+    # Expose cameras to Apple Home via HAP (HomeKit Accessory Protocol) — the
+    # native, working path for live camera video in the Home app on iPhone/iPad/
+    # Mac. (Matter does not yet carry camera streams to Apple Home, so HomeKit
+    # cameras use HAP directly — no Matter bridge required.) Requires the
+    # ``homekit`` extra (HAP-python) and ``ffmpeg`` on the host for live video.
+    enabled: bool = False
+    bridge_name: str = "TailCam"
+    # HomeKit setup code shown for pairing, format ``XXX-XX-XXX``. A random valid
+    # code is generated on first enable if left at the placeholder.
+    pin: str = ""
+    port: int = 51826
+    # Camera ids to expose; empty = all cameras.
+    cameras: list[str] = field(default_factory=list)
+    # ffmpeg binary used to transcode TailCam's MJPEG into HomeKit's H.264/SRTP.
+    ffmpeg: str = "ffmpeg"
+
+
+@dataclass
+class HomeAssistantConfig:
+    # Home Assistant integration. Cameras are added to HA natively via the
+    # built-in MJPEG IP Camera integration (TailCam already serves the stream +
+    # snapshot URLs) — see the Integrations panel for ready-to-paste config.
+    # Optionally, MQTT discovery publishes motion + connectivity as binary
+    # sensors so HA automations can react to TailCam events (needs the ``mqtt``
+    # extra, paho-mqtt, and a broker HA also listens to).
+    enabled: bool = False
+    mqtt_host: str = ""  # broker host; empty disables MQTT discovery
+    mqtt_port: int = 1883
+    mqtt_username: str = ""
+    mqtt_password: str = ""
+    mqtt_tls: bool = False
+    discovery_prefix: str = "homeassistant"  # HA MQTT discovery prefix
+    node_id: str = "tailcam"  # namespaces this node's MQTT topics
+    publish_motion: bool = True
+    publish_status: bool = True
+    motion_reset_seconds: float = 20.0  # auto-clear a motion sensor after this
+
+
+@dataclass
 class AppConfig:
     server: ServerConfig = field(default_factory=ServerConfig)
     stream: StreamConfig = field(default_factory=StreamConfig)
@@ -213,6 +253,8 @@ class AppConfig:
     training: TrainingConfig = field(default_factory=TrainingConfig)
     plugins: PluginsConfig = field(default_factory=PluginsConfig)
     notifications: NotificationsConfig = field(default_factory=NotificationsConfig)
+    homekit: HomeKitConfig = field(default_factory=HomeKitConfig)
+    homeassistant: HomeAssistantConfig = field(default_factory=HomeAssistantConfig)
     mcp: MCPConfig = field(default_factory=MCPConfig)
 
     @classmethod
@@ -253,6 +295,8 @@ class AppConfig:
             training=TrainingConfig(**raw.get("training", {})),
             plugins=PluginsConfig(**raw.get("plugins", {})),
             notifications=NotificationsConfig(**raw.get("notifications", {})),
+            homekit=HomeKitConfig(**raw.get("homekit", {})),
+            homeassistant=HomeAssistantConfig(**raw.get("homeassistant", {})),
             mcp=MCPConfig(**raw.get("mcp", {})),
         )
 
@@ -270,6 +314,8 @@ class AppConfig:
             "training": asdict(self.training),
             "plugins": asdict(self.plugins),
             "notifications": asdict(self.notifications),
+            "homekit": asdict(self.homekit),
+            "homeassistant": asdict(self.homeassistant),
             "mcp": asdict(self.mcp),
         }
 

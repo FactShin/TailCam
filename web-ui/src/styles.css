@@ -1148,3 +1148,58 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .plug-summary b { color: var(--text); font-weight: 600; }
 .plug-errors { margin-top: 12px; display: grid; gap: 6px; }
 .plug-err { color: var(--warn); font-family: var(--mono); font-size: 11.5px; }
+
+/* ===== Home-automation integrations ===== */
+.intg-wrap { display: grid; gap: var(--gap); }
+.intg-head {
+  display: flex; align-items: center; gap: 8px; font-family: var(--mono);
+  font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--faint); padding: 2px 2px 0;
+}
+.intg-head svg { color: var(--accent); }
+.ais-badge.warn {
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+  color: var(--warn); border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+}
+.intg-warn {
+  margin-top: 4px; padding: 10px 12px; border-radius: 10px; font-size: 12.5px;
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 28%, var(--border)); color: var(--muted);
+}
+.intg-warn code { font-family: var(--mono); font-size: 11.5px; color: var(--text); }
+.intg-status { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+
+/* HomeKit pairing */
+.hk-pair {
+  display: flex; gap: 18px; align-items: center; padding: 14px;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 14px;
+}
+.hk-qr {
+  flex: none; width: 124px; height: 124px; background: #fff; border-radius: 12px;
+  padding: 10px; display: grid; place-items: center;
+}
+.hk-qr svg { width: 100%; height: 100%; display: block; }
+.hk-qr-empty { color: #888; font-size: 11px; }
+.hk-pair-info { min-width: 0; }
+.hk-pin {
+  font-family: var(--mono); font-size: 26px; font-weight: 700; letter-spacing: 0.06em;
+  color: var(--text); margin: 4px 0 8px;
+}
+.hk-pair-steps { font-size: 12px; color: var(--muted); line-height: 1.5; }
+.hk-pair-steps b { color: var(--text); }
+
+.intg-cams { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.intg-cam { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); cursor: pointer; }
+.intg-cam input { accent-color: var(--accent); width: 15px; height: 15px; }
+
+/* Home Assistant URLs */
+.intg-cams-list { display: grid; gap: 7px; margin-bottom: 6px; }
+.intg-url-row { display: flex; align-items: center; gap: 8px; }
+.intg-url-name { flex: 1; min-width: 0; font-size: 13px; color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.intg-url {
+  display: inline-flex; align-items: center; gap: 5px; flex: none;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+  padding: 4px 9px; font-family: var(--mono); font-size: 11px; color: var(--muted); cursor: pointer;
+  transition: color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.intg-url:hover { color: var(--accent); border-color: var(--accent-line); }

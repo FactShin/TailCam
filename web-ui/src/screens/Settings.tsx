@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { useAi, useCameras, useHosts, useSystem } from "../api/hooks";
+import { IntegrationsPanel } from "../components/IntegrationsPanel";
 import { NotificationsSettings } from "../components/NotificationsSettings";
 import { PluginsPanel } from "../components/PluginsPanel";
 import { useToast } from "../components/toast";
@@ -128,6 +129,8 @@ export function Settings() {
         </div>
 
         <NotificationsSettings />
+
+        <IntegrationsPanel />
 
         <PluginsPanel />
 

@@ -45,6 +45,12 @@ dependencies = [
 [project.optional-dependencies]
 webrtc = ["aiortc~=1.9"]
 turbojpeg = ["PyTurboJPEG~=1.7"]
+# Apple HomeKit bridge (HAP). The [QRCode] extra pulls base36 + pyqrcode for the
+# pairing QR. Live video also needs `ffmpeg` on the host.
+homekit = ["HAP-python[QRCode]>=4.9,<6"]
+# Home Assistant MQTT discovery (cameras themselves need no extra — they use
+# HA's built-in MJPEG IP Camera integration).
+mqtt = ["paho-mqtt~=2.1"]
 dev = [
     "pytest~=8.3",
     "pytest-asyncio~=0.24",
