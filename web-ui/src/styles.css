@@ -1160,7 +1160,7 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .stor-note b { color: var(--text); }
 
 /* ===== Home-automation integrations ===== */
-.intg-wrap { display: grid; gap: var(--gap); }
+.intg-wrap { display: grid; gap: var(--gap); grid-column: 1 / -1; }
 .intg-head {
   display: flex; align-items: center; gap: 8px; font-family: var(--mono);
   font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
