@@ -263,6 +263,18 @@ export function usePlugins() {
   return useQuery({ queryKey: ["plugins"], queryFn: api.getPlugins });
 }
 
+export function useStorage() {
+  return useQuery({ queryKey: ["storage"], queryFn: api.getStorage });
+}
+
+export function useUpdateStorage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: import("../types").StorageUpdate) => api.updateStorage(body),
+    onSuccess: (data) => qc.setQueryData(["storage"], data),
+  });
+}
+
 export function useIntegrations() {
   return useQuery({ queryKey: ["integrations"], queryFn: api.getIntegrations, refetchInterval: 15000 });
 }

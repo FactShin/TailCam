@@ -98,6 +98,15 @@ export const loadModel = (model: string) =>
 
 export const getPlugins = () => jsonFetch<import("../types").PluginsInfo>("/api/plugins");
 
+// ---- storage / recording / retention ----
+
+export const getStorage = () => jsonFetch<import("../types").StorageInfo>("/api/storage");
+export const updateStorage = (body: import("../types").StorageUpdate) =>
+  jsonFetch<import("../types").StorageInfo>("/api/storage", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
 // ---- integrations (HomeKit / Home Assistant) ----
 
 export const getIntegrations = () =>

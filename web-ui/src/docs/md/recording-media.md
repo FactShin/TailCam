@@ -25,6 +25,20 @@ Recordings can also start automatically on motion — see
 [Motion detection](motion-detection) and `motion.auto_record`. Recording fps
 comes from `stream.default_fps`.
 
+## Recording & storage settings
+
+**Settings → Recording & storage** controls, with no config-file editing:
+
+- **Save location** — where recordings, snapshots, and thumbnails are written.
+  Leave blank for the default app data folder, or point it at an external drive
+  / NAS mount (`storage.media_dir`). The path is checked for writability before
+  it's accepted; existing media stays where it was, new media goes to the new
+  location. Shows live disk used/free.
+- **Record on motion** — turns on `motion.auto_record` so motion events save a
+  clip. Motion detection must also be enabled on the camera for this to fire.
+- **Keep recording after motion ends** — `motion.record_tail_seconds`.
+- **Retention** — the `max_gb` / `max_age_days` budget below.
+
 ## The gallery
 
 The Gallery lists recordings and snapshots with camera, type, size, and trigger

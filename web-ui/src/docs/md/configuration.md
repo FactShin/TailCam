@@ -49,6 +49,12 @@ See [Motion detection](motion-detection).
 | `max_gb` | `10.0` | Total media budget (GB). |
 | `max_age_days` | `30` | Delete media older than this. |
 
+## `[storage]`
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `media_dir` | `""` | Folder for recordings/snapshots/thumbnails. Blank = `<data-dir>/media`. Set to an external drive/NAS path. Editable from Settings → Recording & storage. |
+
 ## `[tailscale]`
 
 See [Tailscale setup](tailscale).
