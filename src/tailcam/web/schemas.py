@@ -206,6 +206,35 @@ class IntegrationsInfo(BaseModel):
     homeassistant: HomeAssistantStatus
 
 
+# -- storage / recording / retention --
+
+
+class StorageInfo(BaseModel):
+    media_dir: str  # resolved absolute path media is written to
+    custom_dir: str = ""  # configured custom path ("" = app default)
+    is_default: bool = True
+    writable: bool = True
+    disk_total: int = 0
+    disk_free: int = 0
+    disk_used: int = 0
+    media_bytes: int = 0
+    media_count: int = 0
+    # recording (motion auto-save)
+    auto_record: bool = False
+    record_tail_seconds: float = 5.0
+    # retention budget
+    max_gb: float = 10.0
+    max_age_days: int = 30
+
+
+class StorageUpdate(BaseModel):
+    media_dir: str | None = None  # custom save dir; "" reverts to default
+    auto_record: bool | None = None
+    record_tail_seconds: float | None = None
+    max_gb: float | None = None
+    max_age_days: int | None = None
+
+
 class OllamaModelsInfo(BaseModel):
     reachable: bool
     base_url: str = ""

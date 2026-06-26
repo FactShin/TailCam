@@ -4,6 +4,7 @@ import { useAi, useCameras, useHosts, useSystem } from "../api/hooks";
 import { IntegrationsPanel } from "../components/IntegrationsPanel";
 import { NotificationsSettings } from "../components/NotificationsSettings";
 import { PluginsPanel } from "../components/PluginsPanel";
+import { StoragePanel } from "../components/StoragePanel";
 import { useToast } from "../components/toast";
 import { IconCheck, IconCopy, IconDevice, IconInfo, IconServer, IconWifi, IconWifiOff } from "../icons";
 import { fmtBytes } from "../lib/format";
@@ -47,6 +48,8 @@ export function Settings() {
           <div className="kv"><span className="kv-k">Cameras (all hosts)</span><span className="kv-v mono">{cameras.length} connected</span></div>
           <div className="kv"><span className="kv-k">Storage used (local)</span><span className="kv-v mono">{fmtBytes(sys.media_bytes)}</span></div>
         </div>
+
+        <StoragePanel />
 
         <div className="panel">
           <div className="panel-title"><IconServer size={16} /> Tailnet devices</div>

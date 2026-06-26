@@ -129,6 +129,32 @@ export interface PluginsInfo {
   errors: string[];
 }
 
+// -- storage / recording / retention --
+
+export interface StorageInfo {
+  media_dir: string;
+  custom_dir: string;
+  is_default: boolean;
+  writable: boolean;
+  disk_total: number;
+  disk_free: number;
+  disk_used: number;
+  media_bytes: number;
+  media_count: number;
+  auto_record: boolean;
+  record_tail_seconds: number;
+  max_gb: number;
+  max_age_days: number;
+}
+
+export interface StorageUpdate {
+  media_dir?: string;
+  auto_record?: boolean;
+  record_tail_seconds?: number;
+  max_gb?: number;
+  max_age_days?: number;
+}
+
 // -- home-automation integrations --
 
 export interface HomeKitStatus {

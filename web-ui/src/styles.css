@@ -1149,6 +1149,16 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .plug-errors { margin-top: 12px; display: grid; gap: 6px; }
 .plug-err { color: var(--warn); font-family: var(--mono); font-size: 11.5px; }
 
+/* ===== Recording & storage ===== */
+.stor-path { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.stor-path .mono { font-size: 12px; color: var(--text); word-break: break-all; }
+.stor-disk { margin: 14px 0 4px; }
+.stor-bar { height: 8px; border-radius: 5px; background: var(--bg2); overflow: hidden; }
+.stor-bar i { display: block; height: 100%; background: var(--accent-grad); border-radius: 5px; }
+.stor-stats { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; font-size: 11px; color: var(--faint); flex-wrap: wrap; }
+.stor-note { font-size: 12px; color: var(--muted); margin: 2px 0 6px; }
+.stor-note b { color: var(--text); }
+
 /* ===== Home-automation integrations ===== */
 .intg-wrap { display: grid; gap: var(--gap); }
 .intg-head {

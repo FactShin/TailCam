@@ -71,8 +71,23 @@ def data_dir() -> Path:
     return _data_base() / _app_name()
 
 
-def media_dir() -> Path:
+# Optional runtime override for the media location (set from config.storage at
+# startup) so recordings/snapshots can live on an external drive without moving
+# the database or config.
+_media_override: Path | None = None
+
+
+def set_media_override(path: str | None) -> None:
+    global _media_override
+    _media_override = Path(path).expanduser() if path and path.strip() else None
+
+
+def default_media_dir() -> Path:
     return data_dir() / "media"
+
+
+def media_dir() -> Path:
+    return _media_override if _media_override is not None else default_media_dir()
 
 
 def thumbnails_dir() -> Path:
