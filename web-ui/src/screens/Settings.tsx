@@ -49,8 +49,6 @@ export function Settings() {
           <div className="kv"><span className="kv-k">Storage used (local)</span><span className="kv-v mono">{fmtBytes(sys.media_bytes)}</span></div>
         </div>
 
-        <StoragePanel />
-
         <div className="panel">
           <div className="panel-title"><IconServer size={16} /> Tailnet devices</div>
           {hosts.length === 0 && <div className="kv"><span className="kv-v mono">No nodes discovered.</span></div>}
@@ -130,6 +128,8 @@ export function Settings() {
             <code className="url-code mono">{sys.local_url}</code>
           </div>
         </div>
+
+        <StoragePanel />
 
         <NotificationsSettings />
 
