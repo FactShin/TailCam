@@ -53,6 +53,15 @@ class RetentionConfig:
 
 
 @dataclass
+class StorageConfig:
+    # Where recordings, snapshots, and thumbnails are written. Blank = the
+    # default app data location (``<data-dir>/media``). Point this at an external
+    # drive or NAS mount to keep video off the system disk. Existing media stays
+    # where it was written; new media goes to the new location.
+    media_dir: str = ""
+
+
+@dataclass
 class TailscaleConfig:
     auto_serve: bool = True
     # Tailnet-facing HTTPS port. 8443 keeps TailCam off the root URL (443) so it
@@ -245,6 +254,7 @@ class AppConfig:
     stream: StreamConfig = field(default_factory=StreamConfig)
     motion: MotionConfig = field(default_factory=MotionConfig)
     retention: RetentionConfig = field(default_factory=RetentionConfig)
+    storage: StorageConfig = field(default_factory=StorageConfig)
     tailscale: TailscaleConfig = field(default_factory=TailscaleConfig)
     peers: PeersConfig = field(default_factory=PeersConfig)
     cameras: CamerasConfig = field(default_factory=CamerasConfig)
@@ -287,6 +297,7 @@ class AppConfig:
             stream=StreamConfig(**raw.get("stream", {})),
             motion=MotionConfig(**raw.get("motion", {})),
             retention=RetentionConfig(**raw.get("retention", {})),
+            storage=StorageConfig(**raw.get("storage", {})),
             tailscale=TailscaleConfig(**raw.get("tailscale", {})),
             peers=PeersConfig(**raw.get("peers", {})),
             cameras=CamerasConfig(**raw.get("cameras", {})),
@@ -306,6 +317,7 @@ class AppConfig:
             "stream": asdict(self.stream),
             "motion": asdict(self.motion),
             "retention": asdict(self.retention),
+            "storage": asdict(self.storage),
             "tailscale": asdict(self.tailscale),
             "peers": asdict(self.peers),
             "cameras": asdict(self.cameras),

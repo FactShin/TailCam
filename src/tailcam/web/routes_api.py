@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -51,6 +52,8 @@ from tailcam.web.schemas import (
     SampleAnnotationsUpdate,
     SampleInfo,
     SampleRelabel,
+    StorageInfo,
+    StorageUpdate,
     SystemInfo,
     TimelapseAnalysisEventInfo,
     TimelapseInfo,
@@ -1200,6 +1203,90 @@ def update_homeassistant(
         ctx.ha_mqtt = MqttPublisher(ctx)
         ctx.ha_mqtt.start()
     return _homeassistant_status(ctx)
+
+
+def _writable(path: Path) -> bool:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / ".tailcam_write_test"
+        probe.write_text("ok")
+        probe.unlink(missing_ok=True)
+        return True
+    except OSError:
+        return False
+
+
+def _storage_info(ctx: AppContext) -> StorageInfo:
+    import shutil
+
+    from tailcam import paths
+
+    resolved = paths.media_dir()
+    custom = ctx.config.storage.media_dir.strip()
+    # disk stats for the volume that holds (or will hold) the media dir
+    probe = resolved
+    while not probe.exists() and probe.parent != probe:
+        probe = probe.parent
+    try:
+        du = shutil.disk_usage(probe)
+        total, free, used = du.total, du.free, du.used
+    except OSError:
+        total = free = used = 0
+    m, r = ctx.config.motion, ctx.config.retention
+    return StorageInfo(
+        media_dir=str(resolved),
+        custom_dir=custom,
+        is_default=(custom == ""),
+        writable=_writable(resolved),
+        disk_total=total,
+        disk_free=free,
+        disk_used=used,
+        media_bytes=ctx.gallery.total_bytes(),
+        media_count=len(ctx.store.list_media(limit=1_000_000)),
+        auto_record=m.auto_record,
+        record_tail_seconds=m.record_tail_seconds,
+        max_gb=r.max_gb,
+        max_age_days=r.max_age_days,
+    )
+
+
+@router.get("/storage", response_model=StorageInfo)
+def storage_info(ctx: AppContext = Depends(get_context)) -> StorageInfo:
+    """Where recordings/snapshots are saved, disk usage, motion auto-record, and
+    the retention budget."""
+    return _storage_info(ctx)
+
+
+@router.post("/storage", response_model=StorageInfo)
+def update_storage(update: StorageUpdate, ctx: AppContext = Depends(get_context)) -> StorageInfo:
+    """Set the save location (validated for writability), motion auto-record, and
+    retention. A blank media_dir reverts to the default app data location."""
+    from pathlib import Path
+
+    from tailcam import paths
+
+    if update.media_dir is not None:
+        new = update.media_dir.strip()
+        if new:
+            target = Path(new).expanduser()
+            if not _writable(target):
+                raise HTTPException(
+                    status_code=400, detail=f"Cannot create or write to '{new}'"
+                )
+            ctx.config.storage.media_dir = str(target)
+        else:
+            ctx.config.storage.media_dir = ""
+        paths.set_media_override(ctx.config.storage.media_dir)
+    if update.auto_record is not None:
+        ctx.config.motion.auto_record = update.auto_record
+    if update.record_tail_seconds is not None:
+        ctx.config.motion.record_tail_seconds = max(0.0, update.record_tail_seconds)
+    if update.max_gb is not None:
+        ctx.config.retention.max_gb = max(0.1, update.max_gb)
+    if update.max_age_days is not None:
+        ctx.config.retention.max_age_days = max(1, update.max_age_days)
+    ctx.config.save()
+    return _storage_info(ctx)
 
 
 @router.get("/update", response_model=UpdateInfo)

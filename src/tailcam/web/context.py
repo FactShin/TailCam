@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import threading
+import time
 from typing import cast
 
+from tailcam import paths
 from tailcam.ai.analyzer import OllamaAnalyzer
 from tailcam.ai.pull import ModelPuller
 from tailcam.camera.manager import CameraManager
@@ -57,6 +59,9 @@ class _MotionFanout:
 class AppContext:
     def __init__(self, config: AppConfig, store: Store | None = None) -> None:
         self.config = config
+        # Send recordings/snapshots to a custom drive if configured (before any
+        # service computes a media path).
+        paths.set_media_override(config.storage.media_dir)
         self.store = store or Store()
         self.manager = CameraManager(self.store, config)
         self.snapshots = SnapshotService(self.manager, self.store)
@@ -111,6 +116,7 @@ class AppContext:
         self._notify_thread: threading.Thread | None = None
         self._cam_status: dict[str, str] = {}
         self._peer_online: dict[str, bool] = {}
+        self._last_prune = 0.0
 
     def startup(self) -> None:
         stale = self.store.close_stale_motion_events()
@@ -127,6 +133,7 @@ class AppContext:
         # Eager-start workers so status reflects reality from the first poll
         # (the UI only streams cameras that report online).
         self.manager.start_all()
+        self._prune_media()  # enforce the retention budget on boot
         self._start_notify_monitor()
         if self.config.homekit.enabled:
             self.homekit.start()
@@ -200,9 +207,22 @@ class AppContext:
                             node_key=peer.key, host=peer.host, online=peer.online
                         )
                     self._peer_online[peer.key] = peer.online
+                # Enforce the retention budget periodically (every ~5 min).
+                if time.monotonic() - self._last_prune > 300:
+                    self._prune_media()
             except Exception as exc:  # never let the monitor die
                 log.debug("notify monitor: %s", exc)
             self._notify_stop.wait(8.0)
+
+    def _prune_media(self) -> None:
+        """Delete media beyond the retention budget (size + age)."""
+        self._last_prune = time.monotonic()
+        try:
+            removed = self.gallery.prune(self.config.retention)
+            if removed:
+                log.info("Retention: pruned %d media file(s)", removed)
+        except Exception as exc:
+            log.debug("retention prune failed: %s", exc)
 
     async def aclose(self) -> None:
         await self.cluster.aclose()
