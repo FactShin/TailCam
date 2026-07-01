@@ -47,13 +47,28 @@ class MediaGallery:
 
     def prune(self, retention: RetentionConfig) -> int:
         """Delete oldest media exceeding age or size limits. Returns count removed."""
-        removed = 0
+        from tailcam import paths
+
+        # If the media location itself is gone (external drive unmounted), do
+        # NOT prune: unlink(missing_ok) would "succeed" without deleting the
+        # files, dropping DB rows and orphaning the media when the drive returns.
+        media_root = paths.media_dir()
+        if not media_root.exists():
+            log.warning(
+                "Retention: media dir %s missing (unmounted?) — skipping prune", media_root
+            )
+            return 0
         cutoff = time.time() - retention.max_age_days * 86400
+        max_bytes = int(retention.max_gb * 1024**3)
+        # Cheap no-op check (the common case) before scanning the table.
+        oldest = self._store.oldest_media_ts()
+        if (oldest is None or oldest >= cutoff) and self.total_bytes() <= max_bytes:
+            return 0
+        removed = 0
         for record in self._store.list_media(limit=100000):
             if record.created_ts < cutoff and record.id is not None:
                 if self.delete(record.id):
                     removed += 1
-        max_bytes = int(retention.max_gb * 1024**3)
         current = self.total_bytes()
         if current > max_bytes:
             # Delete oldest-first until under budget. Track the running total in

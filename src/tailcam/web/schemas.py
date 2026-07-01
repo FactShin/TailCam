@@ -222,7 +222,8 @@ class StorageInfo(BaseModel):
     # recording (motion auto-save)
     auto_record: bool = False
     record_tail_seconds: float = 5.0
-    # retention budget
+    # retention budget (auto-cleanup is opt-in; nothing is deleted when off)
+    retention_enabled: bool = False
     max_gb: float = 10.0
     max_age_days: int = 30
 
@@ -231,6 +232,7 @@ class StorageUpdate(BaseModel):
     media_dir: str | None = None  # custom save dir; "" reverts to default
     auto_record: bool | None = None
     record_tail_seconds: float | None = None
+    retention_enabled: bool | None = None
     max_gb: float | None = None
     max_age_days: int | None = None
 
