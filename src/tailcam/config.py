@@ -48,6 +48,9 @@ class MotionConfig:
 
 @dataclass
 class RetentionConfig:
+    # Auto-cleanup is opt-in: TailCam never deletes media unless the user turns
+    # it on (Settings → Recording & storage). The limits below only apply then.
+    enabled: bool = False
     max_gb: float = 10.0
     max_age_days: int = 30
 
@@ -270,25 +273,32 @@ class AppConfig:
     @classmethod
     def load(cls, path: Path | None = None) -> AppConfig:
         cfg_path = path or paths.config_file()
+        config: AppConfig
         if not cfg_path.exists():
-            return cls()
-        try:
-            with cfg_path.open("rb") as fh:
-                raw = tomllib.load(fh)
-            return cls.from_dict(raw)
-        except (tomllib.TOMLDecodeError, OSError, TypeError, ValueError) as exc:
-            # A malformed/hand-edited config must NOT brick every command or
-            # crash-loop the background service. Back the bad file up and run on
-            # defaults; the user can fix it and `tailcam restart`.
-            logging.getLogger("tailcam.config").error(
-                "Invalid config at %s (%s). Using defaults; bad file saved as %s.bad",
-                cfg_path, exc, cfg_path.name,
-            )
+            config = cls()
+        else:
             try:
-                cfg_path.replace(cfg_path.with_suffix(cfg_path.suffix + ".bad"))
-            except OSError:
-                pass
-            return cls()
+                with cfg_path.open("rb") as fh:
+                    raw = tomllib.load(fh)
+                config = cls.from_dict(raw)
+            except (tomllib.TOMLDecodeError, OSError, TypeError, ValueError) as exc:
+                # A malformed/hand-edited config must NOT brick every command or
+                # crash-loop the background service. Back the bad file up and run on
+                # defaults; the user can fix it and `tailcam restart`.
+                logging.getLogger("tailcam.config").error(
+                    "Invalid config at %s (%s). Using defaults; bad file saved as %s.bad",
+                    cfg_path, exc, cfg_path.name,
+                )
+                try:
+                    cfg_path.replace(cfg_path.with_suffix(cfg_path.suffix + ".bad"))
+                except OSError:
+                    pass
+                config = cls()
+        # Loading config is the single choke point every entry path goes
+        # through (server, CLI, MCP), so apply the custom media location here —
+        # before anything computes or creates media paths.
+        paths.set_media_override(config.storage.media_dir)
+        return config
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> AppConfig:

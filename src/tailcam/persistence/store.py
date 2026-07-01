@@ -391,6 +391,14 @@ class Store:
         ).fetchone()
         return int(row["total"])
 
+    def count_media(self) -> int:
+        row = self._conn().execute("SELECT COUNT(*) AS n FROM media").fetchone()
+        return int(row["n"])
+
+    def oldest_media_ts(self) -> float | None:
+        row = self._conn().execute("SELECT MIN(created_ts) AS ts FROM media").fetchone()
+        return float(row["ts"]) if row["ts"] is not None else None
+
     # -- motion events -----------------------------------------------------
     def add_motion_event(self, record: MotionEventRecord) -> int:
         conn = self._conn()

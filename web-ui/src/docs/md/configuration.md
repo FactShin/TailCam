@@ -46,6 +46,7 @@ See [Motion detection](motion-detection).
 
 | Key | Default | Meaning |
 | --- | --- | --- |
+| `enabled` | `false` | Auto-cleanup master switch (opt-in; nothing is deleted when off). |
 | `max_gb` | `10.0` | Total media budget (GB). |
 | `max_age_days` | `30` | Delete media older than this. |
 

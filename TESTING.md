@@ -170,13 +170,17 @@ and jot anything weird in **Notes**.
 
 ---
 
-## 13. Retention / cleanup (NEW — enforced now)
+## 13. Retention / auto-cleanup (opt-in)
+
+> Auto-cleanup is **off by default** — TailCam never deletes media unless you
+> enable it.
 
 | # | Action | Expect | P/F |
 |---|--------|--------|-----|
-|13.1| Settings → Recording & storage → set **Storage budget** low (e.g. 0.1 GB) and **Save**. | Saves without error. | |
-|13.2| Record several clips to exceed the budget, wait a few minutes (or restart). | Oldest media is automatically deleted to stay under budget. | |
-|13.3| Restore a sane budget afterward. | — | |
+|13.1| With Auto-cleanup **off**, record clips and wait. | Nothing is ever deleted. | |
+|13.2| Settings → Recording & storage → turn on **Auto-cleanup**, set **Storage budget** low (e.g. 0.1 GB), **Save**. | Saves without error; budget fields appear when the toggle is on. | |
+|13.3| Record several clips to exceed the budget, wait a few minutes (or restart). | Oldest media is automatically deleted to stay under budget. | |
+|13.4| Restore a sane budget (or turn Auto-cleanup back off). | — | |
 
 ---
 

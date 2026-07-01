@@ -98,6 +98,7 @@ class AppContext:
         self.ha_mqtt: MqttPublisher | None = (
             MqttPublisher(self) if config.homeassistant.enabled else None
         )
+        self._ha_mqtt_lock = threading.Lock()
         self._motion_fanout = _MotionFanout(self.notifications, self)
         self.training = TrainingService(
             self.manager, self.store, config.training, self.analyzer, self.local_host,
@@ -195,8 +196,11 @@ class AppContext:
                         self.notifications.notify_camera_status(
                             camera_id=cid, name=cid, old=prev, new=status
                         )
-                        if self.ha_mqtt is not None:
-                            self.ha_mqtt.publish_camera_state(
+                        # Bind locally: a concurrent settings save can swap
+                        # self.ha_mqtt to None between check and call.
+                        mqtt = self.ha_mqtt
+                        if mqtt is not None:
+                            mqtt.publish_camera_state(
                                 camera_id=cid, online=(status == "online")
                             )
                     self._cam_status[cid] = status
@@ -215,14 +219,34 @@ class AppContext:
             self._notify_stop.wait(8.0)
 
     def _prune_media(self) -> None:
-        """Delete media beyond the retention budget (size + age)."""
+        """Delete media beyond the retention budget (size + age). Opt-in: never
+        deletes anything unless the user enabled auto-cleanup."""
         self._last_prune = time.monotonic()
+        if not self.config.retention.enabled:
+            return
         try:
             removed = self.gallery.prune(self.config.retention)
             if removed:
                 log.info("Retention: pruned %d media file(s)", removed)
         except Exception as exc:
             log.debug("retention prune failed: %s", exc)
+
+    def apply_homeassistant_config(self) -> None:
+        """(Re)start or stop the MQTT publisher to match the current config.
+
+        The single owner of the ha_mqtt lifecycle after startup — the settings
+        route calls this instead of swapping the publisher itself. Serialized so
+        concurrent saves can't start duplicate paho clients (same client_id).
+        """
+        with self._ha_mqtt_lock:
+            old = self.ha_mqtt
+            self.ha_mqtt = None
+            if old is not None:
+                old.stop()
+            if self.config.homeassistant.enabled:
+                publisher = MqttPublisher(self)
+                publisher.start()  # no-ops when no broker host / paho missing
+                self.ha_mqtt = publisher
 
     async def aclose(self) -> None:
         await self.cluster.aclose()

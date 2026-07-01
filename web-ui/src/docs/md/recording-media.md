@@ -37,7 +37,9 @@ comes from `stream.default_fps`.
 - **Record on motion** — turns on `motion.auto_record` so motion events save a
   clip. Motion detection must also be enabled on the camera for this to fire.
 - **Keep recording after motion ends** — `motion.record_tail_seconds`.
-- **Retention** — the `max_gb` / `max_age_days` budget below.
+- **Auto-cleanup** — opt-in retention (`retention.enabled`). TailCam never
+  deletes media unless you turn this on; when on, the `max_gb` /
+  `max_age_days` budget below is enforced.
 
 ## The gallery
 
@@ -52,16 +54,19 @@ Delete media from the gallery or with `DELETE /api/media/<id>`.
 
 ## Retention
 
-To stop media filling the disk, TailCam enforces retention limits from the
-`[retention]` config:
+To stop media filling the disk, turn on **Auto-cleanup** (Settings → Recording &
+storage). Retention is **opt-in** — TailCam never deletes media unless
+`retention.enabled` is true. When enabled, the `[retention]` limits apply:
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
+| `enabled` | false | Master switch for auto-cleanup. |
 | `max_gb` | 10.0 | Total media budget in gigabytes. |
 | `max_age_days` | 30 | Delete media older than this. |
 
-When a limit is exceeded, the oldest media is pruned first. Total usage is shown
-on the dashboard and in `GET /api/system` (`media_bytes`).
+When a limit is exceeded, the oldest media is pruned first (checked at startup
+and every few minutes; skipped if the media drive is unmounted). Total usage is
+shown on the dashboard and in `GET /api/system` (`media_bytes`).
 
 The [MCP](mcp-overview) tool `suggest_retention_cleanup` gives a non-destructive
 analysis of what's using space and what to clean.

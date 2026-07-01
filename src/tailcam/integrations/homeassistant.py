@@ -52,9 +52,10 @@ def camera_entries(ctx: AppContext) -> list[dict[str, str]]:
     return out
 
 
-def camera_yaml(ctx: AppContext) -> str:
+def camera_yaml(ctx: AppContext, entries: list[dict[str, str]] | None = None) -> str:
     """A ``configuration.yaml`` snippet adding every camera via the MJPEG platform."""
-    entries = camera_entries(ctx)
+    if entries is None:
+        entries = camera_entries(ctx)
     if not entries:
         return "# No cameras detected yet.\n"
     lines = ["camera:"]
@@ -149,6 +150,9 @@ class MqttPublisher:
         self._client: Any = None
         self._lock = threading.Lock()
         self._motion_timers: dict[str, threading.Timer] = {}
+        # camera_id -> deduped slug, kept in sync with what discovery announced
+        # so runtime publishes hit the same topics HA subscribed to.
+        self._slugs: dict[str, str] = {}
         self._avail_topic = f"{self._cfg.node_id}/availability"
         self._started = False
 
@@ -207,7 +211,15 @@ class MqttPublisher:
                     "ON" if online else "OFF",
                     qos=1, retain=True,
                 )
-                client.publish(f"{self._cfg.node_id}/{cam.slug}/motion", "OFF", qos=1, retain=True)
+                # Seed motion OFF only when there is no active motion window —
+                # paho re-fires on_connect on every auto-reconnect, and blindly
+                # publishing OFF would clobber a live retained ON.
+                with self._lock:
+                    motion_active = cam.slug in self._motion_timers
+                if not motion_active:
+                    client.publish(
+                        f"{self._cfg.node_id}/{cam.slug}/motion", "OFF", qos=1, retain=True
+                    )
             log.info("MQTT discovery published (%s)", reason)
         except Exception as exc:  # never let a callback kill the client thread
             log.debug("MQTT on_connect publish failed: %s", exc)
@@ -230,7 +242,17 @@ class MqttPublisher:
 
     # -- publishing --------------------------------------------------------
     def _cameras(self) -> list[CameraRef]:
-        return selected_cameras(self._ctx, [])
+        cams = selected_cameras(self._ctx, [])
+        # Refresh the id -> slug map so publish paths use the same (deduped)
+        # slugs that discovery announced.
+        with self._lock:
+            self._slugs = {c.id: c.slug for c in cams}
+        return cams
+
+    def _slug_for(self, camera_id: str) -> str:
+        with self._lock:
+            slug = self._slugs.get(camera_id)
+        return slug if slug is not None else slugify(camera_id)
 
     def _discovery(self) -> list[tuple[str, dict[str, Any]]]:
         host = self._ctx.local_host or ""
@@ -249,7 +271,7 @@ class MqttPublisher:
     ) -> None:
         if not self.connected or not self._cfg.publish_motion:
             return
-        slug = slugify(camera_id)
+        slug = self._slug_for(camera_id)
         attrs = {"camera_id": camera_id, "label": label, "confidence": confidence}
         base = f"{self._cfg.node_id}/{slug}/motion"
         try:
@@ -266,12 +288,19 @@ class MqttPublisher:
             timer = threading.Timer(
                 max(1.0, self._cfg.motion_reset_seconds), self._clear_motion, args=(slug,)
             )
+            # The timer clears only if it is still the registered one — an
+            # already-fired predecessor that lost the lock race must not pop
+            # this fresh timer and publish OFF right after our ON.
+            timer.args = (slug, timer)
             timer.daemon = True
             self._motion_timers[slug] = timer
             timer.start()
 
-    def _clear_motion(self, slug: str) -> None:
+    def _clear_motion(self, slug: str, timer: threading.Timer | None = None) -> None:
         with self._lock:
+            current = self._motion_timers.get(slug)
+            if timer is not None and current is not timer:
+                return  # superseded by a newer motion event
             self._motion_timers.pop(slug, None)
         if self.connected:
             try:
@@ -286,7 +315,7 @@ class MqttPublisher:
             return
         try:
             self._client.publish(
-                f"{self._cfg.node_id}/{slugify(camera_id)}/status",
+                f"{self._cfg.node_id}/{self._slug_for(camera_id)}/status",
                 "ON" if online else "OFF",
                 qos=1, retain=True,
             )

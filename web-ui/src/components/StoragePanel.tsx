@@ -11,29 +11,35 @@ export function StoragePanel() {
   const update = useUpdateStorage();
   const toast = useToast();
 
+  // The two forms (save location vs recording/retention) are independent —
+  // each has its own dirty flag so saving one never clobbers unsaved edits in
+  // the other.
   const [dir, setDir] = useState("");
+  const [dirDirty, setDirDirty] = useState(false);
   const [tail, setTail] = useState(5);
   const [maxGb, setMaxGb] = useState(10);
   const [maxAge, setMaxAge] = useState(30);
-  const [dirty, setDirty] = useState(false);
+  const [retDirty, setRetDirty] = useState(false);
 
   useEffect(() => {
-    if (data && !dirty) {
-      setDir(data.custom_dir);
+    if (!data) return;
+    if (!dirDirty) setDir(data.custom_dir);
+    if (!retDirty) {
       setTail(data.record_tail_seconds);
       setMaxGb(data.max_gb);
       setMaxAge(data.max_age_days);
     }
-  }, [data, dirty]);
+  }, [data, dirDirty, retDirty]);
 
   if (!data) return null;
 
   const setAutoRecord = (v: boolean) => update.mutate({ auto_record: v });
+  const setRetentionEnabled = (v: boolean) => update.mutate({ retention_enabled: v });
 
   const saveLocation = async () => {
     try {
       await update.mutateAsync({ media_dir: dir });
-      setDirty(false);
+      setDirDirty(false);
       toast.ok(dir.trim() ? "Save location updated" : "Reverted to default location");
     } catch (e) {
       toast.err(e instanceof Error ? e.message : "Could not set location");
@@ -41,7 +47,7 @@ export function StoragePanel() {
   };
   const resetLocation = async () => {
     setDir("");
-    setDirty(false);
+    setDirDirty(false);
     try {
       await update.mutateAsync({ media_dir: "" });
       toast.ok("Reverted to default location");
@@ -56,7 +62,7 @@ export function StoragePanel() {
         max_gb: maxGb,
         max_age_days: maxAge,
       });
-      setDirty(false);
+      setRetDirty(false);
       toast.ok("Recording settings saved");
     } catch {
       toast.err("Could not save");
@@ -96,7 +102,7 @@ export function StoragePanel() {
             placeholder="/mnt/usb/tailcam or D:\\TailCam"
             onChange={(e) => {
               setDir(e.target.value);
-              setDirty(true);
+              setDirDirty(true);
             }}
           />
         </label>
@@ -118,7 +124,7 @@ export function StoragePanel() {
           <i style={{ width: `${usedPct}%` }} />
         </div>
         <div className="stor-stats mono">
-          <span>{fmtBytes(data.media_bytes)} media · {data.media_count} files</span>
+          <span>{fmtBytes(data.media_bytes)} in recordings + snapshots · {data.media_count} files</span>
           <span>{fmtBytes(data.disk_free)} free of {fmtBytes(data.disk_total)}</span>
         </div>
       </div>
@@ -142,26 +148,45 @@ export function StoragePanel() {
         here automatically.
       </p>
 
-      {/* tail + retention */}
+      {/* tail */}
       <div className="notif-grid">
         <label className="tl-field">
           <span className="microlabel">Keep recording after motion ends (seconds)</span>
           <input className="tl-input" type="number" min={0} value={tail}
-            onChange={(e) => { setTail(parseFloat(e.target.value) || 0); setDirty(true); }} />
-        </label>
-        <label className="tl-field">
-          <span className="microlabel">Storage budget (GB)</span>
-          <input className="tl-input" type="number" min={0.1} step={0.5} value={maxGb}
-            onChange={(e) => { setMaxGb(parseFloat(e.target.value) || 0.1); setDirty(true); }} />
-        </label>
-        <label className="tl-field">
-          <span className="microlabel">Delete media older than (days)</span>
-          <input className="tl-input" type="number" min={1} value={maxAge}
-            onChange={(e) => { setMaxAge(parseInt(e.target.value) || 1); setDirty(true); }} />
+            onChange={(e) => { setTail(parseFloat(e.target.value) || 0); setRetDirty(true); }} />
         </label>
       </div>
+
+      {/* auto-cleanup (opt-in retention) */}
+      <div className="notif-row">
+        <span className="microlabel">Auto-cleanup</span>
+        <div className="notif-trigs">
+          <span className="notif-trig">
+            <Toggle
+              checked={data.retention_enabled}
+              label="Automatically delete old media to stay under the limits"
+              onChange={setRetentionEnabled}
+            />
+            <span>Automatically delete old media to stay under the limits</span>
+          </span>
+        </div>
+      </div>
+      {data.retention_enabled && (
+        <div className="notif-grid">
+          <label className="tl-field">
+            <span className="microlabel">Storage budget (GB)</span>
+            <input className="tl-input" type="number" min={0.1} step={0.5} value={maxGb}
+              onChange={(e) => { setMaxGb(parseFloat(e.target.value) || 0.1); setRetDirty(true); }} />
+          </label>
+          <label className="tl-field">
+            <span className="microlabel">Delete media older than (days)</span>
+            <input className="tl-input" type="number" min={1} value={maxAge}
+              onChange={(e) => { setMaxAge(parseInt(e.target.value) || 1); setRetDirty(true); }} />
+          </label>
+        </div>
+      )}
       <div className="notif-actions">
-        <Button variant="primary" disabled={!dirty || update.isPending} onClick={saveRetention}>
+        <Button variant="primary" disabled={!retDirty || update.isPending} onClick={saveRetention}>
           {update.isPending ? "Saving…" : "Save"}
         </Button>
       </div>
