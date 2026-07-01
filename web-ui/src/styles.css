@@ -1199,6 +1199,7 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .hk-pair-steps b { color: var(--text); }
 
 .intg-cams { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.intg-hint { display: block; margin-top: 8px; font-size: 12px; color: var(--warn); }
 .intg-cam { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); cursor: pointer; }
 .intg-cam input { accent-color: var(--accent); width: 15px; height: 15px; }
 

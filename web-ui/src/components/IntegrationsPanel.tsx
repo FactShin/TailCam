@@ -31,30 +31,35 @@ function HomeKitCard({ hk }: { hk: HomeKitStatus }) {
   const reset = useResetHomeKit();
   const toast = useToast();
 
+  const allIds = hk.cameras.map((c) => c.id);
   const [name, setName] = useState(hk.bridge_name);
-  const [sel, setSel] = useState<string[]>(hk.selected);
+  // Explicit checked-id list in the UI. The API's "[] = all cameras" sentinel
+  // is only applied on save — otherwise unchecking the last camera would
+  // collapse to [] and silently re-select everything.
+  const [sel, setSel] = useState<string[]>(hk.selected.length === 0 ? allIds : hk.selected);
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
     if (!dirty) {
       setName(hk.bridge_name);
-      setSel(hk.selected);
+      setSel(hk.selected.length === 0 ? hk.cameras.map((c) => c.id) : hk.selected);
     }
-  }, [hk.bridge_name, hk.selected, dirty]);
+  }, [hk.bridge_name, hk.selected, hk.cameras, dirty]);
 
-  const allIds = hk.cameras.map((c) => c.id);
-  const checked = (id: string) => sel.length === 0 || sel.includes(id);
+  const checked = (id: string) => sel.includes(id);
   const toggleCam = (id: string) => {
-    const eff = sel.length === 0 ? allIds : sel;
-    const next = eff.includes(id) ? eff.filter((x) => x !== id) : [...eff, id];
-    setSel(next.length === allIds.length ? [] : next);
+    setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
     setDirty(true);
   };
+  const noneSelected = hk.cameras.length > 0 && sel.length === 0;
 
   const setEnabled = (v: boolean) => update.mutate({ enabled: v });
   const save = async () => {
     try {
-      await update.mutateAsync({ bridge_name: name, cameras: sel });
+      await update.mutateAsync({
+        bridge_name: name,
+        cameras: sel.length === allIds.length ? [] : sel,
+      });
       setDirty(false);
       toast.ok("HomeKit updated");
     } catch {
@@ -140,10 +145,15 @@ function HomeKitCard({ hk }: { hk: HomeKitStatus }) {
               ))}
               {hk.cameras.length === 0 && <span className="ais-intro">No cameras detected yet.</span>}
             </div>
+            {noneSelected && (
+              <span className="intg-hint">
+                Select at least one camera — to expose none, turn HomeKit off instead.
+              </span>
+            )}
           </div>
 
           <div className="notif-actions">
-            <Button variant="primary" disabled={!dirty || update.isPending} onClick={save}>
+            <Button variant="primary" disabled={!dirty || noneSelected || update.isPending} onClick={save}>
               {update.isPending ? "Saving…" : "Save"}
             </Button>
             <Button
@@ -205,7 +215,10 @@ function HomeAssistantCard({ ha }: { ha: HomeAssistantStatus }) {
   };
   const save = async () => {
     try {
-      await update.mutateAsync(form);
+      // Omit the password unless the user typed one — the field shows
+      // "(unchanged)" and sending "" would erase the stored password.
+      const { mqtt_password, ...rest } = form;
+      await update.mutateAsync(mqtt_password ? { ...rest, mqtt_password } : rest);
       setDirty(false);
       toast.ok("Home Assistant updated");
     } catch {

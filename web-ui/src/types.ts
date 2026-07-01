@@ -143,6 +143,7 @@ export interface StorageInfo {
   media_count: number;
   auto_record: boolean;
   record_tail_seconds: number;
+  retention_enabled: boolean;
   max_gb: number;
   max_age_days: number;
 }
@@ -151,6 +152,7 @@ export interface StorageUpdate {
   media_dir?: string;
   auto_record?: boolean;
   record_tail_seconds?: number;
+  retention_enabled?: boolean;
   max_gb?: number;
   max_age_days?: number;
 }

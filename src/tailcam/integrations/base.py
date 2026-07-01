@@ -82,10 +82,13 @@ def local_base_url(ctx: AppContext) -> str:
 def public_base_url(ctx: AppContext) -> str:
     """Base URL another machine (e.g. Home Assistant) should use to reach
     TailCam — the Tailscale host, https when Tailscale Serve is active."""
-    host = ctx.local_host or local_ip()
     if getattr(ctx, "served", False):
-        port = ctx.config.tailscale.serve_port
-        return f"https://{host}" if port == 443 else f"https://{host}:{port}"
+        # Same URL the dashboard shows under "Access" — one source of truth for
+        # the served/HTTPS/port-443 rules.
+        return ctx.tailscale.access_url(
+            ctx.config.server.port, True, ctx.config.tailscale.serve_port
+        ).rstrip("/")
+    host = ctx.local_host or local_ip()
     return f"http://{host}:{ctx.config.server.port}"
 
 

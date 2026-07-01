@@ -20,6 +20,7 @@ from __future__ import annotations
 import secrets
 import shutil
 import threading
+from functools import lru_cache
 from re import compile as _re_compile
 from typing import TYPE_CHECKING, Any
 
@@ -76,8 +77,12 @@ def build_stream_cmd(source_url: str, ffmpeg: str = "ffmpeg") -> str:
     return _STREAM_TEMPLATE.replace("{ffmpeg}", ffmpeg).replace("{source}", source_url)
 
 
+@lru_cache(maxsize=4)
 def qr_svg(uri: str) -> str | None:
-    """Render an X-HM setup URI as an inline SVG QR (for the Integrations UI)."""
+    """Render an X-HM setup URI as an inline SVG QR (for the Integrations UI).
+
+    Cached: the UI polls integration status every 15s and the URI only changes
+    when the pin changes."""
     try:
         import io
 
@@ -122,15 +127,22 @@ def camera_options(source_url: str, address: str, ffmpeg: str = "ffmpeg") -> dic
     }
 
 
+@lru_cache(maxsize=1)
+def _snapshot_client() -> Any:
+    """One keep-alive HTTP client for all HomeKit snapshot fetches — controllers
+    poll every camera's tile every few seconds while the Home app is open."""
+    import httpx
+
+    return httpx.Client(timeout=4.0)
+
+
 def _make_camera(driver: Any, name: str, source_url: str, snap_url: str, ffmpeg: str) -> Any:
     from pyhap.camera import Camera
 
     class TailcamCamera(Camera):
         def get_snapshot(self, image_size: Any) -> bytes:  # noqa: ARG002
             try:
-                import httpx
-
-                resp = httpx.get(snap_url, timeout=4.0)
+                resp = _snapshot_client().get(snap_url)
                 if resp.status_code == 200 and resp.content:
                     return resp.content
             except Exception as exc:  # fall back to HAP-python's placeholder

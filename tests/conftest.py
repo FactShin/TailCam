@@ -6,6 +6,15 @@ import pytest
 os.environ["TAILCAM_SYNTHETIC"] = "1"
 
 
+@pytest.fixture(autouse=True)
+def _reset_media_override():
+    """paths._media_override is process-global; never leak it across tests."""
+    from tailcam import paths
+
+    yield
+    paths.set_media_override(None)
+
+
 @pytest.fixture
 def isolated_env(tmp_path, monkeypatch):
     data = tmp_path / "data"

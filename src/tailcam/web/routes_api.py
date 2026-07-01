@@ -1108,6 +1108,7 @@ def _homeassistant_status(ctx: AppContext) -> HomeAssistantStatus:
     from tailcam.integrations.homeassistant import MqttPublisher, camera_entries, camera_yaml
 
     cfg = ctx.config.homeassistant
+    entries = camera_entries(ctx)
     return HomeAssistantStatus(
         enabled=cfg.enabled,
         mqtt_available=MqttPublisher.available(),
@@ -1122,8 +1123,8 @@ def _homeassistant_status(ctx: AppContext) -> HomeAssistantStatus:
         publish_motion=cfg.publish_motion,
         publish_status=cfg.publish_status,
         base_url=public_base_url(ctx),
-        cameras=[HACameraEntry(**e) for e in camera_entries(ctx)],
-        yaml=camera_yaml(ctx),
+        cameras=[HACameraEntry(**e) for e in entries],
+        yaml=camera_yaml(ctx, entries),
     )
 
 
@@ -1175,7 +1176,6 @@ def update_homeassistant(
 ) -> HomeAssistantStatus:
     """Configure the Home Assistant integration (persisted). (Re)connects the
     optional MQTT discovery publisher."""
-    from tailcam.integrations.homeassistant import MqttPublisher
 
     cfg = ctx.config.homeassistant
     for field_name in (
@@ -1195,13 +1195,8 @@ def update_homeassistant(
     if update.enabled is not None:
         cfg.enabled = update.enabled
     ctx.config.save()
-    # Restart MQTT to apply (it no-ops when not enabled / no broker / no paho).
-    if ctx.ha_mqtt is not None:
-        ctx.ha_mqtt.stop()
-        ctx.ha_mqtt = None
-    if cfg.enabled and cfg.mqtt_host.strip():
-        ctx.ha_mqtt = MqttPublisher(ctx)
-        ctx.ha_mqtt.start()
+    # Restart MQTT to apply (no-ops when disabled / no broker / no paho).
+    ctx.apply_homeassistant_config()
     return _homeassistant_status(ctx)
 
 
@@ -1217,13 +1212,16 @@ def _writable(path: Path) -> bool:
 
 
 def _storage_info(ctx: AppContext) -> StorageInfo:
+    import os
     import shutil
 
     from tailcam import paths
 
     resolved = paths.media_dir()
     custom = ctx.config.storage.media_dir.strip()
-    # disk stats for the volume that holds (or will hold) the media dir
+    # Nearest existing ancestor: used for disk stats and a NON-mutating
+    # writability check (a GET must not create directories or write probes —
+    # that would materialize an unmounted mountpoint on the root filesystem).
     probe = resolved
     while not probe.exists() and probe.parent != probe:
         probe = probe.parent
@@ -1232,19 +1230,21 @@ def _storage_info(ctx: AppContext) -> StorageInfo:
         total, free, used = du.total, du.free, du.used
     except OSError:
         total = free = used = 0
+    writable = os.access(resolved if resolved.exists() else probe, os.W_OK)
     m, r = ctx.config.motion, ctx.config.retention
     return StorageInfo(
         media_dir=str(resolved),
         custom_dir=custom,
         is_default=(custom == ""),
-        writable=_writable(resolved),
+        writable=writable,
         disk_total=total,
         disk_free=free,
         disk_used=used,
         media_bytes=ctx.gallery.total_bytes(),
-        media_count=len(ctx.store.list_media(limit=1_000_000)),
+        media_count=ctx.store.count_media(),
         auto_record=m.auto_record,
         record_tail_seconds=m.record_tail_seconds,
+        retention_enabled=r.enabled,
         max_gb=r.max_gb,
         max_age_days=r.max_age_days,
     )
@@ -1261,14 +1261,19 @@ def storage_info(ctx: AppContext = Depends(get_context)) -> StorageInfo:
 def update_storage(update: StorageUpdate, ctx: AppContext = Depends(get_context)) -> StorageInfo:
     """Set the save location (validated for writability), motion auto-record, and
     retention. A blank media_dir reverts to the default app data location."""
-    from pathlib import Path
-
     from tailcam import paths
 
     if update.media_dir is not None:
         new = update.media_dir.strip()
         if new:
             target = Path(new).expanduser()
+            if not target.is_absolute():
+                # A relative path would be re-resolved against whatever cwd the
+                # service happens to have on the next boot (e.g. / under systemd).
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"'{new}' must be an absolute path (e.g. /mnt/usb/tailcam)",
+                )
             if not _writable(target):
                 raise HTTPException(
                     status_code=400, detail=f"Cannot create or write to '{new}'"
@@ -1281,6 +1286,8 @@ def update_storage(update: StorageUpdate, ctx: AppContext = Depends(get_context)
         ctx.config.motion.auto_record = update.auto_record
     if update.record_tail_seconds is not None:
         ctx.config.motion.record_tail_seconds = max(0.0, update.record_tail_seconds)
+    if update.retention_enabled is not None:
+        ctx.config.retention.enabled = update.retention_enabled
     if update.max_gb is not None:
         ctx.config.retention.max_gb = max(0.1, update.max_gb)
     if update.max_age_days is not None:
