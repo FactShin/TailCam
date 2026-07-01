@@ -8,10 +8,6 @@ it from any device on your tailnet — with multi-camera support, resolution and
 zoom controls, snapshots, recording, and motion detection. Put those old
 webcams to good use as a monitoring system.
 
-> **Renamed from AnyCam** (v0.5.0). If you previously ran AnyCam, reinstall with
-> the one-liner for your OS — your cameras, settings, recordings, and event
-> history migrate across automatically (see [Upgrading from AnyCam](#upgrading-from-anycam)).
-
 ## Install
 
 Pick the one-liner for your OS — each installer is dedicated to that platform (no
