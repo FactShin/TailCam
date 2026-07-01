@@ -134,20 +134,6 @@ served at `/docs/docker`).
 
 Tab-completion: `tailcam --install-completion`. `tailcam --version` prints the version.
 
-## Upgrading from AnyCam
-
-AnyCam and TailCam are a clean break — there is no `anycam` command anymore. To
-upgrade, just **reinstall** with the one-liner for your OS (above). On its first
-run TailCam automatically migrates a previous AnyCam install:
-
-- moves your config, media, and SQLite database into the TailCam locations
-  (renaming `anycam.db` → `tailcam.db`) — cameras, settings, recordings, and
-  motion-event history all carry over,
-- replaces the background service (`anycam.service` / `com.anycam` / task
-  "AnyCam") with the TailCam-named equivalent.
-
-The migration is one-time and idempotent. You can also run it explicitly with
-`tailcam migrate`.
 
 ## Ports & Tailscale
 
