@@ -12,11 +12,11 @@ commands (start/stop/restart) operate on whichever unit is present.
 
 from __future__ import annotations
 
-import subprocess
 import sys
 from pathlib import Path
 
 from tailcam.logging_setup import get_logger
+from tailcam.proc import run as run_hidden
 
 log = get_logger(__name__)
 
@@ -94,7 +94,7 @@ def _remove_legacy_systemd() -> None:
     legacy = _systemd_unit_path(LEGACY_SYSTEMD_LABEL)
     if not legacy.exists():
         return
-    subprocess.run(
+    run_hidden(
         ["systemctl", "--user", "disable", "--now", LEGACY_SYSTEMD_LABEL], check=False
     )
     legacy.unlink(missing_ok=True)
@@ -106,20 +106,20 @@ def _install_systemd() -> str:
     path = _systemd_unit_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_SYSTEMD_UNIT.format(exec_start=_exec_start()))
-    subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
-    subprocess.run(["systemctl", "--user", "enable", SYSTEMD_LABEL], check=False)
+    run_hidden(["systemctl", "--user", "daemon-reload"], check=False)
+    run_hidden(["systemctl", "--user", "enable", SYSTEMD_LABEL], check=False)
     # `restart`, not `enable --now`: --now is a no-op when the service is
     # already active, which left upgrades running the OLD code until reboot.
-    subprocess.run(["systemctl", "--user", "restart", SYSTEMD_LABEL], check=False)
+    run_hidden(["systemctl", "--user", "restart", SYSTEMD_LABEL], check=False)
     return f"Installed systemd user service at {path} (restarted)"
 
 
 def _uninstall_systemd() -> str:
     _remove_legacy_systemd()
-    subprocess.run(["systemctl", "--user", "disable", "--now", SYSTEMD_LABEL], check=False)
+    run_hidden(["systemctl", "--user", "disable", "--now", SYSTEMD_LABEL], check=False)
     path = _systemd_unit_path()
     path.unlink(missing_ok=True)
-    subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
+    run_hidden(["systemctl", "--user", "daemon-reload"], check=False)
     return "Removed systemd user service"
 
 
@@ -127,7 +127,7 @@ def _remove_legacy_launchd() -> None:
     legacy = _launchd_plist_path(LEGACY_LAUNCHD_LABEL)
     if not legacy.exists():
         return
-    subprocess.run(["launchctl", "unload", str(legacy)], check=False)
+    run_hidden(["launchctl", "unload", str(legacy)], check=False)
     legacy.unlink(missing_ok=True)
     log.info("Removed legacy %s (renamed to %s)", LEGACY_LAUNCHD_LABEL, LAUNCHD_LABEL)
 
@@ -137,15 +137,15 @@ def _install_launchd() -> str:
     path = _launchd_plist_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_LAUNCHD_PLIST.format(label=LAUNCHD_LABEL, python=sys.executable))
-    subprocess.run(["launchctl", "unload", str(path)], check=False)
-    subprocess.run(["launchctl", "load", str(path)], check=False)
+    run_hidden(["launchctl", "unload", str(path)], check=False)
+    run_hidden(["launchctl", "load", str(path)], check=False)
     return f"Installed launchd agent at {path}"
 
 
 def _uninstall_launchd() -> str:
     _remove_legacy_launchd()
     path = _launchd_plist_path()
-    subprocess.run(["launchctl", "unload", str(path)], check=False)
+    run_hidden(["launchctl", "unload", str(path)], check=False)
     path.unlink(missing_ok=True)
     return "Removed launchd agent"
 
@@ -165,7 +165,7 @@ def _ps_quote(s: str) -> str:
 
 
 def _powershell(script: str) -> None:
-    subprocess.run(
+    run_hidden(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", script], check=False
     )
 
@@ -262,10 +262,10 @@ def start() -> str:
         )
         return f"Started Windows task '{SCHTASK_NAME}'"
     if sys.platform == "darwin":
-        subprocess.run(["launchctl", "load", str(_active_launchd_plist())], check=False)
+        run_hidden(["launchctl", "load", str(_active_launchd_plist())], check=False)
         return "Started launchd agent"
     label = _active_systemd_label()
-    proc = subprocess.run(["systemctl", "--user", "start", label], check=False)
+    proc = run_hidden(["systemctl", "--user", "start", label], check=False)
     return "Started systemd service" if proc.returncode == 0 else "Failed to start systemd service"
 
 
@@ -282,10 +282,10 @@ def stop() -> str:
     if sys.platform == "darwin":
         # The agent has KeepAlive=true, so `launchctl stop` would respawn it;
         # unload is the real stop (it loads again at next login).
-        subprocess.run(["launchctl", "unload", str(_active_launchd_plist())], check=False)
+        run_hidden(["launchctl", "unload", str(_active_launchd_plist())], check=False)
         return "Stopped launchd agent (will start again at next login)"
     label = _active_systemd_label()
-    proc = subprocess.run(["systemctl", "--user", "stop", label], check=False)
+    proc = run_hidden(["systemctl", "--user", "stop", label], check=False)
     return "Stopped systemd service" if proc.returncode == 0 else "Failed to stop systemd service"
 
 
@@ -305,11 +305,11 @@ def restart() -> str:
         return f"Restarted Windows task '{SCHTASK_NAME}'"
     if sys.platform == "darwin":
         path = str(_active_launchd_plist())
-        subprocess.run(["launchctl", "unload", path], check=False)
-        subprocess.run(["launchctl", "load", path], check=False)
+        run_hidden(["launchctl", "unload", path], check=False)
+        run_hidden(["launchctl", "load", path], check=False)
         return "Restarted launchd agent"
     label = _active_systemd_label()
-    proc = subprocess.run(["systemctl", "--user", "restart", label], check=False)
+    proc = run_hidden(["systemctl", "--user", "restart", label], check=False)
     return (
         "Restarted systemd service" if proc.returncode == 0 else "Failed to restart systemd service"
     )
