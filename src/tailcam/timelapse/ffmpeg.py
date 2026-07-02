@@ -11,11 +11,11 @@ from __future__ import annotations
 import importlib.util
 import os
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
 from tailcam.logging_setup import get_logger
+from tailcam.proc import run as run_hidden
 
 log = get_logger(__name__)
 
@@ -88,7 +88,7 @@ def ffmpeg_version() -> str | None:
     if not path:
         return None
     try:
-        out = subprocess.run(
+        out = run_hidden(
             [path, "-version"], capture_output=True, text=True, timeout=5
         ).stdout
         first = out.splitlines()[0] if out else ""
@@ -160,10 +160,10 @@ def build_encode_command(
 
 def run_ffmpeg(cmd: list[str], timeout: float = 1800.0) -> bool:
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        if proc.returncode != 0:
-            log.error("ffmpeg failed (%d): %s", proc.returncode, proc.stderr[-800:])
-        return proc.returncode == 0
+        result = run_hidden(cmd, capture_output=True, text=True, timeout=timeout)
+        if result.returncode != 0:
+            log.error("ffmpeg failed (%d): %s", result.returncode, result.stderr[-800:])
+        return result.returncode == 0
     except Exception as exc:  # pragma: no cover - timeout / OS error
         log.error("ffmpeg error: %s", exc)
         return False

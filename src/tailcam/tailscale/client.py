@@ -10,13 +10,20 @@ import json
 import os
 import shutil
 import subprocess
+import threading
+import time
 from dataclasses import dataclass
 
 from tailcam.logging_setup import get_logger
+from tailcam.proc import run as run_hidden
 
 log = get_logger(__name__)
 
 _TIMEOUT = 5.0
+# Several pollers (dashboard system info, cluster refresh, integrations) ask for
+# status independently; a short cache means one `tailscale status` process per
+# window instead of one per caller.
+_STATUS_TTL = 2.0
 TAILCAM_APP_CAPABILITY = "factshin.github.io/cap/tailcam"
 
 # Background services (launchd on macOS, systemd) run with a minimal PATH that
@@ -65,12 +72,17 @@ class TailscaleClient:
     def __init__(self, binary: str = "tailscale") -> None:
         self._binary = _resolve_binary(binary)
         self._app_capabilities_supported: bool | None = None
+        self._status_lock = threading.Lock()
+        self._status_cache: TailscaleStatus | None = None
+        self._status_ts = 0.0
 
     def _run(self, *args: str) -> subprocess.CompletedProcess | None:
         if self._binary is None:
             return None
         try:
-            return subprocess.run(
+            # run_hidden keeps this from flashing a console window on Windows —
+            # status is polled every few seconds for the life of the app.
+            return run_hidden(
                 [self._binary, *args],
                 capture_output=True,
                 text=True,
@@ -85,6 +97,17 @@ class TailscaleClient:
         return self._binary is not None
 
     def status(self) -> TailscaleStatus:
+        with self._status_lock:
+            cached = self._status_cache
+            if cached is not None and time.monotonic() - self._status_ts < _STATUS_TTL:
+                return cached
+        result = self._status_uncached()
+        with self._status_lock:
+            self._status_cache = result
+            self._status_ts = time.monotonic()
+        return result
+
+    def _status_uncached(self) -> TailscaleStatus:
         if not self.is_installed():
             return TailscaleStatus(False, False, None, None)
         proc = self._run("status", "--json")

@@ -127,8 +127,8 @@ def test_systemd_install_removes_legacy_unit(monkeypatch, tmp_path):
 
     calls: list[list[str]] = []
     monkeypatch.setattr(
-        installer.subprocess,
-        "run",
+        installer,
+        "run_hidden",
         lambda cmd, **kw: calls.append(cmd) or type("P", (), {"returncode": 0})(),
     )
 
@@ -148,8 +148,8 @@ def test_control_falls_back_to_legacy_unit(monkeypatch, tmp_path):
 
     calls: list[list[str]] = []
     monkeypatch.setattr(
-        installer.subprocess,
-        "run",
+        installer,
+        "run_hidden",
         lambda cmd, **kw: calls.append(cmd) or type("P", (), {"returncode": 0})(),
     )
 
