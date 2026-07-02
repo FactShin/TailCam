@@ -328,9 +328,11 @@ export function LiveViewer({
         <div className="det-status mono">
           {detection.data && !detection.data.detector_active
             ? "no detection model active"
-            : detectOn
-              ? `detecting · ${boxes.length}`
-              : "detect paused (zoomed)"}
+            : detection.data?.note
+              ? detection.data.note
+              : detectOn
+                ? `detecting · ${boxes.length}`
+                : "detect paused (zoomed)"}
         </div>
       )}
 

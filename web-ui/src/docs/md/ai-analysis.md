@@ -1,5 +1,29 @@
 # AI analysis
 
+## Built-in object detection (zero setup)
+
+Every TailCam node ships with a **built-in object detector**: live bounding
+boxes with labels — `person`, `cup`, `bottle`, `cat`, `dog`, and the rest of
+the 80 [COCO](https://cocodataset.org) classes — drawn straight onto the camera
+view, with motion events labeled automatically. It's **on by default** and
+fully local:
+
+- The first time it's needed, the model **downloads itself** (a few MB —
+  YOLO11n when the training extra/torch is installed, otherwise YOLOv4-tiny on
+  OpenCV's built-in DNN, which needs nothing extra at all).
+- Open any camera: boxes appear as soon as the model is ready (the overlay
+  badge shows download progress). The eye button on the camera page toggles
+  the overlay.
+- Tune it in **AI Studio → Overview → Object detection**: on/off, confidence
+  threshold, whether camera pages start with the overlay on. Config keys live
+  under `[detection]` (`engine`, `model`, `confidence`, `classes`) for
+  granular control — e.g. `classes = ["person", "dog"]` to only report those,
+  or `model = "yolo11s.pt"` for a bigger Ultralytics model.
+
+Everything below — Ollama and trained models — is optional and *adds* to this:
+richer descriptions, custom labels, your own classes. Priority when several are
+available: **your trained/BYO model → Ollama → built-in detector**.
+
 TailCam can label motion events with a **local** vision model via
 [Ollama](https://ollama.com). Nothing is sent to a cloud service — the model runs
 on a machine you control, on your tailnet. Cheap pixel [motion](motion-detection)

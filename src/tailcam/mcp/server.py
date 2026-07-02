@@ -12,8 +12,15 @@ from typing import Any
 
 from tailcam import __version__
 from tailcam.config import MCPConfig
+from tailcam.logging_setup import get_logger
 from tailcam.management.audit import AuditLog
-from tailcam.mcp import PROTOCOL_VERSION, SERVER_NAME, prompts, resources
+from tailcam.mcp import (
+    PROTOCOL_VERSION,
+    SERVER_NAME,
+    SUPPORTED_PROTOCOL_VERSIONS,
+    prompts,
+    resources,
+)
 from tailcam.mcp.client import TailcamClient
 from tailcam.mcp.errors import TailcamMcpError, error_envelope
 from tailcam.mcp.protocol import (
@@ -39,6 +46,8 @@ from tailcam.mcp.protocol import (
 from tailcam.mcp.toolctx import ToolContext, principal_rank
 from tailcam.mcp.tools import Tool, ToolResult, build_tools
 from tailcam.security.principal import RequestPrincipal, TailCamRole
+
+log = get_logger(__name__)
 
 RESOURCE_NOT_FOUND = -32002
 
@@ -142,8 +151,15 @@ class McpServer:
             name = client_info.get("name")
             if isinstance(name, str):
                 self.client_name = name
+        # Version negotiation: echo the client's requested version when we
+        # support it; otherwise answer with our latest supported version (the
+        # spec then leaves it to the client to accept or disconnect).
+        requested = params.get("protocolVersion")
+        version = requested if requested in SUPPORTED_PROTOCOL_VERSIONS else PROTOCOL_VERSION
+        if requested != version:
+            log.info("MCP client requested protocol %r; answering with %s", requested, version)
         return {
-            "protocolVersion": PROTOCOL_VERSION,
+            "protocolVersion": version,
             "capabilities": {
                 "tools": {"listChanged": False},
                 "resources": {"listChanged": False, "subscribe": False},

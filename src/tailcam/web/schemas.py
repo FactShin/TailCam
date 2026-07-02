@@ -442,6 +442,31 @@ class DetectionResult(BaseModel):
     detector_active: bool  # False = no detection model is active
     model_name: str | None = None
     boxes: list[DetectionBox] = []
+    # Overlay badge status while the built-in detector provisions itself
+    # ("downloading model 42%") or fails — empty when detection is just running.
+    note: str = ""
+
+
+class DetectionInfo(BaseModel):
+    """Built-in plug-and-play object detection (boxes + labels, COCO classes)."""
+
+    enabled: bool
+    engine: str = ""  # ultralytics | opencv
+    model: str = ""
+    status: str = "off"  # off | idle | downloading | ready | error
+    percent: float = 0.0
+    detail: str = ""
+    error: str = ""
+    confidence: float = 0.45
+    classes: list[str] = []
+    overlay_default: bool = True
+
+
+class DetectionUpdate(BaseModel):
+    enabled: bool | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    classes: list[str] | None = None
+    overlay_default: bool | None = None
 
 
 class ModelInfo(BaseModel):

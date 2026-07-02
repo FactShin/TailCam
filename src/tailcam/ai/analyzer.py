@@ -33,6 +33,19 @@ class Analysis:
     confidence: float
 
 
+@dataclass
+class Detection:
+    """One detected object. Coordinates are normalized 0..1 in the same
+    center/size layout as a stored annotation, so the UI overlays them directly."""
+
+    label: str
+    confidence: float
+    cx: float
+    cy: float
+    w: float
+    h: float
+
+
 @runtime_checkable
 class FrameAnalyzer(Protocol):
     """What the motion worker needs from any analyzer (Ollama or a local model)."""

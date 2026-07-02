@@ -277,9 +277,14 @@ def test_concurrent_training_runs_rejected(context, monkeypatch):
 
 def test_pipeline_describe_modes(context):
     d = context.inference.describe()
-    assert d["mode"] in ("off", "ollama", "local")
-    # default test config: AI disabled + no active model -> off
-    assert d["mode"] == "off"
+    # default config: AI disabled + no active model -> the built-in detector
+    # carries the pipeline (labels events with COCO boxes, zero setup).
+    assert d["mode"] == "builtin"
+    assert d["task"] == "detection"
+    # with the built-in detector also off, the pipeline is truly off
+    context.config.detection.enabled = False
+    assert context.inference.describe()["mode"] == "off"
+    context.config.detection.enabled = True
     context.config.ai.enabled = True
     d2 = context.inference.describe()
     assert d2["mode"] == "ollama"
@@ -294,14 +299,15 @@ def test_pipeline_describe_modes(context):
 def test_ai_info_includes_pipeline(client):
     body = client.get("/api/ai").json()
     assert "pipeline" in body
-    assert body["pipeline"]["mode"] in ("off", "ollama", "local")
+    assert body["pipeline"]["mode"] in ("off", "builtin", "ollama", "local")
 
 
 def test_ai_test_endpoint(client, context):
     cams = client.get("/api/cameras").json()
     assert cams, "synthetic camera expected"
     cam_id = cams[0]["id"]
-    # Pipeline off -> clear error, not a 500.
+    # Pipeline off (built-in detection disabled too) -> clear error, not a 500.
+    context.config.detection.enabled = False
     r = client.post("/api/ai/test", json={"camera_id": cam_id})
     assert r.status_code == 200
     body = r.json()

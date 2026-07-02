@@ -39,7 +39,7 @@ keeps recording until motion stops, plus a tail of `motion.record_tail_seconds`
 | `min_area` | 800 | Minimum changed-pixel area to count. Raise to ignore small movement. |
 | `sample_fps` | 5 | How often motion is sampled. Higher = more responsive, more CPU. |
 | `cooldown_seconds` | 5.0 | Gap before a new event can start. |
-| `auto_record` | false | Record automatically on motion. |
+| `auto_record` | true | Record a clip automatically on motion (on by default since 0.99.11). |
 | `record_tail_seconds` | 5.0 | Extra recording after motion ends. |
 
 **Too many false events?** Lower `sensitivity` or raise `min_area`. Outdoor

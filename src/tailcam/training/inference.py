@@ -16,29 +16,18 @@ from __future__ import annotations
 
 import json
 import threading
-from dataclasses import dataclass
 
 import numpy as np
 
-from tailcam.ai.analyzer import Analysis, OllamaAnalyzer
+from tailcam.ai.analyzer import Analysis, Detection, OllamaAnalyzer
+from tailcam.ai.detector import BuiltinDetector
 from tailcam.config import TrainingConfig
 from tailcam.logging_setup import get_logger
 from tailcam.persistence.store import Store
 
+__all__ = ["Detection", "InferenceRouter", "LocalClassifier", "LocalDetector"]
+
 log = get_logger(__name__)
-
-
-@dataclass
-class Detection:
-    """One detected object. Coordinates are normalized 0..1 in the same
-    center/size layout as a stored annotation, so the UI overlays them directly."""
-
-    label: str
-    confidence: float
-    cx: float
-    cy: float
-    w: float
-    h: float
 
 
 class LocalClassifier:
@@ -139,12 +128,22 @@ def _boxes_to_detections(result) -> list[Detection]:
 
 
 class InferenceRouter:
-    """Duck-types as a FrameAnalyzer: prefers the active local model, else Ollama."""
+    """Duck-types as a FrameAnalyzer. Priority: the user's trained/BYO model,
+    then Ollama (if the user enabled it), then the zero-config built-in
+    detector — so labels and boxes work out of the box and get *better* as the
+    user opts into more."""
 
-    def __init__(self, store: Store, config: TrainingConfig, ollama: OllamaAnalyzer) -> None:
+    def __init__(
+        self,
+        store: Store,
+        config: TrainingConfig,
+        ollama: OllamaAnalyzer,
+        builtin: BuiltinDetector | None = None,
+    ) -> None:
         self._store = store
         self._config = config
         self._ollama = ollama
+        self._builtin = builtin
         self._lock = threading.Lock()
         self._cached_id: int | None = None
         self._classifier: LocalClassifier | None = None
@@ -208,12 +207,30 @@ class InferenceRouter:
         with self._lock:
             self._refresh_active()
             local = self._classifier is not None or self._detector is not None
-        return local or self._ollama.enabled
+        return local or self._ollama.enabled or (
+            self._builtin is not None and self._builtin.enabled
+        )
 
     @property
     def detection_active(self) -> bool:
-        """True when the active model produces bounding boxes (for the UI overlay)."""
-        return self._active_detector() is not None
+        """True when something produces bounding boxes (for the UI overlay) —
+        a trained detection model, or the built-in detector."""
+        if self._active_detector() is not None:
+            return True
+        return self._builtin is not None and self._builtin.enabled
+
+    def detection_note(self) -> str:
+        """Status line for the overlay badge while the built-in detector is
+        provisioning itself ("downloading model 42%") or failing."""
+        if self._active_detector() is not None or self._builtin is None:
+            return ""
+        s = self._builtin.status()
+        if s.status == "downloading":
+            pct = f" {s.percent:.0f}%" if s.percent else ""
+            return (s.detail or "downloading model") + pct
+        if s.status == "error":
+            return f"detector error: {s.error}"
+        return ""
 
     def describe(self) -> dict:
         """The truth about what analyzes frames right now (for /api/ai).
@@ -240,6 +257,14 @@ class InferenceRouter:
                 "task": "classification",
                 "error": err,  # e.g. selected local model failed -> tell the user
             }
+        if self._builtin is not None and self._builtin.enabled:
+            s = self._builtin.status()
+            return {
+                "mode": "builtin",
+                "model_name": s.model,
+                "task": "detection",
+                "error": err or s.error,
+            }
         return {"mode": "off", "model_name": "", "task": "", "error": err}
 
     def analyze(self, image: np.ndarray) -> Analysis | None:
@@ -265,12 +290,30 @@ class InferenceRouter:
                 return Analysis(label="nothing", description="no objects", confidence=0.0)
         if self._ollama.enabled:
             return self._ollama.analyze(image)
+        # Zero-config fallback: label motion events with the built-in detector's
+        # best box, so event badges (PERSON, CUP, DOG …) work with no setup.
+        if self._builtin is not None and self._builtin.enabled:
+            detections = self._builtin.detect(image)
+            if detections:
+                top = max(detections, key=lambda d: d.confidence)
+                others = {d.label for d in detections if d.label != top.label}
+                extra = f" (+ {', '.join(sorted(others))})" if others else ""
+                return Analysis(
+                    label=top.label,
+                    description=f"{top.label} ({top.confidence:.0%}){extra}",
+                    confidence=top.confidence,
+                )
+            if self._builtin.ready:  # ran cleanly, just saw nothing
+                return Analysis(label="nothing", description="no objects", confidence=0.0)
         return None
 
     def detect(self, image: np.ndarray) -> list[Detection] | None:
-        """Run the active detection model. Returns None if no detection model is
-        active (the live overlay treats that as 'detection unavailable')."""
+        """Bounding boxes from the active detection model, else the built-in
+        detector. Returns None only when no box source exists at all (the live
+        overlay treats that as 'detection unavailable')."""
         det = self._active_detector()
-        if det is None:
-            return None
-        return det.detect(image)
+        if det is not None:
+            return det.detect(image)
+        if self._builtin is not None and self._builtin.enabled:
+            return self._builtin.detect(image)
+        return None

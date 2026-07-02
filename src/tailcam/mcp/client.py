@@ -15,6 +15,7 @@ exceptions.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from urllib.parse import quote
 
@@ -40,6 +41,23 @@ def _cam_path(camera_id: str) -> str:
     if any(segment in (".", "..") for segment in camera_id.split("/")):
         raise TailcamMcpError(errors.CAMERA_UNKNOWN, "invalid camera id", status_code=404)
     return quote(camera_id, safe="/")
+
+
+_PROXY_RE = re.compile(r"^/proxy/[A-Za-z0-9._~:-]+$")
+
+
+def _proxy(prefix: str) -> str:
+    """Validate a camera's ``proxy_prefix`` before splicing it into a path.
+
+    The prefix comes from API responses; only the exact ``/proxy/{key}`` shape
+    the node emits is accepted so a malformed value can't rewrite the request
+    path (same reasoning as the traversal guard above).
+    """
+    if not prefix:
+        return ""
+    if not _PROXY_RE.match(prefix):
+        raise TailcamMcpError(errors.INVALID_RESPONSE, f"invalid proxy prefix {prefix!r}")
+    return prefix
 
 
 class TailcamClient:
@@ -154,23 +172,31 @@ class TailcamClient:
     async def cameras(self, *, scope: str = "all") -> list[dict[str, Any]]:
         return await self.get("/api/cameras", params={"scope": scope})
 
-    async def camera(self, camera_id: str) -> dict[str, Any]:
-        return await self.get(f"/api/cameras/{_cam_path(camera_id)}")
+    async def camera(self, camera_id: str, *, prefix: str = "") -> dict[str, Any]:
+        return await self.get(f"{_proxy(prefix)}/api/cameras/{_cam_path(camera_id)}")
 
-    async def update_camera(self, camera_id: str, body: dict[str, Any]) -> dict[str, Any]:
-        return await self.patch(f"/api/cameras/{_cam_path(camera_id)}", json=body)
+    async def update_camera(
+        self, camera_id: str, body: dict[str, Any], *, prefix: str = ""
+    ) -> dict[str, Any]:
+        return await self.patch(
+            f"{_proxy(prefix)}/api/cameras/{_cam_path(camera_id)}", json=body
+        )
 
-    async def restart_camera(self, camera_id: str) -> dict[str, Any]:
-        return await self.post(f"/api/cameras/{_cam_path(camera_id)}/restart")
+    async def restart_camera(self, camera_id: str, *, prefix: str = "") -> dict[str, Any]:
+        return await self.post(f"{_proxy(prefix)}/api/cameras/{_cam_path(camera_id)}/restart")
 
-    async def snapshot(self, camera_id: str) -> dict[str, Any]:
-        return await self.post(f"/api/cameras/{_cam_path(camera_id)}/snapshot")
+    async def snapshot(self, camera_id: str, *, prefix: str = "") -> dict[str, Any]:
+        return await self.post(f"{_proxy(prefix)}/api/cameras/{_cam_path(camera_id)}/snapshot")
 
-    async def start_recording(self, camera_id: str) -> dict[str, Any]:
-        return await self.post(f"/api/cameras/{_cam_path(camera_id)}/recording/start")
+    async def start_recording(self, camera_id: str, *, prefix: str = "") -> dict[str, Any]:
+        return await self.post(
+            f"{_proxy(prefix)}/api/cameras/{_cam_path(camera_id)}/recording/start"
+        )
 
-    async def stop_recording(self, camera_id: str) -> dict[str, Any]:
-        return await self.post(f"/api/cameras/{_cam_path(camera_id)}/recording/stop")
+    async def stop_recording(self, camera_id: str, *, prefix: str = "") -> dict[str, Any]:
+        return await self.post(
+            f"{_proxy(prefix)}/api/cameras/{_cam_path(camera_id)}/recording/stop"
+        )
 
     # -- events / media ----------------------------------------------------
     async def events(

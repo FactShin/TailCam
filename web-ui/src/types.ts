@@ -79,7 +79,7 @@ export interface MotionEventInfo {
 }
 
 export interface PipelineInfo {
-  mode: "local" | "ollama" | "off";
+  mode: "local" | "builtin" | "ollama" | "off";
   model_name: string;
   task: string;
   error: string;
@@ -338,6 +338,29 @@ export interface DetectionResult {
   detector_active: boolean;
   model_name: string | null;
   boxes: DetectionBox[];
+  /** Provisioning status ("downloading model 42%") — empty when running. */
+  note?: string;
+}
+
+/** Built-in plug-and-play object detection (COCO boxes + labels). */
+export interface DetectionInfo {
+  enabled: boolean;
+  engine: string;
+  model: string;
+  status: "off" | "idle" | "downloading" | "ready" | "error";
+  percent: number;
+  detail: string;
+  error: string;
+  confidence: number;
+  classes: string[];
+  overlay_default: boolean;
+}
+
+export interface DetectionUpdate {
+  enabled?: boolean;
+  confidence?: number;
+  classes?: string[];
+  overlay_default?: boolean;
 }
 
 export interface ModelInfo {
