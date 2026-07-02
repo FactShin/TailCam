@@ -1149,6 +1149,61 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .plug-errors { margin-top: 12px; display: grid; gap: 6px; }
 .plug-err { color: var(--warn); font-family: var(--mono); font-size: 11.5px; }
 
+/* ===== AI Studio ===== */
+.ais-tabs { display: flex; margin: -4px 0 2px; }
+.ais-tabs .seg { width: auto; }
+
+/* Pipeline truth card */
+.ais-pipeline { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.ais-pipeline.ok { border-color: color-mix(in srgb, var(--ok) 30%, var(--border)); }
+.ais-pipeline.warn { border-color: color-mix(in srgb, var(--warn) 32%, var(--border)); }
+.ais-pipe-main { display: flex; align-items: flex-start; gap: 12px; flex: 1; min-width: 260px; }
+.ais-pipe-dot { flex: none; width: 12px; height: 12px; border-radius: 50%; margin-top: 5px; background: var(--faint); }
+.ais-pipe-dot.ok { background: var(--ok); box-shadow: 0 0 10px color-mix(in srgb, var(--ok) 60%, transparent); }
+.ais-pipe-dot.warn { background: var(--warn); box-shadow: 0 0 10px color-mix(in srgb, var(--warn) 60%, transparent); }
+.ais-pipe-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ais-pipe-text b { font-size: 15px; }
+.ais-pipe-text > span { color: var(--muted); font-size: 13px; }
+.ais-pipe-err { color: var(--warn); font-size: 12.5px; }
+.ais-pipe-actions { flex: none; }
+
+/* Try-it-now */
+.ais-test-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.ais-test-row .tl-select { max-width: 320px; }
+.ais-test-result {
+  margin-top: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 14px; border-radius: 10px; font-size: 13.5px;
+}
+.ais-test-result.ok { background: color-mix(in srgb, var(--ok) 10%, transparent); border: 1px solid color-mix(in srgb, var(--ok) 30%, var(--border)); color: var(--text); }
+.ais-test-result.err { background: color-mix(in srgb, var(--warn) 10%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 28%, var(--border)); color: var(--muted); }
+.ais-test-label { font-weight: 700; text-transform: capitalize; }
+.ais-test-conf { color: var(--accent); font-size: 12px; }
+.ais-test-desc { color: var(--muted); }
+.ais-test-engine { margin-left: auto; font-size: 10.5px; color: var(--faint); }
+
+/* Training workflow stepper */
+.ais-flow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px 18px; }
+.ais-flow-item { display: flex; align-items: center; gap: 10px; }
+.ais-flow-step { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.ais-flow-step.done { color: var(--text); }
+.ais-flow-num {
+  width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 11px; font-family: var(--mono); background: var(--bg2); border: 1px solid var(--border);
+}
+.ais-flow-step.done .ais-flow-num { background: color-mix(in srgb, var(--ok) 18%, transparent); border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); color: var(--ok); }
+.ais-flow-arrow { color: var(--faint); font-size: 12px; }
+.ais-flow-meta { font-size: 11px; color: var(--faint); }
+
+/* Ollama offline helper + other installed models */
+.ais-offline-help { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.ais-others { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--hair); }
+.ais-other-list { display: grid; gap: 6px; margin-top: 8px; }
+.ais-other-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 12px; border-radius: 10px; background: var(--bg2); border: 1px solid var(--border);
+}
+.ais-other-row .mono { font-size: 12.5px; }
+
 /* ===== Recording & storage ===== */
 .stor-path { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .stor-path .mono { font-size: 12px; color: var(--text); word-break: break-all; }

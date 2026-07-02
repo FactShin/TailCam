@@ -1,3 +1,3 @@
 """TailCam — view any webcam from anywhere over Tailscale."""
 
-__version__ = "0.99.7"
+__version__ = "0.99.8"

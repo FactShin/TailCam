@@ -2,8 +2,9 @@
 
 TailCam can train **your own** models from **your own** footage — both image
 **classification** (what is this?) and object **detection** (what + where?). It
-uses the Ultralytics/YOLO engine, which is auto-detected; install it to enable the
-**Training** and **Models** screens.
+uses the Ultralytics/YOLO engine, which is auto-detected. Everything lives in
+**AI Studio**: the **Training** tab walks the workflow below, and finished
+models appear under **Models → Your models** where you activate them.
 
 This is optional and benefits from a GPU, but small classification models train
 fine on CPU.

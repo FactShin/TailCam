@@ -241,3 +241,71 @@ def test_inference_router_disabled_without_model_or_ollama(context):
     router = InferenceRouter(context.store, context.config.training, context.analyzer)
     assert router.enabled is False
     assert router.analyze(np.zeros((4, 4, 3), np.uint8)) is None
+
+
+def test_import_events_is_idempotent(context, tmp_path):
+    """Clicking Import twice must not duplicate samples."""
+    import time as _time
+
+    from tailcam.persistence.models import MotionEventRecord
+
+    ds = context.training.create_dataset("Dedup")
+    thumb = tmp_path / "evt.jpg"
+    thumb.write_bytes(b"\xff\xd8\xff\xdbfake-jpeg")
+    eid = context.store.add_motion_event(
+        MotionEventRecord(
+            id=None, camera_id="cam0", start_ts=_time.time(), end_ts=_time.time(),
+            peak_score=0.5, recording_id=None, thumb_path=str(thumb),
+            label="person", confidence=0.9,
+        )
+    )
+    context.store.set_event_thumb(eid, str(thumb))
+    first = context.training.import_from_events(ds.id)
+    second = context.training.import_from_events(ds.id)
+    assert first == 1
+    assert second == 0  # already imported -> skipped
+
+
+def test_concurrent_training_runs_rejected(context, monkeypatch):
+    import pytest as _pytest
+
+    ds = context.training.create_dataset("Guard")
+    monkeypatch.setattr(context.training, "has_active_run", lambda: True)
+    with _pytest.raises(RuntimeError):
+        context.training.train(ds.id)
+
+
+def test_pipeline_describe_modes(context):
+    d = context.inference.describe()
+    assert d["mode"] in ("off", "ollama", "local")
+    # default test config: AI disabled + no active model -> off
+    assert d["mode"] == "off"
+    context.config.ai.enabled = True
+    d2 = context.inference.describe()
+    assert d2["mode"] == "ollama"
+    assert d2["model_name"] == context.config.ai.model
+    # a dangling active model id surfaces an error instead of silence
+    context.config.training.active_model_id = 99999
+    d3 = context.inference.describe()
+    assert d3["mode"] == "ollama"
+    assert "no longer exists" in d3["error"]
+
+
+def test_ai_info_includes_pipeline(client):
+    body = client.get("/api/ai").json()
+    assert "pipeline" in body
+    assert body["pipeline"]["mode"] in ("off", "ollama", "local")
+
+
+def test_ai_test_endpoint(client, context):
+    cams = client.get("/api/cameras").json()
+    assert cams, "synthetic camera expected"
+    cam_id = cams[0]["id"]
+    # Pipeline off -> clear error, not a 500.
+    r = client.post("/api/ai/test", json={"camera_id": cam_id})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is False
+    assert "off" in body["error"] or "enable" in body["error"].lower()
+    # Unknown camera -> 404.
+    assert client.post("/api/ai/test", json={"camera_id": "nope"}).status_code == 404

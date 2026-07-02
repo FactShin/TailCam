@@ -149,31 +149,49 @@ class InferenceRouter:
         self._cached_id: int | None = None
         self._classifier: LocalClassifier | None = None
         self._detector: LocalDetector | None = None
+        self._active_name: str = ""
+        self._load_error: str = ""
 
     def _refresh_active(self) -> None:
         """Load (and cache) the active model as a classifier or detector, by task.
-        Caller holds ``self._lock``."""
+        Caller holds ``self._lock``. Records why a model ISN'T running in
+        ``_load_error`` so the UI can say so instead of silently falling back."""
         mid = self._config.active_model_id
         if self._cached_id == mid:
             return
         self._cached_id = mid
         self._classifier = None
         self._detector = None
+        self._active_name = ""
+        self._load_error = ""
         if not mid:
             return
         record = self._store.get_model(mid)
-        if record is None or not record.path:
+        if record is None:
+            self._load_error = f"active model #{mid} no longer exists"
+            return
+        self._active_name = record.name
+        if not record.path:
+            self._load_error = (
+                "this model has no weights yet — it downloads on first training run"
+            )
             return
         if record.task == "detection":
             det = LocalDetector(record.path, self._config.detect_conf)
-            self._detector = det if det.load() else None
+            if det.load():
+                self._detector = det
+            else:
+                self._load_error = "model failed to load (is the training engine installed?)"
             return
         try:
             classes = json.loads(record.classes_json) or []
         except (ValueError, TypeError):
             classes = []
         clf = LocalClassifier(record.path, classes)
-        self._classifier = clf if clf.load() else None
+        if clf.load():
+            self._classifier = clf
+        else:
+            self._load_error = "model failed to load (is the training engine installed?)"
 
     def _active_classifier(self) -> LocalClassifier | None:
         with self._lock:
@@ -196,6 +214,33 @@ class InferenceRouter:
     def detection_active(self) -> bool:
         """True when the active model produces bounding boxes (for the UI overlay)."""
         return self._active_detector() is not None
+
+    def describe(self) -> dict:
+        """The truth about what analyzes frames right now (for /api/ai).
+
+        ``mode`` is one of: ``local`` (a trained/BYO model is loaded), ``ollama``
+        (falling back to / using the Ollama analyzer), or ``off``. When a local
+        model was selected but isn't running, ``error`` says why.
+        """
+        with self._lock:
+            self._refresh_active()
+            clf, det = self._classifier, self._detector
+            name, err = self._active_name, self._load_error
+        if clf is not None or det is not None:
+            return {
+                "mode": "local",
+                "model_name": name,
+                "task": "detection" if det is not None else "classification",
+                "error": "",
+            }
+        if self._ollama.enabled:
+            return {
+                "mode": "ollama",
+                "model_name": self._ollama.config.model,
+                "task": "classification",
+                "error": err,  # e.g. selected local model failed -> tell the user
+            }
+        return {"mode": "off", "model_name": "", "task": "", "error": err}
 
     def analyze(self, image: np.ndarray) -> Analysis | None:
         with self._lock:

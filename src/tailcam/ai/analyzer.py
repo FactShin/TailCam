@@ -63,6 +63,10 @@ def _coerce(data: dict) -> Analysis | None:
 class OllamaAnalyzer:
     def __init__(self, config: AIConfig) -> None:
         self.config = config
+        # One keep-alive client for all Ollama traffic — analyze runs on every
+        # motion event (and per camera when collection auto-labels), so per-call
+        # TCP setup adds real latency for no benefit. Thread-safe in httpx.
+        self._client = httpx.Client(timeout=self.config.timeout)
 
     @property
     def enabled(self) -> bool:
@@ -93,7 +97,7 @@ class OllamaAnalyzer:
             "options": {"temperature": 0},
         }
         try:
-            r = httpx.post(
+            r = self._client.post(
                 f"{self.config.base_url.rstrip('/')}/api/generate",
                 json=payload,
                 timeout=self.config.timeout,
@@ -106,11 +110,12 @@ class OllamaAnalyzer:
             return None
 
     def health(self) -> tuple[bool, str | None]:
-        """(reachable, model_present) for diagnostics. Never raises."""
-        if not self.config.enabled:
-            return (False, None)
+        """(reachable, model_present) for diagnostics. Never raises.
+
+        Reachability is reported regardless of the enabled flag — "analysis is
+        off" and "Ollama is down" are different states and the UI shows both."""
         try:
-            r = httpx.get(f"{self.config.base_url.rstrip('/')}/api/tags", timeout=4.0)
+            r = self._client.get(f"{self.config.base_url.rstrip('/')}/api/tags", timeout=4.0)
             r.raise_for_status()
             models = [m.get("name", "") for m in r.json().get("models", [])]
             want = self.config.model
@@ -123,7 +128,7 @@ class OllamaAnalyzer:
         """(reachable, installed model names). Independent of the enabled flag so
         an agent can inspect Ollama before turning analysis on. Never raises."""
         try:
-            r = httpx.get(f"{self.config.base_url.rstrip('/')}/api/tags", timeout=4.0)
+            r = self._client.get(f"{self.config.base_url.rstrip('/')}/api/tags", timeout=4.0)
             r.raise_for_status()
             names = [m.get("name", "") for m in r.json().get("models", []) if m.get("name")]
             return (True, sorted(names))
@@ -134,7 +139,7 @@ class OllamaAnalyzer:
         """Download a model into Ollama (blocking; can take minutes). Returns
         (ok, status_or_error). Run from a worker thread."""
         try:
-            r = httpx.post(
+            r = self._client.post(
                 f"{self.config.base_url.rstrip('/')}/api/pull",
                 json={"model": model, "stream": False},
                 timeout=_PULL_TIMEOUT,
@@ -150,7 +155,7 @@ class OllamaAnalyzer:
         """Warm a model into memory ('start' it) via an empty generate. Run from a
         worker thread. Returns False if Ollama is unreachable or the model absent."""
         try:
-            r = httpx.post(
+            r = self._client.post(
                 f"{self.config.base_url.rstrip('/')}/api/generate",
                 json={"model": model, "prompt": "", "stream": False, "keep_alive": "10m"},
                 timeout=60.0,

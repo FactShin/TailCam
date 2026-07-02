@@ -252,7 +252,10 @@ class TrainingService:
         return self._store.list_annotations(sample_id)
 
     def import_from_events(self, dataset_id: int, limit: int = 1000) -> int:
-        """Add existing motion-event snapshots to a dataset as labeled samples."""
+        """Add existing motion-event snapshots to a dataset as labeled samples.
+
+        Idempotent: an event whose frame is already in the dataset is skipped,
+        so clicking "Import" repeatedly never duplicates samples."""
         if self._store.get_dataset(dataset_id) is None:
             return 0
         frames_dir = paths.datasets_dir() / str(dataset_id) / "frames"
@@ -268,6 +271,8 @@ class TrainingService:
             stamp = datetime.fromtimestamp(ts).strftime("%Y%m%d-%H%M%S-%f")[:-3]
             safe = event.camera_id.replace("/", "_") or "cam"
             dest = frames_dir / f"evt_{safe}_{stamp}.jpg"
+            if dest.exists():
+                continue  # already imported on a previous click
             try:
                 shutil.copyfile(src, dest)
             except OSError:  # pragma: no cover
@@ -343,6 +348,10 @@ class TrainingService:
         dataset = self._store.get_dataset(dataset_id)
         if dataset is None:
             return None
+        if self.has_active_run():
+            raise RuntimeError(
+                "a training run is already in progress — stop it or wait for it to finish"
+            )
         cfg = self._config
         task = "detection" if dataset.task == "detection" else "classification"
         if task == "detection":
@@ -376,6 +385,12 @@ class TrainingService:
             daemon=True,
         ).start()
         return self._store.get_run(run.id)
+
+    def has_active_run(self) -> bool:
+        """True while any run is queued/preparing/training — one GPU, one run."""
+        return any(
+            r.status in ("queued", "preparing", "training") for r in self._store.list_runs()
+        )
 
     def stop_run(self, run_id: int) -> bool:
         with self._lock:

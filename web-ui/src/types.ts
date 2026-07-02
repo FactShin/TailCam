@@ -78,12 +78,29 @@ export interface MotionEventInfo {
   proxy_prefix: string;
 }
 
+export interface PipelineInfo {
+  mode: "local" | "ollama" | "off";
+  model_name: string;
+  task: string;
+  error: string;
+}
+
 export interface AIInfo {
   enabled: boolean;
   reachable: boolean;
   model: string;
   model_present: boolean;
   base_url: string;
+  pipeline: PipelineInfo;
+}
+
+export interface AITestResult {
+  ok: boolean;
+  engine: string;
+  label: string | null;
+  confidence: number | null;
+  description: string | null;
+  error: string;
 }
 
 export interface AIUpdate {
