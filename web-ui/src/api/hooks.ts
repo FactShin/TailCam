@@ -222,6 +222,26 @@ export function useAi() {
   return useQuery({ queryKey: ["ai"], queryFn: api.getAi, refetchInterval: 30_000 });
 }
 
+export function useDetectionInfo() {
+  return useQuery({
+    queryKey: ["detection-info"],
+    queryFn: api.getDetection,
+    // Fast while the model is downloading so the progress bar moves.
+    refetchInterval: (q) => (q.state.data?.status === "downloading" ? 1500 : 15_000),
+  });
+}
+
+export function useUpdateDetection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.updateDetection,
+    onSuccess: (data) => {
+      qc.setQueryData(["detection-info"], data);
+      qc.invalidateQueries({ queryKey: ["ai"] });
+    },
+  });
+}
+
 export function useAiTest() {
   return useMutation({
     mutationFn: (cameraId: string) => api.aiTest(cameraId),

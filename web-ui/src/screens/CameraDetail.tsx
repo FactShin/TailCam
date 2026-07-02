@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { useCameras, useDeleteCamera, usePatchCamera, useRecording, useRestartCamera, useSnapshot } from "../api/hooks";
+import { useCameras, useDeleteCamera, useDetectionInfo, usePatchCamera, useRecording, useRestartCamera, useSnapshot } from "../api/hooks";
 import { LiveViewer } from "../components/LiveViewer";
 import { useToast } from "../components/toast";
 import { Button, ConfirmDialog, ControlSlider, ScopeBadge, Segmented, Spinner, Toggle } from "../components/ui";
@@ -74,6 +74,13 @@ export function CameraDetail() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [fs, setFs] = useState(false);
   const [detect, setDetect] = useState(false);
+  // Plug-and-play: switch the detection overlay on by default once we know
+  // detection is available — unless the user has toggled it themselves.
+  const detTouched = useRef(false);
+  const detInfo = useDetectionInfo().data;
+  useEffect(() => {
+    if (!detTouched.current && detInfo?.enabled && detInfo.overlay_default) setDetect(true);
+  }, [detInfo?.enabled, detInfo?.overlay_default]);
   const stageRef = useRef<HTMLDivElement>(null);
   const wide = useWideLayout();
 
@@ -231,7 +238,7 @@ export function CameraDetail() {
           <LiveViewer cam={cam} view={view} onView={setView} big interactive showUrl fit="contain" detect={detect} />
           <button
             className={`fs-btn detect-btn ${detect ? "is-on" : ""}`}
-            onClick={() => setDetect((d) => !d)}
+            onClick={() => { detTouched.current = true; setDetect((d) => !d); }}
             aria-label="Toggle object detection"
             title="Object detection overlay (active model)"
           >

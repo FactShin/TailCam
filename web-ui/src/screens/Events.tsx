@@ -102,7 +102,7 @@ export function Events() {
                   {e.recording_id != null ? (
                     <Button variant="outline" size="sm" icon={<IconPlay size={14} />} onClick={() => navigate("/gallery")}>View clip</Button>
                   ) : (
-                    <span className="event-noclip mono">no clip</span>
+                    <span className="event-noclip mono" title="Clips save automatically when “Save a clip for motion events” is on (Settings → Recording & storage)">no clip</span>
                   )}
                 </div>
               </div>

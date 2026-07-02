@@ -95,3 +95,29 @@ A malformed config is backed up to `*.bad` and defaults are used. Fix it and
 
 Capture `tailcam doctor` output and the server logs (in the data directory). See
 the [FAQ](faq) for common questions.
+
+## Every motion event says "no clip"
+
+Before 0.99.11, saving a clip per motion event (`motion.auto_record`) was **off
+by default** — events were logged with a thumbnail but no video, and storage
+stayed at 0 B. Updating to 0.99.11 turns it on automatically (a one-time
+migration). If you still see "no clip" on new events, check **Settings →
+Recording & storage → Save a clip for motion events**. Old events keep showing
+"no clip" — the video for them was never recorded.
+
+## Windows: camera opens nothing / black stream
+
+Windows exposes cameras through two APIs (DirectShow and Media Foundation), and
+some drivers "open" on one but never deliver a frame — common on laptops whose
+integrated camera sits next to an IR/Windows Hello camera. Since 0.99.11
+TailCam verifies real frames arrive and automatically walks
+DirectShow → Media Foundation → any, remembering what worked.
+
+If the camera still shows offline:
+
+1. Close other apps that may hold the camera (Teams, Zoom, the Camera app).
+2. Check **Windows Settings → Privacy & security → Camera** and make sure
+   **"Let desktop apps access your camera"** is on — TailCam (Python) is a
+   desktop app and is blocked when this is off.
+3. `tailcam restart` and watch the camera page; the status line under the
+   camera shows the exact error TailCam sees.

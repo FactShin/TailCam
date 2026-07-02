@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { useAi, useAiTest, useCameras, useOllamaModels, useUpdateAi } from "../api/hooks";
+import { useAi, useAiTest, useCameras, useDetectionInfo, useOllamaModels, useUpdateAi, useUpdateDetection } from "../api/hooks";
 import { useToast } from "../components/toast";
-import { Button, Segmented, Spinner, Toggle } from "../components/ui";
+import { Button, ControlSlider, Segmented, Spinner, Toggle } from "../components/ui";
 import { IconBrain, IconCheck, IconChip, IconMotion, IconSparkle } from "../icons";
 import { AiModelsTab } from "./AiModelsTab";
 import { AiTrainingTab } from "./AiTrainingTab";
@@ -37,7 +37,7 @@ export function AiStudio() {
   };
 
   const pipe = ai?.pipeline;
-  const running = pipe?.mode === "local" || (pipe?.mode === "ollama" && !!ai?.model_present && !!ai?.reachable);
+  const running = pipe?.mode === "local" || pipe?.mode === "builtin" || (pipe?.mode === "ollama" && !!ai?.model_present && !!ai?.reachable);
 
   return (
     <div className="screen">
@@ -88,10 +88,11 @@ function OverviewTab({ onGoto }: { onGoto: (t: Tab) => void }) {
   return (
     <>
       <PipelineCard onGoto={onGoto} />
+      <ObjectDetectionCard />
       <TestPanel />
 
       {/* Setup checklist — only while something is missing */}
-      {pipe?.mode !== "local" && !(enabled && reachable && ai?.model_present) && (
+      {pipe?.mode !== "local" && pipe?.mode !== "builtin" && !(enabled && reachable && ai?.model_present) && (
         <SetupPanel reachable={reachable} hasModel={installed.length > 0} enabled={enabled} suggested={ai?.model || "moondream"} />
       )}
 
@@ -133,7 +134,8 @@ function PipelineCard({ onGoto }: { onGoto: (t: Tab) => void }) {
 
   const mode = pipe.mode;
   const healthy =
-    mode === "local" || (mode === "ollama" && !!ai?.reachable && !!ai?.model_present);
+    mode === "local" || mode === "builtin" ||
+    (mode === "ollama" && !!ai?.reachable && !!ai?.model_present);
 
   let title: string;
   let detail: string;
@@ -150,6 +152,9 @@ function PipelineCard({ onGoto }: { onGoto: (t: Tab) => void }) {
       : !ai?.model_present
         ? `The model "${pipe.model_name}" isn't downloaded yet — grab it in Models.`
         : "Motion events are labeled by your local Ollama model.";
+  } else if (mode === "builtin") {
+    title = `Built-in detection: ${pipe.model_name || "YOLO"}`;
+    detail = "The built-in object detector is drawing boxes and labeling motion events — no setup needed. Enable Ollama or train a model for richer descriptions.";
   } else {
     title = "Analysis is off";
     detail = "Turn on AI analysis (top right) or activate a trained model to start labeling events.";
@@ -172,6 +177,81 @@ function PipelineCard({ onGoto }: { onGoto: (t: Tab) => void }) {
       <div className="ais-pipe-actions">
         <Button variant="outline" size="sm" onClick={() => onGoto("models")}>Manage models</Button>
       </div>
+    </div>
+  );
+}
+
+/** Built-in plug-and-play object detection: one switch, boxes + labels on the
+ * live view. The model downloads itself the first time it's needed. */
+function ObjectDetectionCard() {
+  const toast = useToast();
+  const det = useDetectionInfo().data;
+  const update = useUpdateDetection();
+  if (!det) return null;
+
+  const set = async (body: Parameters<typeof update.mutateAsync>[0], msg?: string) => {
+    try {
+      await update.mutateAsync(body);
+      if (msg) toast.ok(msg);
+    } catch {
+      toast.err("Could not update detection");
+    }
+  };
+
+  const chip =
+    det.status === "ready" ? <span className="badge badge-ok">ready</span>
+    : det.status === "downloading" ? <span className="badge badge-accent">downloading {det.percent ? `${Math.round(det.percent)}%` : "…"}</span>
+    : det.status === "error" ? <span className="badge badge-err">error</span>
+    : det.enabled ? <span className="badge">starting…</span>
+    : <span className="badge">off</span>;
+
+  return (
+    <div className="panel">
+      <div className="panel-title" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <IconChip size={16} /> Object detection
+        {chip}
+        <span style={{ flex: 1 }} />
+        <Toggle
+          checked={det.enabled}
+          label="Object detection"
+          onChange={(v) => set({ enabled: v }, v ? "Object detection on — boxes appear on camera views" : "Object detection off")}
+        />
+      </div>
+      <p className="ais-intro">
+        Live bounding boxes with labels — person, cup, bottle, cat, dog and 75 more —
+        drawn right on the camera view, and motion events get labeled automatically.
+        Nothing to install: the model{det.model ? ` (${det.model})` : ""} downloads itself
+        the first time and runs fully on this device.
+      </p>
+      {det.status === "downloading" && (
+        <div className="ais-pull-bar" aria-label="Model download progress">
+          <span style={{ width: `${Math.max(3, det.percent)}%` }} />
+        </div>
+      )}
+      {det.status === "error" && (
+        <p className="ais-pipe-err">Model setup failed: {det.error} — it retries the next time a camera view asks for boxes.</p>
+      )}
+      {det.enabled && (
+        <div className="ais-det-tune">
+          <ControlSlider
+            label="Confidence"
+            value={Math.round(det.confidence * 100)}
+            min={5}
+            max={95}
+            step={5}
+            unit="%"
+            onChange={(v) => set({ confidence: v / 100 })}
+          />
+          <label className="ctl-row" style={{ marginTop: 6 }}>
+            <span className="ctl-row-label">Show boxes by default on camera pages</span>
+            <Toggle
+              checked={det.overlay_default}
+              label="Show boxes by default"
+              onChange={(v) => set({ overlay_default: v })}
+            />
+          </label>
+        </div>
+      )}
     </div>
   );
 }

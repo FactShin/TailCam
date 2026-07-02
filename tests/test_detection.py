@@ -312,6 +312,9 @@ def test_detection_train_lifecycle_uses_detection_export(context, client, tmp_pa
 
 
 def test_detect_endpoint_without_active_model(client):
+    # With the built-in detector disabled and no trained model, there is no
+    # box source at all -> detector_active False and the UI shows no overlay.
+    client.app.state.ctx.config.detection.enabled = False
     cam = client.get("/api/cameras").json()[0]
     res = client.post(f"/api/cameras/{cam['id']}/detect")
     assert res.status_code == 200

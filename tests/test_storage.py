@@ -31,7 +31,7 @@ def test_storage_endpoint_defaults(client):
     assert body["custom_dir"] == ""
     assert body["writable"] is True
     assert body["disk_total"] > 0
-    assert body["auto_record"] is False
+    assert body["auto_record"] is True  # clips per motion event, on by default
     assert body["retention_enabled"] is False  # auto-cleanup is opt-in
     assert body["max_gb"] == 10.0
 
