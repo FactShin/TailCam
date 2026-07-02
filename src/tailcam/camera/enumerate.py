@@ -112,17 +112,30 @@ def _enumerate_windows(max_probe: int = 8) -> list[CameraDescriptor]:
     import cv2
 
     names = _windows_names()
-    descriptors: list[CameraDescriptor] = []
-    for index in range(max_probe):
-        cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
-        opened = cap.isOpened()
-        cap.release()
-        if opened:
-            name = names[index] if index < len(names) else f"Camera {index}"
-            descriptors.append(CameraDescriptor(id=str(index), name=name, backend="dshow"))
-        elif index > 0:
-            # Indices are contiguous; stop at the first gap after index 0.
-            break
+
+    def probe(api: int) -> list[CameraDescriptor]:
+        found: list[CameraDescriptor] = []
+        # When DirectShow gave us the device list, probe exactly that many
+        # indexes and tolerate gaps — laptops expose extra nodes (IR/Windows
+        # Hello cameras) that open() rejects, and a gap must not hide the real
+        # webcam behind it. Without names, fall back to stop-at-first-gap.
+        count = max(max_probe, len(names)) if names else max_probe
+        for index in range(count):
+            cap = cv2.VideoCapture(index, api)
+            opened = cap.isOpened()
+            cap.release()
+            if opened:
+                name = names[index] if index < len(names) else f"Camera {index}"
+                found.append(CameraDescriptor(id=str(index), name=name, backend="dshow"))
+            elif not names and index > 0:
+                break  # indices are contiguous when we can't know the count
+        return found
+
+    descriptors = probe(cv2.CAP_DSHOW)
+    if not descriptors:
+        # Some drivers/OpenCV builds only enumerate via Media Foundation.
+        log.info("No cameras found via DirectShow; probing Media Foundation")
+        descriptors = probe(cv2.CAP_MSMF)
     return descriptors
 
 

@@ -27,7 +27,9 @@ from tailcam.web.schemas import (
     DatasetCreate,
     DatasetInfo,
     DetectionBox,
+    DetectionInfo,
     DetectionResult,
+    DetectionUpdate,
     EngineInfo,
     HACameraEntry,
     HomeAssistantStatus,
@@ -274,12 +276,50 @@ async def detect_objects(
         )
         for d in (detections or [])
     ]
+    if active_model is not None and getattr(active_model, "task", "") == "detection":
+        model_name: str | None = active_model.name
+    else:
+        model_name = ctx.detector.status().model or None
     return DetectionResult(
         camera_id=camera_id,
         detector_active=True,
-        model_name=active_model.name if active_model else None,
+        model_name=model_name,
         boxes=boxes,
+        note=ctx.inference.detection_note(),
     )
+
+
+@router.get("/detection", response_model=DetectionInfo)
+def detection_info(ctx: AppContext = Depends(get_context)) -> DetectionInfo:
+    """Built-in object detection status: engine, model, download progress."""
+    s = ctx.detector.status()
+    cfg = ctx.config.detection
+    return DetectionInfo(
+        enabled=s.enabled, engine=s.engine, model=s.model, status=s.status,
+        percent=s.percent, detail=s.detail, error=s.error,
+        confidence=cfg.confidence, classes=cfg.classes,
+        overlay_default=cfg.overlay_default,
+    )
+
+
+@router.post("/detection", response_model=DetectionInfo)
+def update_detection(
+    update: DetectionUpdate, ctx: AppContext = Depends(get_context)
+) -> DetectionInfo:
+    """Change built-in detection settings (persisted; takes effect immediately)."""
+    cfg = ctx.config.detection
+    if update.enabled is not None:
+        cfg.enabled = update.enabled
+        if update.enabled:
+            ctx.detector.ensure_ready()
+    if update.confidence is not None:
+        cfg.confidence = max(0.05, min(0.95, update.confidence))
+    if update.classes is not None:
+        cfg.classes = [c.strip() for c in update.classes if c.strip()]
+    if update.overlay_default is not None:
+        cfg.overlay_default = update.overlay_default
+    ctx.config.save()
+    return detection_info(ctx)
 
 
 def _media_info(ctx: AppContext, record) -> MediaInfo:

@@ -210,6 +210,17 @@ over your tailnet, with no per-request login. On top of that, TailCam ships defe
 Keep the default `127.0.0.1` bind — don't expose TailCam directly to a public network; let
 Tailscale handle access.
 
+## Object detection (built in, zero setup)
+
+Open any camera and TailCam draws **live bounding boxes with labels** — person,
+cup, bottle, cat, dog, and the rest of the 80 COCO classes — using a built-in
+detector that's **on by default** and runs entirely on your hardware. The model
+(a few MB of YOLO) downloads itself the first time it's needed; nothing to
+install or configure. Motion events are labeled from the same detector, so the
+Events page gets PERSON / DOG / CUP chips out of the box. Tune it (confidence,
+class filter, engine, bigger models) in **AI Studio → Object detection** or the
+`[detection]` config section.
+
 ## AI motion analysis (local, optional)
 
 Motion detection is free pixel-diff; when it fires, TailCam can ask a **local
@@ -258,7 +269,12 @@ thumbnail. To let one node analyze another's events, point the URL at that node
 - **Resolution, zoom & pan** — set capture resolution; per-viewer digital zoom + pan;
   rotate/flip; brightness/contrast/FPS controls.
 - **Snapshots & recording** — capture stills and record clips to disk, with a gallery.
-- **Motion detection** — detect motion, log events, and optionally auto-record.
+- **Motion detection** — detect motion, log events, and save a clip per event (on by default).
+- **Object detection** — built-in live bounding boxes + labels (80 COCO classes), zero setup,
+  auto-downloading local model; upgrades itself to Ultralytics YOLO11 when torch is installed.
+- **MCP server** — agents (Claude, Codex, …) can inspect cameras, events, and health and run
+  guarded admin workflows via `tailcam mcp stdio` or the authenticated `/mcp` HTTP mount — see
+  [`docs/mcp.md`](docs/mcp.md).
 - **Tailscale-native** — secure access over your tailnet; fully usable on a LAN too.
 
 ## Architecture

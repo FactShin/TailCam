@@ -8,8 +8,10 @@ from typing import cast
 
 from tailcam import paths
 from tailcam.ai.analyzer import OllamaAnalyzer
+from tailcam.ai.detector import BuiltinDetector
 from tailcam.ai.pull import ModelPuller
 from tailcam.camera.manager import CameraManager
+from tailcam.camera.source import use_synthetic
 from tailcam.cluster.service import ClusterService, resolve_local_host
 from tailcam.config import AppConfig
 from tailcam.integrations.homeassistant import MqttPublisher
@@ -104,8 +106,14 @@ class AppContext:
             self.manager, self.store, config.training, self.analyzer, self.local_host,
             notifier=self.notifications,
         )
-        # Motion analysis routes through the active trained/BYO model if set, else Ollama.
-        self.inference = InferenceRouter(self.store, config.training, self.analyzer)
+        # Built-in plug-and-play object detection (boxes + labels, zero setup).
+        # Provisions itself in the background on first use.
+        self.detector = BuiltinDetector(config.detection)
+        # Motion analysis routes through the active trained/BYO model if set,
+        # else Ollama, else the built-in detector's best box.
+        self.inference = InferenceRouter(
+            self.store, config.training, self.analyzer, builtin=self.detector
+        )
         self.cluster = ClusterService(
             config.peers, self.tailscale, self.local_host, config.tailscale.serve_port
         )
@@ -120,6 +128,12 @@ class AppContext:
         self._last_prune = 0.0
 
     def startup(self) -> None:
+        # Warm the built-in detector at boot so the model is downloaded and
+        # loaded before anyone opens a camera view (no-op once provisioned).
+        # Skipped in synthetic mode (CI/tests) — there it provisions lazily on
+        # the first real detect request instead of hitting the network per run.
+        if not use_synthetic():
+            self.detector.ensure_ready()
         stale = self.store.close_stale_motion_events()
         if stale:
             log.info("Closed %d orphaned motion event(s) from a previous run", stale)

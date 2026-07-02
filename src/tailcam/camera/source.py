@@ -51,6 +51,11 @@ class CameraSource(ABC):
     def is_open(self) -> bool: ...
 
 
+# Windows: which capture API actually delivered frames for a given device, so
+# reconnects skip straight to it instead of re-walking the ladder.
+_WIN_BACKEND_CACHE: dict[str, int] = {}
+
+
 class OpenCVCameraSource(CameraSource):
     def __init__(self, descriptor: CameraDescriptor, props: CameraProperties) -> None:
         self.descriptor = descriptor
@@ -73,19 +78,66 @@ class OpenCVCameraSource(CameraSource):
             return int(self.descriptor.id)
         return self.descriptor.id
 
+    def _verify_frames(self, cap: Any, deadline_s: float = 3.0) -> bool:
+        """True once the capture delivers a real frame.
+
+        On Windows, ``isOpened()`` is not proof of a working camera: DirectShow
+        happily "opens" a device (or an IR/virtual node) and then never returns
+        a frame. Treat frame delivery, not open, as success.
+        """
+        end = time.monotonic() + deadline_s
+        while time.monotonic() < end:
+            ok, frame = cap.read()
+            if ok and frame is not None and getattr(frame, "size", 0) > 0:
+                return True
+            time.sleep(0.1)
+        return False
+
+    def _open_windows(self) -> bool:
+        """Walk capture backends until one actually produces frames."""
+        import cv2
+
+        ladder = [
+            (cv2.CAP_DSHOW, "DSHOW"),
+            (cv2.CAP_MSMF, "MSMF"),
+            (cv2.CAP_ANY, "ANY"),
+        ]
+        cached = _WIN_BACKEND_CACHE.get(self.descriptor.id)
+        if cached is not None:
+            ladder.sort(key=lambda item: item[0] != cached)
+        for api, name in ladder:
+            cap = cv2.VideoCapture(self._device_arg(), api)
+            if not cap.isOpened():
+                cap.release()
+                continue
+            if not self._verify_frames(cap):
+                log.info(
+                    "Camera %s opened via %s but delivered no frames; trying next backend",
+                    self.descriptor.id, name,
+                )
+                cap.release()
+                continue
+            log.info("Camera %s capturing via %s", self.descriptor.id, name)
+            _WIN_BACKEND_CACHE[self.descriptor.id] = api
+            self._cap = cap
+            return True
+        return False
+
     def open(self) -> bool:
         import cv2
 
-        self._cap = cv2.VideoCapture(self._device_arg(), self._api_preference())
-        if not self._cap.isOpened() and sys.platform == "win32":
-            # Some Windows drivers/OpenCV builds reject DirectShow by-index
-            # capture; Media Foundation usually works for the same index.
-            self._cap.release()
-            log.info("DSHOW open failed for %s; retrying with MSMF", self.descriptor.id)
-            self._cap = cv2.VideoCapture(self._device_arg(), cv2.CAP_MSMF)
-        if not self._cap.isOpened():
-            log.warning("Failed to open camera %s", self.descriptor.id)
-            return False
+        if sys.platform == "win32":
+            if not self._open_windows():
+                log.warning(
+                    "Failed to open camera %s (no backend delivered frames)",
+                    self.descriptor.id,
+                )
+                return False
+        else:
+            self._cap = cv2.VideoCapture(self._device_arg(), self._api_preference())
+            if not self._cap.isOpened():
+                log.warning("Failed to open camera %s", self.descriptor.id)
+                return False
         # Apply initial properties.
         for name in ("width", "height", "fps", "brightness", "contrast", "saturation"):
             value = getattr(self.props, name, None)

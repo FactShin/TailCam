@@ -193,6 +193,14 @@ export const detectObjects = (prefix: string, id: string) =>
     method: "POST",
   });
 
+export const getDetection = () =>
+  jsonFetch<import("../types").DetectionInfo>("/api/detection");
+export const updateDetection = (body: import("../types").DetectionUpdate) =>
+  jsonFetch<import("../types").DetectionInfo>("/api/detection", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
 export const getModels = () => jsonFetch<import("../types").ModelInfo[]>("/api/models");
 export const registerModel = (body: {
   name: string;

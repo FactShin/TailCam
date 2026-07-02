@@ -15,6 +15,9 @@ rather than bypassing them. See ``docs/mcp.md`` for client setup and
 from __future__ import annotations
 
 PROTOCOL_VERSION = "2025-06-18"
+# Older revisions this server can also speak (the message set we implement is
+# compatible: initialize/tools/resources/prompts with no batching reliance).
+SUPPORTED_PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 SERVER_NAME = "tailcam"
 
-__all__ = ["PROTOCOL_VERSION", "SERVER_NAME"]
+__all__ = ["PROTOCOL_VERSION", "SERVER_NAME", "SUPPORTED_PROTOCOL_VERSIONS"]

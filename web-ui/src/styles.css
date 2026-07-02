@@ -1269,3 +1269,6 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
   transition: color 0.15s var(--ease), border-color 0.15s var(--ease);
 }
 .intg-url:hover { color: var(--accent); border-color: var(--accent-line); }
+
+/* AI Studio: built-in object detection card */
+.ais-det-tune { margin-top: 12px; display: grid; gap: 10px; max-width: 460px; }

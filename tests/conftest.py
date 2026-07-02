@@ -15,6 +15,16 @@ def _reset_media_override():
     paths.set_media_override(None)
 
 
+@pytest.fixture(autouse=True)
+def _no_detector_downloads(monkeypatch):
+    """The built-in detector self-provisions (a real ~23 MB model download) on
+    first use — never from the test suite. Tests that exercise the detector
+    stub its state directly (see test_builtin_detection.py)."""
+    from tailcam.ai.detector import BuiltinDetector
+
+    monkeypatch.setattr(BuiltinDetector, "ensure_ready", lambda self: None)
+
+
 @pytest.fixture
 def isolated_env(tmp_path, monkeypatch):
     data = tmp_path / "data"

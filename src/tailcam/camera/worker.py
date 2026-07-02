@@ -127,6 +127,12 @@ class CameraWorker:
                         "can't open device — if this persists, grant camera access in "
                         "System Settings › Privacy & Security › Camera"
                     )
+                elif sys.platform == "win32":
+                    self.state.last_error = (
+                        "no frames from device — close other apps using the camera, and "
+                        "check Windows Settings › Privacy & security › Camera › "
+                        "“Let desktop apps access your camera”"
+                    )
                 else:
                     self.state.last_error = "can't open device (in use, unplugged, or denied)"
                 source.close()

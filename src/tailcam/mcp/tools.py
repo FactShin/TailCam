@@ -14,6 +14,7 @@ master-switched by the ``[mcp]`` config.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -144,10 +145,31 @@ async def _list_cameras(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     return ToolResult(summary, {"ok": True, "cameras": cams})
 
 
+async def _find_camera(ctx: ToolContext, camera_id: str) -> tuple[dict[str, Any], str]:
+    """Resolve a camera *fleet-wide*: (camera, proxy_prefix to reach its node).
+
+    list_cameras returns peer cameras with a ``proxy_prefix``; acting on them
+    must go through the owning node's proxy or every call 404s locally. When
+    the same id exists on several nodes (index ids like "0"), the local one
+    wins. Unknown ids fall through to a direct local fetch so the standard
+    camera_unknown error shape is raised.
+    """
+    try:
+        cams = await ctx.client.cameras(scope="all")
+    except TailcamMcpError:
+        cams = []
+    matches = [c for c in cams if str(c.get("id")) == camera_id]
+    if matches:
+        matches.sort(key=lambda c: str(c.get("proxy_prefix") or ""))  # local ("") first
+        cam = matches[0]
+        return cam, str(cam.get("proxy_prefix") or "")
+    cam = await ctx.client.camera(camera_id)
+    return cam, str(cam.get("proxy_prefix") or "")
+
+
 async def _inspect_camera(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     camera_id = _str_arg(args, "camera_id")
-    cam = await ctx.client.camera(camera_id)
-    prefix = cam.get("proxy_prefix", "")
+    cam, prefix = await _find_camera(ctx, camera_id)
     hints = {
         "snapshot_url": f"{prefix}/stream/{camera_id}/snapshot.jpg",
         "mjpeg_url": f"{prefix}/stream/{camera_id}.mjpg",
@@ -229,12 +251,13 @@ async def _get_ai_status(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 # --------------------------------------------------------------------------
 async def _capture_snapshot(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     camera_id = _str_arg(args, "camera_id")
-    result = await ctx.client.snapshot(camera_id)
+    _cam, prefix = await _find_camera(ctx, camera_id)
+    result = await ctx.client.snapshot(camera_id, prefix=prefix)
     media_id = result.get("media_id")
     data = {
         "ok": True,
         "media_id": media_id,
-        "file_url": _media_url("", "media", media_id) if media_id else None,
+        "file_url": _media_url(prefix, "media", media_id) if media_id else None,
         "camera_id": camera_id,
     }
     ctx.record_action(
@@ -246,14 +269,16 @@ async def _capture_snapshot(ctx: ToolContext, args: dict[str, Any]) -> ToolResul
 
 async def _start_recording(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     camera_id = _str_arg(args, "camera_id")
-    await ctx.client.start_recording(camera_id)
+    _cam, prefix = await _find_camera(ctx, camera_id)
+    await ctx.client.start_recording(camera_id, prefix=prefix)
     ctx.record_action(action="start_recording", target=camera_id, result="success")
     return ToolResult(f"Recording started on {camera_id}.", {"ok": True, "camera_id": camera_id})
 
 
 async def _stop_recording(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     camera_id = _str_arg(args, "camera_id")
-    result = await ctx.client.stop_recording(camera_id)
+    _cam, prefix = await _find_camera(ctx, camera_id)
+    result = await ctx.client.stop_recording(camera_id, prefix=prefix)
     media_id = result.get("media_id")
     ctx.record_action(
         action="stop_recording", target=camera_id, result="success",
@@ -267,8 +292,9 @@ async def _stop_recording(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 
 async def _set_motion_detection(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     camera_id = _str_arg(args, "camera_id")
-    enabled = bool(args["enabled"])
-    cam = await ctx.client.update_camera(camera_id, {"motion_enabled": enabled})
+    enabled = _bool_arg(args, "enabled")
+    _cam, prefix = await _find_camera(ctx, camera_id)
+    cam = await ctx.client.update_camera(camera_id, {"motion_enabled": enabled}, prefix=prefix)
     ctx.record_action(
         action="set_motion_detection", target=camera_id, result="success",
         metadata={"enabled": enabled},
@@ -287,7 +313,8 @@ async def _update_camera_settings(ctx: ToolContext, args: dict[str, Any]) -> Too
         raise TailcamMcpError(
             errors.INVALID_REQUEST, "Provide at least one of name, properties, transform."
         )
-    cam = await ctx.client.update_camera(camera_id, body)
+    _cam, prefix = await _find_camera(ctx, camera_id)
+    cam = await ctx.client.update_camera(camera_id, body, prefix=prefix)
     ctx.record_action(
         action="update_camera_settings", target=camera_id, result="success",
         metadata={"fields": sorted(body)},
@@ -298,7 +325,8 @@ async def _update_camera_settings(ctx: ToolContext, args: dict[str, Any]) -> Too
 async def _restart_camera(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     camera_id = _str_arg(args, "camera_id")
     _require_confirm(args, ctx.config.require_confirm_for_writes)
-    await ctx.client.restart_camera(camera_id)
+    _cam, prefix = await _find_camera(ctx, camera_id)
+    await ctx.client.restart_camera(camera_id, prefix=prefix)
     ctx.record_action(action="restart_camera", target=camera_id, result="success")
     return ToolResult(f"Restarted camera {camera_id}.", {"ok": True, "camera_id": camera_id})
 
@@ -351,7 +379,12 @@ async def _check_fleet_version_drift(ctx: ToolContext, args: dict[str, Any]) -> 
         update = await ctx.client.update_info()
     except TailcamMcpError:
         update = {}
-    versions = sorted({str(h["version"]) for h in hosts if h.get("version")})
+    def _ver_key(v: str) -> tuple:
+        # Numeric-aware ordering ("0.10.0" > "0.9.0"); non-numeric parts sort low.
+        parts = re.split(r"[.+-]", v)
+        return tuple(int(p) if p.isdigit() else -1 for p in parts)
+
+    versions = sorted({str(h["version"]) for h in hosts if h.get("version")}, key=_ver_key)
     newest = versions[-1] if versions else None
     latest = update.get("latest") or newest
     drift = [
@@ -460,7 +493,7 @@ async def _list_training_datasets(ctx: ToolContext, args: dict[str, Any]) -> Too
 
 async def _import_events_to_dataset(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     _require_confirm(args, ctx.config.require_confirm_for_writes)
-    dataset_id = int(args["dataset_id"])
+    dataset_id = _int_arg(args, "dataset_id")
     dataset = await ctx.client.import_events(dataset_id)
     ctx.record_action(
         action="import_events_to_dataset", target=f"dataset:{dataset_id}", result="success",
@@ -524,14 +557,14 @@ async def _create_dataset(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 
 async def _delete_dataset(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     _require_confirm(args, ctx.config.require_confirm_for_writes)
-    dataset_id = int(args["dataset_id"])
+    dataset_id = _int_arg(args, "dataset_id")
     await ctx.client.delete_dataset(dataset_id)
     ctx.record_action(action="delete_dataset", target=f"dataset:{dataset_id}", result="success")
     return ToolResult(f"Deleted dataset #{dataset_id}.", {"ok": True, "dataset_id": dataset_id})
 
 
 async def _get_dataset(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
-    dataset_id = int(args["dataset_id"])
+    dataset_id = _int_arg(args, "dataset_id")
     ds = await ctx.client.dataset(dataset_id)
     summary = (
         f"Dataset #{ds.get('id')} '{ds.get('name')}' ({ds.get('task')}): "
@@ -541,7 +574,7 @@ async def _get_dataset(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 
 
 async def _list_dataset_samples(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
-    dataset_id = int(args["dataset_id"])
+    dataset_id = _int_arg(args, "dataset_id")
     limit = _clamp(args.get("limit", 50), 1, 500)
     offset = _clamp(args.get("offset", 0), 0, 10**6)
     samples = await ctx.client.dataset_samples(
@@ -554,7 +587,7 @@ async def _list_dataset_samples(ctx: ToolContext, args: dict[str, Any]) -> ToolR
 
 
 async def _relabel_sample(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
-    sample_id = int(args["sample_id"])
+    sample_id = _int_arg(args, "sample_id")
     label = args.get("label")
     sample = await ctx.client.relabel_sample(sample_id, label)
     ctx.record_action(
@@ -567,7 +600,7 @@ async def _relabel_sample(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 
 
 async def _delete_sample(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
-    sample_id = int(args["sample_id"])
+    sample_id = _int_arg(args, "sample_id")
     await ctx.client.delete_sample(sample_id)
     ctx.record_action(action="delete_sample", target=f"sample:{sample_id}", result="success")
     return ToolResult(f"Deleted sample #{sample_id}.", {"ok": True, "sample_id": sample_id})
@@ -604,7 +637,7 @@ async def _register_model(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 
 
 async def _activate_model(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
-    model_id = int(args["model_id"])
+    model_id = _int_arg(args, "model_id")
     model = await ctx.client.activate_model(model_id)
     ctx.record_action(action="activate_model", target=f"model:{model_id}", result="success")
     return ToolResult(
@@ -621,7 +654,7 @@ async def _deactivate_model(ctx: ToolContext, args: dict[str, Any]) -> ToolResul
 
 async def _delete_model(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     _require_confirm(args, ctx.config.require_confirm_for_writes)
-    model_id = int(args["model_id"])
+    model_id = _int_arg(args, "model_id")
     await ctx.client.delete_model(model_id)
     ctx.record_action(action="delete_model", target=f"model:{model_id}", result="success")
     return ToolResult(f"Deleted model #{model_id}.", {"ok": True, "model_id": model_id})
@@ -632,7 +665,7 @@ async def _delete_model(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 # --------------------------------------------------------------------------
 async def _start_training_run(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     _require_confirm(args, ctx.config.require_confirm_for_writes)
-    body: dict[str, Any] = {"dataset_id": int(args["dataset_id"])}
+    body: dict[str, Any] = {"dataset_id": _int_arg(args, "dataset_id")}
     for key in ("base_model", "epochs", "image_size"):
         if args.get(key) is not None:
             body[key] = args[key]
@@ -661,7 +694,7 @@ async def _list_training_runs(ctx: ToolContext, args: dict[str, Any]) -> ToolRes
 
 
 async def _get_training_run(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
-    run_id = int(args["run_id"])
+    run_id = _int_arg(args, "run_id")
     run = await ctx.client.run(run_id)
     summary = (
         f"Run #{run.get('id')}: {run.get('status')} "
@@ -671,7 +704,7 @@ async def _get_training_run(ctx: ToolContext, args: dict[str, Any]) -> ToolResul
 
 
 async def _stop_training_run(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
-    run_id = int(args["run_id"])
+    run_id = _int_arg(args, "run_id")
     run = await ctx.client.stop_run(run_id)
     ctx.record_action(action="stop_training_run", target=f"run:{run_id}", result="success")
     return ToolResult(f"Stopped training run #{run_id}.", {"ok": True, "run": run})
@@ -743,7 +776,7 @@ async def _find_offline_cameras(ctx: ToolContext, args: dict[str, Any]) -> ToolR
 
 
 async def _investigate_motion_event(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
-    event_id = int(args["event_id"])
+    event_id = _int_arg(args, "event_id")
     scope = args.get("scope", "all")
     recent = await ctx.client.events(limit=ctx.config.max_events, scope=scope)
     event = next((e for e in recent if e.get("id") == event_id), None)
@@ -845,6 +878,25 @@ def _str_arg(args: dict[str, Any], key: str) -> str:
     value = args.get(key)
     if not isinstance(value, str) or not value.strip():
         raise TailcamMcpError(errors.INVALID_REQUEST, f"'{key}' is required.")
+    return value
+
+
+def _int_arg(args: dict[str, Any], key: str) -> int:
+    """Required integer argument -> tool-level error (not a -32603 internal
+    error) when missing or non-numeric."""
+    value = args.get(key)
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        raise TailcamMcpError(
+            errors.INVALID_REQUEST, f"'{key}' must be an integer."
+        ) from None
+
+
+def _bool_arg(args: dict[str, Any], key: str) -> bool:
+    value = args.get(key)
+    if not isinstance(value, bool):
+        raise TailcamMcpError(errors.INVALID_REQUEST, f"'{key}' must be true or false.")
     return value
 
 

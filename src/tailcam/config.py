@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import logging
 import sys
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -42,7 +42,10 @@ class MotionConfig:
     min_area: int = 800
     sample_fps: int = 5
     cooldown_seconds: float = 5.0
-    auto_record: bool = False
+    # Save a clip for every motion event. On by default — a motion log where
+    # every row says "no clip" surprises people far more than a few MB of video
+    # (retention/pruning is the knob for disk pressure, not silent no-ops).
+    auto_record: bool = True
     record_tail_seconds: float = 5.0
 
 
@@ -102,6 +105,28 @@ class AIConfig:
         "with JSON: {\"label\": one of [person, animal, vehicle, package, plant, nothing], "
         "\"confidence\": a number 0-1, \"description\": a short phrase}. No other text."
     )
+
+
+@dataclass
+class DetectionConfig:
+    # Built-in live object detection: bounding boxes + labels (person, cup,
+    # bottle, cat, dog, … — the 80 COCO classes) drawn over the camera view.
+    # Plug and play: the first time it's needed the model downloads itself and
+    # detection just starts working — no accounts, no cloud, no setup.
+    #
+    # Engine ladder (``engine = "auto"``): Ultralytics YOLO11n when the optional
+    # training extra (torch) is installed — best accuracy, GPU-capable — else
+    # OpenCV's built-in DNN running YOLOv4-tiny, which needs nothing beyond
+    # TailCam's own dependencies. Enthusiasts can pin ``engine`` or swap
+    # ``model`` for any Ultralytics detect model name/path.
+    enabled: bool = True
+    engine: str = "auto"  # auto | ultralytics | opencv
+    model: str = ""  # advanced: Ultralytics model name/path override (e.g. yolo11s.pt)
+    confidence: float = 0.45  # min box confidence, 0..1
+    # Only report these labels (empty = all 80 COCO classes). e.g. ["person","dog"]
+    classes: list[str] = field(default_factory=list)
+    # Camera pages start with the detection overlay switched on.
+    overlay_default: bool = True
 
 
 @dataclass
@@ -251,6 +276,27 @@ class HomeAssistantConfig:
     motion_reset_seconds: float = 20.0  # auto-clear a motion sensor after this
 
 
+# Bumped when older config files need a one-time value migration on load (see
+# ``AppConfig.load``). Version 2: motion.auto_record flipped to default-on.
+_CONFIG_VERSION = 2
+
+_T = TypeVar("_T")
+
+
+def _section(dc: type[_T], raw: dict[str, Any], key: str) -> _T:
+    """Build one config section, ignoring unknown keys.
+
+    A config written by a newer TailCam (or hand-edited with a typo) must not
+    TypeError and reset the ENTIRE file to defaults — unknown keys are simply
+    dropped and known ones kept.
+    """
+    data = raw.get(key) or {}
+    if not isinstance(data, dict):
+        return dc()
+    names = {f.name for f in fields(dc)}  # type: ignore[arg-type]
+    return dc(**{k: v for k, v in data.items() if k in names})
+
+
 @dataclass
 class AppConfig:
     server: ServerConfig = field(default_factory=ServerConfig)
@@ -261,6 +307,7 @@ class AppConfig:
     tailscale: TailscaleConfig = field(default_factory=TailscaleConfig)
     peers: PeersConfig = field(default_factory=PeersConfig)
     cameras: CamerasConfig = field(default_factory=CamerasConfig)
+    detection: DetectionConfig = field(default_factory=DetectionConfig)
     ai: AIConfig = field(default_factory=AIConfig)
     timelapse: TimelapseConfig = field(default_factory=TimelapseConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
@@ -302,27 +349,40 @@ class AppConfig:
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> AppConfig:
-        return cls(
-            server=ServerConfig(**raw.get("server", {})),
-            stream=StreamConfig(**raw.get("stream", {})),
-            motion=MotionConfig(**raw.get("motion", {})),
-            retention=RetentionConfig(**raw.get("retention", {})),
-            storage=StorageConfig(**raw.get("storage", {})),
-            tailscale=TailscaleConfig(**raw.get("tailscale", {})),
-            peers=PeersConfig(**raw.get("peers", {})),
-            cameras=CamerasConfig(**raw.get("cameras", {})),
-            ai=AIConfig(**raw.get("ai", {})),
-            timelapse=TimelapseConfig(**raw.get("timelapse", {})),
-            training=TrainingConfig(**raw.get("training", {})),
-            plugins=PluginsConfig(**raw.get("plugins", {})),
-            notifications=NotificationsConfig(**raw.get("notifications", {})),
-            homekit=HomeKitConfig(**raw.get("homekit", {})),
-            homeassistant=HomeAssistantConfig(**raw.get("homeassistant", {})),
-            mcp=MCPConfig(**raw.get("mcp", {})),
+        config = cls(
+            server=_section(ServerConfig, raw, "server"),
+            stream=_section(StreamConfig, raw, "stream"),
+            motion=_section(MotionConfig, raw, "motion"),
+            retention=_section(RetentionConfig, raw, "retention"),
+            storage=_section(StorageConfig, raw, "storage"),
+            tailscale=_section(TailscaleConfig, raw, "tailscale"),
+            peers=_section(PeersConfig, raw, "peers"),
+            cameras=_section(CamerasConfig, raw, "cameras"),
+            detection=_section(DetectionConfig, raw, "detection"),
+            ai=_section(AIConfig, raw, "ai"),
+            timelapse=_section(TimelapseConfig, raw, "timelapse"),
+            training=_section(TrainingConfig, raw, "training"),
+            plugins=_section(PluginsConfig, raw, "plugins"),
+            notifications=_section(NotificationsConfig, raw, "notifications"),
+            homekit=_section(HomeKitConfig, raw, "homekit"),
+            homeassistant=_section(HomeAssistantConfig, raw, "homeassistant"),
+            mcp=_section(MCPConfig, raw, "mcp"),
         )
+        # One-time value migrations for files written by older versions. A file
+        # saved by this version records _CONFIG_VERSION, so a value the user
+        # sets afterwards is never touched again.
+        version = int(raw.get("config_version", 1) or 1)
+        if version < 2:
+            # v2 (0.99.11): motion clips became opt-out. Older files all carry
+            # auto_record=false because that was the *default*, not a choice —
+            # every motion event showed "no clip" and nothing was recorded.
+            config.motion.auto_record = True
+        return config
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            # Top-level scalars must precede tables in TOML; keep this first.
+            "config_version": _CONFIG_VERSION,
             "server": asdict(self.server),
             "stream": asdict(self.stream),
             "motion": asdict(self.motion),
@@ -331,6 +391,7 @@ class AppConfig:
             "tailscale": asdict(self.tailscale),
             "peers": asdict(self.peers),
             "cameras": asdict(self.cameras),
+            "detection": asdict(self.detection),
             "ai": asdict(self.ai),
             "timelapse": asdict(self.timelapse),
             "training": asdict(self.training),
