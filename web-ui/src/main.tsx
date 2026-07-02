@@ -11,10 +11,8 @@ import { Dashboard } from "./screens/Dashboard";
 import { Docs } from "./screens/Docs";
 import { Events } from "./screens/Events";
 import { Gallery } from "./screens/Gallery";
-import { Models } from "./screens/Models";
 import { Settings } from "./screens/Settings";
 import { Timelapse } from "./screens/Timelapse";
-import { Training } from "./screens/Training";
 import "./styles.css";
 
 const queryClient = new QueryClient({
@@ -36,8 +34,9 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/events" element={<Events />} />
               <Route path="/ai" element={<AiStudio />} />
               <Route path="/timelapse" element={<Timelapse />} />
-              <Route path="/training" element={<Training />} />
-              <Route path="/models" element={<Models />} />
+              {/* Old destinations now live as AI Studio tabs. */}
+              <Route path="/training" element={<Navigate to="/ai?tab=training" replace />} />
+              <Route path="/models" element={<Navigate to="/ai?tab=models" replace />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/docs" element={<Docs />} />
               <Route path="/docs/:slug" element={<Docs />} />

@@ -111,12 +111,15 @@ and jot anything weird in **Notes**.
 
 ## 8. AI motion labels (optional — needs Ollama)
 
-> Settings → AI motion analysis → point at an Ollama host + model.
+> **AI Studio** (one nav item now — AI, Training, and Models are tabs inside it).
 
 | # | Action | Expect | P/F |
 |---|--------|--------|-----|
-|8.1| Enable AI and confirm "reachable / model present". | Green/ready status. | |
-|8.2| **Field:** walk past (person), then have a car pass if possible. | Events get labels like `person` / `vehicle` with a confidence. | |
+|8.1| Open **AI Studio**. The top card states what's analyzing (your model / Ollama / off). | The statement matches reality; problems are called out in plain words. | |
+|8.2| Models tab → download/select a model; enable AI (top-right toggle). | Status flips to **Active**; the pipeline card says "Ollama: <model>". | |
+|8.3| Overview → **Try it now** → pick a camera → **Analyze a frame**. | Within ~20s you get a label + confidence (e.g. `person 84%`) — no motion needed. | |
+|8.4| **Field:** walk past (person), then have a car pass if possible. | Events get labels like `person` / `vehicle` with a confidence. | |
+|8.5| Old links still work: open `/training` and `/models` directly. | Both land on the right AI Studio tab. | |
 
 ---
 

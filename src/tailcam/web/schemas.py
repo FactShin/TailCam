@@ -88,6 +88,17 @@ class MotionEventInfo(BaseModel):
     proxy_prefix: str = ""
 
 
+class PipelineInfo(BaseModel):
+    """What actually analyzes frames right now — the single source of truth the
+    UI shows (a selected local model silently falling back to Ollama was
+    previously invisible)."""
+
+    mode: str = "off"  # local | ollama | off
+    model_name: str = ""
+    task: str = ""  # classification | detection
+    error: str = ""  # why a selected local model isn't running, if so
+
+
 class AIInfo(BaseModel):
     enabled: bool
     reachable: bool
@@ -95,6 +106,20 @@ class AIInfo(BaseModel):
     model_present: bool
     base_url: str = ""
     provider: str = "ollama"
+    pipeline: PipelineInfo = Field(default_factory=PipelineInfo)
+
+
+class AITestRequest(BaseModel):
+    camera_id: str
+
+
+class AITestResult(BaseModel):
+    ok: bool
+    engine: str = ""  # local | ollama
+    label: str | None = None
+    confidence: float | None = None
+    description: str | None = None
+    error: str = ""
 
 
 class AIUpdate(BaseModel):

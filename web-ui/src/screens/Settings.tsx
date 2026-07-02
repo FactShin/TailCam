@@ -74,8 +74,8 @@ export function Settings() {
                 <span className="badge"><span className="pill-dot" style={{ background: "var(--muted)" }} /> Disabled</span>
               </span>
               <span className="help-foot mono">
-                Enable in config.toml [ai]: set enabled=true and point base_url at an Ollama host
-                (e.g. your Mac mini). Motion events then get labels (person/animal/vehicle…).
+                Motion events get labels (person/animal/vehicle…) when AI is on. Set it up — model
+                download included — in <a className="lit" href="/ai">AI Studio</a>.
               </span>
             </div>
           ) : (
