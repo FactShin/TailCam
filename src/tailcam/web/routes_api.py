@@ -16,6 +16,8 @@ from tailcam.web.schemas import (
     AIInfo,
     AIModelRequest,
     AIPullStatus,
+    AITestRequest,
+    AITestResult,
     AIUpdate,
     AnnotationBox,
     CameraInfo,
@@ -43,6 +45,7 @@ from tailcam.web.schemas import (
     NotificationsUpdate,
     OkResponse,
     OllamaModelsInfo,
+    PipelineInfo,
     PluginEntry,
     PluginsInfo,
     PostprocessInfo,
@@ -867,7 +870,10 @@ def start_run(body: TrainRequest, ctx: AppContext = Depends(get_context)) -> Tra
 
     if not engine_available():
         raise HTTPException(status_code=503, detail="training engine not installed")
-    run = ctx.training.train(body.dataset_id, body.base_model, body.epochs, body.image_size)
+    try:
+        run = ctx.training.train(body.dataset_id, body.base_model, body.epochs, body.image_size)
+    except RuntimeError as exc:  # a run is already in progress
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if run is None:
         raise HTTPException(status_code=404, detail="dataset not found")
     return _run_info(run)
@@ -935,6 +941,7 @@ async def _ai_info(ctx: AppContext) -> AIInfo:
         reachable, model = await anyio.to_thread.run_sync(ctx.analyzer.health)
     else:
         reachable, model = False, None
+    pipeline = await anyio.to_thread.run_sync(ctx.inference.describe)
     ai = ctx.config.ai
     return AIInfo(
         enabled=ai.enabled,
@@ -943,6 +950,7 @@ async def _ai_info(ctx: AppContext) -> AIInfo:
         model_present=model is not None,
         base_url=ai.base_url,
         provider=ai.provider,
+        pipeline=PipelineInfo(**pipeline),
     )
 
 
@@ -985,6 +993,44 @@ async def _ollama_models_info(ctx: AppContext) -> OllamaModelsInfo:
         active_model=ctx.config.ai.model,
         installed=installed,
     )
+
+
+@router.post("/ai/test", response_model=AITestResult)
+async def ai_test(body: AITestRequest, ctx: AppContext = Depends(get_context)) -> AITestResult:
+    """Analyze one live frame from a camera through the SAME pipeline motion
+    events use — so users can validate their setup without waiting for motion."""
+    import anyio
+
+    buffer = ctx.manager.get_buffer(body.camera_id)
+    if buffer is None:
+        raise HTTPException(status_code=404, detail="camera not found")
+
+    def _run() -> AITestResult:
+        frame = buffer.await_latest(-1, 3.0)
+        if frame is None:
+            return AITestResult(ok=False, error="no frame available from this camera")
+        pipeline = ctx.inference.describe()
+        if pipeline["mode"] == "off":
+            return AITestResult(
+                ok=False,
+                error=pipeline["error"] or "AI analysis is off — enable it or activate a model",
+            )
+        result = ctx.inference.analyze(frame.image)
+        if result is None:
+            return AITestResult(
+                ok=False,
+                engine=pipeline["mode"],
+                error="analysis returned nothing (is the model reachable and pulled?)",
+            )
+        return AITestResult(
+            ok=True,
+            engine=pipeline["mode"],
+            label=result.label,
+            confidence=result.confidence,
+            description=result.description,
+        )
+
+    return await anyio.to_thread.run_sync(_run)
 
 
 @router.get("/ai/models", response_model=OllamaModelsInfo)

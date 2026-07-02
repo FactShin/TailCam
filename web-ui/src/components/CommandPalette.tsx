@@ -34,10 +34,10 @@ export function CommandPalette({
       { kind: "screen", id: "/", label: "Cameras", icon: IconGrid, meta: "screen", to: "/" },
       { kind: "screen", id: "/gallery", label: "Gallery", icon: IconFilm, meta: "screen", to: "/gallery" },
       { kind: "screen", id: "/events", label: "Events", icon: IconMotion, meta: "screen", to: "/events" },
-      { kind: "screen", id: "/ai", label: "AI", icon: IconAi, meta: "screen", to: "/ai" },
+      { kind: "screen", id: "/ai", label: "AI Studio", icon: IconAi, meta: "screen", to: "/ai" },
       { kind: "screen", id: "/timelapse", label: "Timelapse", icon: IconTimelapse, meta: "screen", to: "/timelapse" },
-      { kind: "screen", id: "/training", label: "Training", icon: IconBrain, meta: "screen", to: "/training" },
-      { kind: "screen", id: "/models", label: "Models", icon: IconChip, meta: "screen", to: "/models" },
+      { kind: "screen", id: "/training", label: "Training", icon: IconBrain, meta: "AI Studio tab", to: "/ai?tab=training" },
+      { kind: "screen", id: "/models", label: "Models", icon: IconChip, meta: "AI Studio tab", to: "/ai?tab=models" },
       { kind: "screen", id: "/settings", label: "Settings", icon: IconSettings, meta: "screen", to: "/settings" },
       { kind: "screen", id: "/docs", label: "Docs", icon: IconBook, meta: "screen", to: "/docs" },
     ];

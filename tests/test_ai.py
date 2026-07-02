@@ -9,8 +9,11 @@ def _frame():
     return np.zeros((48, 64, 3), dtype=np.uint8)
 
 
-def _client(handler):
-    return httpx.Client(transport=httpx.MockTransport(handler))
+def _analyzer(config: AIConfig, handler) -> ai.OllamaAnalyzer:
+    """An analyzer whose shared HTTP client is backed by a mock transport."""
+    an = ai.OllamaAnalyzer(config)
+    an._client = httpx.Client(transport=httpx.MockTransport(handler))
+    return an
 
 
 def test_coerce_valid():
@@ -33,42 +36,50 @@ def test_analyze_disabled_returns_none():
     assert an.analyze(_frame()) is None
 
 
-def test_analyze_parses_ollama(monkeypatch):
+def test_analyze_parses_ollama():
     body = '{"label":"person","confidence":0.8,"description":"a man"}'
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/generate"
         return httpx.Response(200, json={"response": body})
 
-    monkeypatch.setattr(httpx, "post", lambda url, **kw: _client(handler).post(url, **kw))
-    an = ai.OllamaAnalyzer(AIConfig(enabled=True))
+    an = _analyzer(AIConfig(enabled=True), handler)
     result = an.analyze(_frame())
     assert result is not None and result.label == "person" and result.confidence == 0.8
 
 
-def test_analyze_tolerates_garbage(monkeypatch):
+def test_analyze_tolerates_garbage():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"response": "not json at all"})
 
-    monkeypatch.setattr(httpx, "post", lambda url, **kw: _client(handler).post(url, **kw))
-    an = ai.OllamaAnalyzer(AIConfig(enabled=True))
+    an = _analyzer(AIConfig(enabled=True), handler)
     assert an.analyze(_frame()) is None
 
 
-def test_analyze_tolerates_connection_error(monkeypatch):
-    def boom(url, **kw):
+def test_analyze_tolerates_connection_error():
+    def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("ollama down")
 
-    monkeypatch.setattr(httpx, "post", boom)
-    an = ai.OllamaAnalyzer(AIConfig(enabled=True))
+    an = _analyzer(AIConfig(enabled=True), handler)
     assert an.analyze(_frame()) is None
 
 
-def test_health_reports_model_present(monkeypatch):
+def test_health_reports_model_present():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"models": [{"name": "moondream:latest"}]})
 
-    monkeypatch.setattr(httpx, "get", lambda url, **kw: _client(handler).get(url, **kw))
-    an = ai.OllamaAnalyzer(AIConfig(enabled=True, model="moondream"))
+    an = _analyzer(AIConfig(enabled=True, model="moondream"), handler)
+    reachable, model = an.health()
+    assert reachable is True and model == "moondream"
+
+
+def test_health_reports_reachability_even_when_disabled():
+    """"Analysis off" and "Ollama down" are different states — health must not
+    conflate them (the dashboard shows both independently)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"models": [{"name": "moondream:latest"}]})
+
+    an = _analyzer(AIConfig(enabled=False, model="moondream"), handler)
     reachable, model = an.health()
     assert reachable is True and model == "moondream"

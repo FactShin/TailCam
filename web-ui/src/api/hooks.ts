@@ -26,7 +26,7 @@ function _invTraining(qc: ReturnType<typeof useQueryClient>) {
 }
 
 export function useTraining() {
-  return useQuery({ queryKey: ["training"], queryFn: api.getTraining, refetchInterval: 4000 });
+  return useQuery({ queryKey: ["training"], queryFn: api.getTraining, refetchInterval: 8000 });
 }
 
 export function useUpdateCollection() {
@@ -153,7 +153,15 @@ export function useDeleteModel() {
 }
 
 export function useRuns() {
-  return useQuery({ queryKey: ["runs"], queryFn: api.getRuns, refetchInterval: 3000 });
+  // Poll fast only while a run is actually in flight; idle lists barely change.
+  return useQuery({
+    queryKey: ["runs"],
+    queryFn: api.getRuns,
+    refetchInterval: (q) =>
+      (q.state.data ?? []).some((r) => ["queued", "preparing", "training"].includes(r.status))
+        ? 2500
+        : 12_000,
+  });
 }
 
 export function useStartRun() {
@@ -212,6 +220,12 @@ export function useUpdate() {
 
 export function useAi() {
   return useQuery({ queryKey: ["ai"], queryFn: api.getAi, refetchInterval: 30_000 });
+}
+
+export function useAiTest() {
+  return useMutation({
+    mutationFn: (cameraId: string) => api.aiTest(cameraId),
+  });
 }
 
 export function useUpdateAi() {

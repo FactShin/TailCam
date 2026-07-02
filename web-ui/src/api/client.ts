@@ -77,6 +77,11 @@ export const getSystem = () => jsonFetch<SystemInfo>("/api/system");
 export const getUpdate = () =>
   jsonFetch<{ current: string; latest: string | null; available: boolean }>("/api/update");
 export const getAi = () => jsonFetch<import("../types").AIInfo>("/api/ai");
+export const aiTest = (cameraId: string) =>
+  jsonFetch<import("../types").AITestResult>("/api/ai/test", {
+    method: "POST",
+    body: JSON.stringify({ camera_id: cameraId }),
+  });
 export const updateAi = (body: import("../types").AIUpdate) =>
   jsonFetch<import("../types").AIInfo>("/api/ai", { method: "POST", body: JSON.stringify(body) });
 export const getOllamaModels = () =>

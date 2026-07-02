@@ -5,10 +5,12 @@ TailCam can label motion events with a **local** vision model via
 on a machine you control, on your tailnet. Cheap pixel [motion](motion-detection)
 gates the model, so it's only consulted a frame or two per event.
 
-> **The easiest way to set this up is the in-app AI section.** Open **AI** in the
+> **The easiest way to set this up is AI Studio.** Open **AI Studio** in the
 > nav: it shows a live setup checklist (with the exact commands), lets you
 > **download a model with one click**, pick which model to use, and enable
 > analysis — without leaving the UI. This page is the deeper reference.
+
+The **Overview** tab always shows what is analyzing frames *right now* — your trained model or Ollama — and calls out problems (model missing, Ollama down, a selected model that failed to load). Use **Try it now** to analyze a single live frame through the real pipeline without waiting for motion.
 
 ## How it works
 
@@ -31,7 +33,7 @@ gates the model, so it's only consulted a frame or two per event.
 
    `moondream` is small and fast. `qwen2.5vl` or `llava` give better labels at
    higher cost.
-3. Point TailCam at it (Settings → AI, or `[ai]` in [config](configuration)):
+3. Point TailCam at it (AI Studio → Models → "Where is Ollama running?", or `[ai]` in [config](configuration)):
 
    - `base_url` — e.g. `http://localhost:11434`, or
      `http://mac-mini.your-tailnet.ts.net:11434` to use one machine for the fleet.
