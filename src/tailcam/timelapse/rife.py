@@ -14,11 +14,11 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
 from tailcam.logging_setup import get_logger
+from tailcam.proc import run as run_hidden
 
 log = get_logger(__name__)
 
@@ -65,12 +65,12 @@ def build_rife_command(
 
 def run_rife(cmd: list[str], cwd: Path | None = None, timeout: float = 3600.0) -> bool:
     try:
-        proc = subprocess.run(
+        result = run_hidden(
             cmd, capture_output=True, text=True, timeout=timeout, cwd=str(cwd) if cwd else None
         )
-        if proc.returncode != 0:
-            log.error("rife failed (%d): %s", proc.returncode, (proc.stderr or "")[-800:])
-        return proc.returncode == 0
+        if result.returncode != 0:
+            log.error("rife failed (%d): %s", result.returncode, (result.stderr or "")[-800:])
+        return result.returncode == 0
     except Exception as exc:  # pragma: no cover - timeout / OS error
         log.error("rife error: %s", exc)
         return False

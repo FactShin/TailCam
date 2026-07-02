@@ -19,6 +19,15 @@ problems. `tailcam status` shows cameras, peers, and access URLs.
 - No hardware? Test with `TAILCAM_SYNTHETIC=1 tailcam run`.
 - Phantom devices hidden earlier? Use **Restore hidden**. See [Cameras](cameras).
 
+## Console (cmd) windows keep popping up on Windows
+
+Fixed in v0.99.9. TailCam's background service runs windowless, but its helper
+processes (`tailscale status` polls, ffmpeg, PowerShell) used to open a visible
+console each time they ran — which was constantly. All background subprocesses
+now start with the no-window flag, and Tailscale status is cached so it spawns
+far less often. Update TailCam and restart the service
+(`tailcam service restart`) if you still see them.
+
 ## A camera is "offline" or "degraded"
 
 - Another app may be holding the device — close it.
