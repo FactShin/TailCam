@@ -157,6 +157,51 @@ class PluginsInfo(BaseModel):
     errors: list[str] = Field(default_factory=list)
 
 
+class MarketPluginEntry(BaseModel):
+    """One plugin in the curated marketplace registry."""
+
+    id: str
+    name: str
+    version: str
+    description: str = ""
+    author: str = ""
+    kinds: list[str] = Field(default_factory=list)  # ai | notification | event | other
+    homepage: str = ""
+    settings_example: str = ""
+    installed: bool = False
+    installed_version: str = ""
+    update_available: bool = False
+
+
+class InstalledPluginEntry(BaseModel):
+    """A drop-in plugin file on this node."""
+
+    id: str  # file stem — used for enable/disable/uninstall
+    file: str
+    version: str = ""
+    source: str = "manual"  # market | manual
+    market_id: str = ""
+    enabled: bool = True
+    loaded: bool = False  # actually running in the current registry
+    update_available: str = ""
+
+
+class PluginsMarketInfo(BaseModel):
+    registry_url: str
+    error: str = ""  # registry fetch problem, if any (stale cache may still show)
+    market: list[MarketPluginEntry] = Field(default_factory=list)
+    installed: list[InstalledPluginEntry] = Field(default_factory=list)
+    load_errors: list[str] = Field(default_factory=list)
+
+
+class PluginInstallRequest(BaseModel):
+    id: str
+
+
+class PluginToggleRequest(BaseModel):
+    enabled: bool
+
+
 # -- home-automation integrations --
 
 

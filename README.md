@@ -210,6 +210,21 @@ over your tailnet, with no per-request login. On top of that, TailCam ships defe
 Keep the default `127.0.0.1` bind — don't expose TailCam directly to a public network; let
 Tailscale handle access.
 
+## Plugins & marketplace
+
+TailCam is extensible: **AI providers, notification channels, and motion-event
+automations are plugins**. Open **Plugins** in the nav to browse the curated
+marketplace — Slack and ntfy.sh alerts, an OpenAI-compatible analyzer (LM
+Studio / llama.cpp / OpenRouter / OpenAI), a motion-event logger — and install
+with one click. Every marketplace file is reviewed and **sha256-verified at
+install time**, installs hot-load without a restart, and everything runs
+locally.
+
+Building your own is one Python file with one import
+(`tailcam.plugins.sdk`) — see the in-app **Docs → Plugins** authoring guide and
+[`marketplace/`](marketplace/) for the template + contribution process.
+Community plugins land in the registry via reviewed pull requests.
+
 ## Object detection (built in, zero setup)
 
 Open any camera and TailCam draws **live bounding boxes with labels** — person,
@@ -272,6 +287,8 @@ thumbnail. To let one node analyze another's events, point the URL at that node
 - **Motion detection** — detect motion, log events, and save a clip per event (on by default).
 - **Object detection** — built-in live bounding boxes + labels (80 COCO classes), zero setup,
   auto-downloading local model; upgrades itself to Ultralytics YOLO11 when torch is installed.
+- **Plugin marketplace** — one-click, checksum-verified community plugins (AI providers,
+  notification channels, event automations); write your own with a single Python file.
 - **MCP server** — agents (Claude, Codex, …) can inspect cameras, events, and health and run
   guarded admin workflows via `tailcam mcp stdio` or the authenticated `/mcp` HTTP mount — see
   [`docs/mcp.md`](docs/mcp.md).

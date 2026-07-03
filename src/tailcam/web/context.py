@@ -24,6 +24,9 @@ from tailcam.motion.events import EventLog
 from tailcam.motion.worker import MotionWorker
 from tailcam.notify.service import NotificationService
 from tailcam.persistence.store import Store
+from tailcam.plugins import sdk
+from tailcam.plugins.hookspecs import MotionEventData
+from tailcam.plugins.market import PluginMarket
 from tailcam.plugins.registry import PluginRegistry
 from tailcam.streaming.mjpeg import MJPEGBackend
 from tailcam.tailscale.client import TailscaleClient
@@ -53,6 +56,23 @@ class _MotionFanout:
                 label=kw.get("label"),  # type: ignore[arg-type]
                 confidence=kw.get("confidence"),  # type: ignore[arg-type]
             )
+        # Plugin event hooks see every motion event (automation), independent of
+        # the user's notification filters. A broken hook never breaks detection.
+        hooks = self._ctx.plugins.event_hooks()
+        if hooks:
+            data = MotionEventData(
+                camera_id=str(kw.get("camera_id") or ""),
+                label=cast("str | None", kw.get("label")),
+                confidence=cast("float | None", kw.get("confidence")),
+                description=cast("str | None", kw.get("description")),
+                event_id=cast("int | None", kw.get("event_id")),
+                image_path=cast("str | None", kw.get("image_path")),
+            )
+            for hook in hooks:
+                try:
+                    hook.on_motion(data)
+                except Exception as exc:
+                    log.warning("plugin event hook %s failed: %s", getattr(hook, "id", "?"), exc)
 
     def __getattr__(self, name: str) -> object:
         return getattr(self._notifications, name)
@@ -70,10 +90,14 @@ class AppContext:
         self.recorder = RecordingService(self.manager, self.store)
         self.gallery = MediaGallery(self.store)
         self.event_log = EventLog(self.store)
-        # Plugins extend AI providers + notification channels (pluggy registry).
+        # Plugins extend AI providers, notification channels, and event hooks
+        # (pluggy registry). Register the config with the SDK first so plugins
+        # can read their [plugins.settings.*] tables at import time.
+        sdk._set_config(config)
         self.plugins = PluginRegistry(
             disabled=config.plugins.disabled, load_dropins=config.plugins.load_dropins
         )
+        self.market = PluginMarket(config.plugins)
         provider = self.plugins.analyzer_provider(config.ai.provider)
         if provider is None:
             provider = self.plugins.analyzer_provider("ollama")
@@ -244,6 +268,22 @@ class AppContext:
                 log.info("Retention: pruned %d media file(s)", removed)
         except Exception as exc:
             log.debug("retention prune failed: %s", exc)
+
+    def reload_plugins(self) -> None:
+        """Rebuild the plugin registry (after install/uninstall/enable/disable)
+        and re-point live consumers at the new hook set — no restart needed.
+
+        The AI *analyzer provider* is the one plugin capability still bound at
+        startup (it's threaded through training + inference); switching
+        ``ai.provider`` to a newly installed provider takes a restart, and the
+        UI says so.
+        """
+        with self._lock:
+            self.plugins = PluginRegistry(
+                disabled=self.config.plugins.disabled,
+                load_dropins=self.config.plugins.load_dropins,
+            )
+            self.notifications.set_channels(self.plugins.notification_channels())
 
     def apply_homeassistant_config(self) -> None:
         """(Re)start or stop the MQTT publisher to match the current config.

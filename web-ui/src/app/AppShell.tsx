@@ -9,6 +9,7 @@ import { fmtBytes } from "../lib/format";
 import {
   IconAi,
   IconBook,
+  IconChip,
   IconChevL,
   IconChevR,
   IconFilm,
@@ -30,8 +31,9 @@ const NAV: { to: string; label: string; icon: (p: IconProps) => JSX.Element; key
   // AI, Training, and Models are one subject — one destination (with tabs).
   { to: "/ai", label: "AI Studio", icon: IconAi, key: "4" },
   { to: "/timelapse", label: "Timelapse", icon: IconTimelapse, key: "5" },
-  { to: "/settings", label: "Settings", icon: IconSettings, key: "6" },
-  { to: "/docs", label: "Docs", icon: IconBook, key: "7" },
+  { to: "/plugins", label: "Plugins", icon: IconChip, key: "6" },
+  { to: "/settings", label: "Settings", icon: IconSettings, key: "7" },
+  { to: "/docs", label: "Docs", icon: IconBook, key: "8" },
 ];
 
 // Mobile bottom bar shows the primary destinations; the rest live in a "More"

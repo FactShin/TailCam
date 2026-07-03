@@ -58,6 +58,11 @@ class NotificationService:
     def channels_configured(self) -> list[str]:
         return [ch.id for ch in self._channels if ch.configured(self._config)]
 
+    def set_channels(self, channels: list) -> None:
+        """Swap the channel set (plugin reload). Assignment is atomic; the send
+        path iterates whatever list it captured, which stays valid."""
+        self._channels = list(channels)
+
     # -- triggers ----------------------------------------------------------
     def _motion_event(
         self, *, camera_id: str, label: str | None, confidence: float | None,

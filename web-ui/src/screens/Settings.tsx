@@ -3,7 +3,6 @@ import { useState } from "react";
 import { useAi, useCameras, useHosts, useSystem } from "../api/hooks";
 import { IntegrationsPanel } from "../components/IntegrationsPanel";
 import { NotificationsSettings } from "../components/NotificationsSettings";
-import { PluginsPanel } from "../components/PluginsPanel";
 import { StoragePanel } from "../components/StoragePanel";
 import { useToast } from "../components/toast";
 import { IconCheck, IconCopy, IconDevice, IconInfo, IconServer, IconWifi, IconWifiOff } from "../icons";
@@ -135,7 +134,6 @@ export function Settings() {
 
         <IntegrationsPanel />
 
-        <PluginsPanel />
 
         <div className="panel panel-help">
           <div className="panel-title"><IconDevice size={16} /> Access from another device</div>

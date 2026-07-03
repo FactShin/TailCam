@@ -66,6 +66,30 @@ class NotificationChannel(Protocol):
     def send(self, event: NotificationEvent, config: NotificationsConfig) -> None: ...
 
 
+@runtime_checkable
+class EventHook(Protocol):
+    """Reacts to every motion event (automation), regardless of the user's
+    notification filters. Runs off the detection loop; exceptions are caught
+    and logged, never propagated."""
+
+    id: str
+    name: str
+
+    def on_motion(self, event: MotionEventData) -> None: ...
+
+
+@dataclass
+class MotionEventData:
+    """What an :class:`EventHook` receives for each motion event."""
+
+    camera_id: str
+    label: str | None = None
+    confidence: float | None = None
+    description: str | None = None
+    event_id: int | None = None
+    image_path: str | None = None
+
+
 # -- hook specifications ---------------------------------------------------
 @hookspec
 def tailcam_analyzer_providers() -> list[AnalyzerProvider]:  # type: ignore[empty-body]
@@ -75,6 +99,11 @@ def tailcam_analyzer_providers() -> list[AnalyzerProvider]:  # type: ignore[empt
 @hookspec
 def tailcam_notification_channels() -> list[NotificationChannel]:  # type: ignore[empty-body]
     """Return the notification channels this plugin offers."""
+
+
+@hookspec
+def tailcam_event_hooks() -> list[EventHook]:  # type: ignore[empty-body]
+    """Return hooks to run on every motion event (automation)."""
 
 
 @hookspec

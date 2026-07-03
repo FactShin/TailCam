@@ -515,3 +515,38 @@ export const VIEW_DEFAULT: ViewParams = {
   quality: 75,
   w: 0,
 };
+
+/** One plugin in the curated marketplace registry. */
+export interface MarketPluginEntry {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  author: string;
+  kinds: string[];
+  homepage: string;
+  settings_example: string;
+  installed: boolean;
+  installed_version: string;
+  update_available: boolean;
+}
+
+/** A drop-in plugin file installed on this node. */
+export interface InstalledPluginEntry {
+  id: string;
+  file: string;
+  version: string;
+  source: "market" | "manual";
+  market_id: string;
+  enabled: boolean;
+  loaded: boolean;
+  update_available: string;
+}
+
+export interface PluginsMarketInfo {
+  registry_url: string;
+  error: string;
+  market: MarketPluginEntry[];
+  installed: InstalledPluginEntry[];
+  load_errors: string[];
+}
