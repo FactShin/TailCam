@@ -37,7 +37,9 @@ from tailcam.web.schemas import (
     HomeKitStatus,
     HomeKitUpdate,
     HostInfo,
+    InstalledPluginEntry,
     IntegrationsInfo,
+    MarketPluginEntry,
     MediaCreatedResponse,
     MediaInfo,
     ModelInfo,
@@ -49,7 +51,10 @@ from tailcam.web.schemas import (
     OllamaModelsInfo,
     PipelineInfo,
     PluginEntry,
+    PluginInstallRequest,
     PluginsInfo,
+    PluginsMarketInfo,
+    PluginToggleRequest,
     PostprocessInfo,
     PostprocessSettings,
     ProviderEntry,
@@ -1187,6 +1192,103 @@ def plugins_info(ctx: AppContext = Depends(get_context)) -> PluginsInfo:
         active_provider=ctx.config.ai.provider,
         errors=reg.errors,
     )
+
+
+def _market_info(ctx: AppContext, *, force: bool = False) -> PluginsMarketInfo:
+    catalog, error = ctx.market.catalog(force=force)
+    installed = ctx.market.installed()
+    installed_by_market = {p.market_id: p for p in installed if p.market_id}
+    loaded = set(ctx.plugins.loaded_dropins)
+    market_entries = []
+    for p in catalog:
+        inst = installed_by_market.get(p.id)
+        market_entries.append(
+            MarketPluginEntry(
+                id=p.id, name=p.name, version=p.version, description=p.description,
+                author=p.author, kinds=p.kinds, homepage=p.homepage,
+                settings_example=p.settings_example,
+                installed=inst is not None,
+                installed_version=inst.version if inst else "",
+                update_available=bool(inst and inst.update_available),
+            )
+        )
+    return PluginsMarketInfo(
+        registry_url=ctx.config.plugins.registry_url,
+        error=error,
+        market=market_entries,
+        installed=[
+            InstalledPluginEntry(
+                id=p.id, file=p.file, version=p.version, source=p.source,
+                market_id=p.market_id, enabled=p.enabled, loaded=p.id in loaded,
+                update_available=p.update_available,
+            )
+            for p in installed
+        ],
+        load_errors=ctx.plugins.errors,
+    )
+
+
+@router.get("/plugins/market", response_model=PluginsMarketInfo)
+def plugins_market(
+    refresh: bool = False, ctx: AppContext = Depends(get_context)
+) -> PluginsMarketInfo:
+    """The curated plugin marketplace + this node's installed drop-ins."""
+    return _market_info(ctx, force=refresh)
+
+
+@router.post("/plugins/market/install", response_model=PluginsMarketInfo)
+def plugins_market_install(
+    body: PluginInstallRequest, ctx: AppContext = Depends(get_context)
+) -> PluginsMarketInfo:
+    """Install a plugin from the registry (sha256-verified) and hot-load it."""
+    from tailcam.plugins.market import MarketError
+
+    try:
+        ctx.market.install(body.id.strip())
+    except MarketError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    ctx.reload_plugins()
+    return _market_info(ctx)
+
+
+@router.delete("/plugins/installed/{stem}", response_model=PluginsMarketInfo)
+def plugins_uninstall(stem: str, ctx: AppContext = Depends(get_context)) -> PluginsMarketInfo:
+    """Remove a drop-in plugin file and unload it."""
+    from tailcam.plugins.market import MarketError
+
+    try:
+        removed = ctx.market.uninstall(stem)
+    except MarketError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not removed:
+        raise HTTPException(status_code=404, detail="plugin not found")
+    if stem in ctx.config.plugins.disabled:
+        ctx.config.plugins.disabled.remove(stem)
+        ctx.config.save()
+    ctx.reload_plugins()
+    return _market_info(ctx)
+
+
+@router.post("/plugins/installed/{stem}/toggle", response_model=PluginsMarketInfo)
+def plugins_toggle(
+    stem: str, body: PluginToggleRequest, ctx: AppContext = Depends(get_context)
+) -> PluginsMarketInfo:
+    """Enable/disable an installed plugin (persisted) and reload the registry."""
+    disabled = ctx.config.plugins.disabled
+    if body.enabled and stem in disabled:
+        disabled.remove(stem)
+    elif not body.enabled and stem not in disabled:
+        disabled.append(stem)
+    ctx.config.save()
+    ctx.reload_plugins()
+    return _market_info(ctx)
+
+
+@router.post("/plugins/reload", response_model=PluginsMarketInfo)
+def plugins_reload(ctx: AppContext = Depends(get_context)) -> PluginsMarketInfo:
+    """Re-scan the drop-in folder (after manual file edits)."""
+    ctx.reload_plugins()
+    return _market_info(ctx)
 
 
 def _homeassistant_status(ctx: AppContext) -> HomeAssistantStatus:

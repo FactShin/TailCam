@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "plugins": [
+    {
+      "id": "event_logger",
+      "name": "Motion event logger",
+      "version": "1.0.0",
+      "description": "Append every motion event to a JSONL file for automation/analysis \u2014 also the reference example for building event-hook plugins.",
+      "author": "TailCam community",
+      "kinds": [
+        "event"
+      ],
+      "file": "event_logger.py",
+      "sha256": "d1817c75a3d823c329bdad64c56da1c930fb0a979a24e35f1558f4e75d2de0a8",
+      "size": 2571,
+      "settings_example": "[plugins.settings.event_logger]\n# path = \"/somewhere/motion-events.jsonl\"\n",
+      "homepage": "https://github.com/FactShin/TailCam/blob/main/marketplace/plugins/event_logger.py",
+      "min_tailcam": ""
+    },
+    {
+      "id": "ntfy_notifier",
+      "name": "ntfy push notifications",
+      "version": "1.0.0",
+      "description": "Native phone push via ntfy.sh (or self-hosted ntfy) \u2014 no accounts needed.",
+      "author": "TailCam community",
+      "kinds": [
+        "notification"
+      ],
+      "file": "ntfy_notifier.py",
+      "sha256": "1a520c104e20fb5fad481c734cfb4aeac378fe37be830c8ab98dbd68bf13a3e3",
+      "size": 2874,
+      "settings_example": "[plugins.settings.ntfy]\ntopic = \"my-tailcam-alerts\"\n# server = \"https://ntfy.sh\"\n",
+      "homepage": "https://github.com/FactShin/TailCam/blob/main/marketplace/plugins/ntfy_notifier.py",
+      "min_tailcam": ""
+    },
+    {
+      "id": "openai_analyzer",
+      "name": "OpenAI-compatible analyzer",
+      "version": "1.0.0",
+      "description": "Label motion events with any OpenAI-compatible vision endpoint \u2014 OpenAI, OpenRouter, LM Studio, llama.cpp, vLLM, or Ollama's /v1.",
+      "author": "TailCam community",
+      "kinds": [
+        "ai"
+      ],
+      "file": "openai_analyzer.py",
+      "sha256": "96ffd59c8a316711d234b911bb142fbcd5f5c4ca302d1908b6e6748fca7cba9e",
+      "size": 4869,
+      "settings_example": "[plugins.settings.openai_analyzer]\nbase_url = \"https://api.openai.com/v1\"\napi_key = \"sk-...\"\nmodel = \"gpt-4o-mini\"\n",
+      "homepage": "https://github.com/FactShin/TailCam/blob/main/marketplace/plugins/openai_analyzer.py",
+      "min_tailcam": ""
+    },
+    {
+      "id": "slack_notifier",
+      "name": "Slack notifications",
+      "version": "1.0.0",
+      "description": "Send motion/offline/training alerts to a Slack channel via incoming webhook.",
+      "author": "TailCam community",
+      "kinds": [
+        "notification"
+      ],
+      "file": "slack_notifier.py",
+      "sha256": "e877c37ab58e1d408462f4bdc4bfd1cceba59c08e0088338f6b7e62e76f8996d",
+      "size": 2053,
+      "settings_example": "[plugins.settings.slack]\nwebhook_url = \"https://hooks.slack.com/services/...\"\n",
+      "homepage": "https://github.com/FactShin/TailCam/blob/main/marketplace/plugins/slack_notifier.py",
+      "min_tailcam": ""
+    }
+  ]
+}

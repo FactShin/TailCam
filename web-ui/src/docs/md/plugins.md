@@ -1,67 +1,124 @@
 # Plugins
 
-TailCam is extensible through **plugins** — small add-ons that contribute extra
-**AI analyzer providers** or **notification channels** without forking the app.
-The built-in Ollama analyzer and the Discord/Telegram/webhook channels are
-themselves plugins, so third-party ones plug in exactly the same way.
+Plugins extend TailCam with things that aren't the base app: **AI analyzer
+providers**, **notification channels**, and **motion-event hooks**
+(automation). Everything runs locally, and there are two ways to get one:
 
-Discovery uses [pluggy](https://pluggy.readthedocs.io). See your installed
-plugins in **Settings → Plugins** or with `tailcam plugins`.
+1. **The marketplace** — open **Plugins** in the nav, browse the curated
+   registry, click **Install**. The plugin downloads, is verified, and is live
+   immediately (no restart). Updates show up as an **Update** button.
+2. **Drop-in / pip** — copy a single `.py` file into your config folder's
+   `plugins/` directory and hit **Reload** on the Plugins page, or
+   `pip install` a package exposing the `tailcam` entry-point group.
 
-## Add a plugin — two ways
+Enable/disable and uninstall live on the same page. Disabled plugins stay on
+disk but their code is never loaded.
 
-### Drop-in (no packaging)
-Copy a single `.py` file into your config folder's `plugins/` directory and
-restart:
+## Security model — read this once
 
-```bash
-cp ntfy_channel.py ~/.config/tailcam/plugins/
-tailcam restart
-```
+A plugin is ordinary Python running **with the full privileges of the TailCam
+process**. There is no sandbox. What protects you:
 
-### Pip package (entry point)
-Install any package that registers under the `tailcam` entry-point group:
+- **Curation** — the default registry is the TailCam repository's
+  `marketplace/` folder; every plugin gets human review (readable code, scoped
+  network access, no dynamic code loading) before it's listed.
+- **Verification** — the registry pins each file's **sha256**; installs verify
+  the checksum, a 1 MB size cap, and Python syntax before anything touches
+  disk. A mismatch aborts the install.
+- **Explicit action** — nothing installs, runs, or updates without you
+  clicking it.
 
-```bash
-pip install tailcam-plugin-slack
-```
+Only install plugins you trust, exactly like browser extensions. Fleet
+operators can point `plugins.registry_url` at a private index to control what
+their nodes can see.
 
-Either way it shows up in **Settings → Plugins** after a restart.
+## Configuring a plugin
 
-## What a plugin provides
-
-- **A notification channel** — `id`, `name`, `configured(config)`, `send(event,
-  config)`. The event carries the title, body, severity, and structured data;
-  your channel decides how to deliver it.
-- **An AI analyzer provider** — `id`, `name`, `description`, and `build(config)`
-  returning an analyzer (anything with `.enabled` and `.analyze(image)`).
-
-A plugin registers them with `@hookimpl` functions
-(`tailcam_notification_channels`, `tailcam_analyzer_providers`,
-`tailcam_plugin_info`). A complete, copyable example (an ntfy.sh channel) lives
-in `examples/plugins/`.
-
-## Choosing an AI provider
-
-`ollama` is the default. To use a provider from a plugin, set the analyzer
-provider — in `[ai]`:
+Plugins read their own settings from your `config.toml`, under
+`[plugins.settings.<id>]` — each marketplace card shows a ready-to-paste
+example. For instance:
 
 ```toml
-[ai]
-provider = "myai"
+[plugins.settings.ntfy]
+topic = "my-tailcam-alerts"
 ```
 
-…or via the AI section / API, then restart. Ollama-specific features (the model
-catalog, in-UI download) apply only when the Ollama provider is active.
+Secrets (API keys, webhook URLs) stay in your config file on your machine —
+plugins never bundle credentials.
 
-## Managing plugins
+## Writing your own plugin
 
-| Where | What |
-| --- | --- |
-| `tailcam plugins` | List discovered plugins, providers, and channels. |
-| Settings → Plugins | The same, in the dashboard. |
-| `[plugins] disabled` | Ids to skip loading. |
-| `[plugins] load_dropins` | Toggle the drop-in folder. |
+One Python file is a complete plugin. The whole SDK is one import:
 
-> Plugins run in-process with full access to your machine — only install ones you
-> trust, the same as any Python package.
+```python
+"""My plugin — one line about what it does."""
+
+__plugin__ = {
+    "id": "my_plugin",            # must equal the file stem
+    "name": "My plugin",
+    "version": "1.0.0",
+    "description": "One sentence for the marketplace.",
+    "author": "you",
+    "kinds": ["notification"],    # ai | notification | event
+}
+
+from tailcam.plugins.sdk import PluginInfo, hookimpl, plugin_settings
+
+class MyChannel:
+    id = "my_plugin"
+    name = "My channel"
+
+    def configured(self, config):
+        return bool(plugin_settings("my_plugin").get("url"))
+
+    def send(self, event, config):
+        ...  # POST event.title / event.body somewhere; catch your own errors
+
+@hookimpl
+def tailcam_notification_channels():
+    return [MyChannel()]
+
+@hookimpl
+def tailcam_plugin_info():
+    return [PluginInfo(id="my_plugin", name="My plugin", kind="notification")]
+```
+
+Drop it in `<config-dir>/plugins/`, press **Reload** on the Plugins page, and
+it's running — load errors are shown right there.
+
+### The three capability hooks
+
+| Hook | You provide | Used for |
+| --- | --- | --- |
+| `tailcam_analyzer_providers` | `.id`, `.name`, `.build(ai_config)` → object with `.enabled` + `.analyze(image)` | AI motion labeling backends (select with `[ai] provider = "<id>"`, restart) |
+| `tailcam_notification_channels` | `.id`, `.name`, `.configured(cfg)`, `.send(event, cfg)` | Alert destinations, honoring the user's notification filters |
+| `tailcam_event_hooks` | `.id`, `.name`, `.on_motion(event)` | Automation on **every** motion event (lights, sirens, logs…) |
+
+Ground rules: one file, only stdlib + `tailcam` + its bundled deps (`httpx`,
+`cv2`, `numpy`), catch your own exceptions (a dead integration must never
+break detection), read settings via `plugin_settings("<id>")`.
+
+The heavily-commented starting point lives at
+[`marketplace/TEMPLATE.py`](https://github.com/FactShin/TailCam/blob/main/marketplace/TEMPLATE.py),
+and [`event_logger`](https://github.com/FactShin/TailCam/blob/main/marketplace/plugins/event_logger.py)
+is a complete real example.
+
+## Publishing to the marketplace
+
+1. Fork the TailCam repository and add your file under `marketplace/plugins/`.
+2. Run `python marketplace/build_index.py` (regenerates `index.json` with your
+   file's sha256).
+3. Open a pull request. Reviewers check the criteria in
+   [`marketplace/README.md`](https://github.com/FactShin/TailCam/blob/main/marketplace/README.md) —
+   readable, scoped, resilient, honest.
+
+Once merged, every TailCam node's Plugins page offers your plugin; version
+bumps show users an Update button.
+
+## CLI
+
+```bash
+tailcam plugins                        # list loaded plugins + capabilities
+tailcam plugin-install ntfy_notifier   # install from the registry
+tailcam plugin-remove ntfy_notifier    # uninstall
+```

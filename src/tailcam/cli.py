@@ -540,10 +540,12 @@ def mcp_stdio() -> None:
 
 @app.command()
 def plugins() -> None:
-    """List installed TailCam plugins (AI providers + notification channels)."""
+    """List installed TailCam plugins (AI providers, channels, event hooks)."""
+    from tailcam.plugins import sdk
     from tailcam.plugins.registry import PluginRegistry
 
     config = AppConfig.load()
+    sdk._set_config(config)
     reg = PluginRegistry(
         disabled=config.plugins.disabled, load_dropins=config.plugins.load_dropins
     )
@@ -567,6 +569,42 @@ def plugins() -> None:
     if reg.errors:
         for err in reg.errors:
             console.print(f"[yellow]plugin error:[/yellow] {err}")
+
+
+@app.command(name="plugin-install")
+def plugin_install(plugin_id: str) -> None:
+    """Install a plugin from the marketplace registry (sha256-verified)."""
+    from tailcam.plugins.market import MarketError, PluginMarket
+
+    config = AppConfig.load()
+    market = PluginMarket(config.plugins)
+    try:
+        installed = market.install(plugin_id)
+    except MarketError as exc:
+        console.print(f"[red]install failed:[/red] {exc}")
+        raise typer.Exit(1) from exc
+    console.print(
+        f"[green]installed[/green] {installed.id} v{installed.version} "
+        f"({installed.file}) — restart the service (or hit Reload in the UI) to load it"
+    )
+
+
+@app.command(name="plugin-remove")
+def plugin_remove(plugin_id: str) -> None:
+    """Uninstall a drop-in plugin by id (file stem)."""
+    from tailcam.plugins.market import MarketError, PluginMarket
+
+    config = AppConfig.load()
+    market = PluginMarket(config.plugins)
+    try:
+        removed = market.uninstall(plugin_id)
+    except MarketError as exc:
+        console.print(f"[red]remove failed:[/red] {exc}")
+        raise typer.Exit(1) from exc
+    if not removed:
+        console.print(f"[yellow]no plugin named[/yellow] {plugin_id}")
+        raise typer.Exit(1)
+    console.print(f"[green]removed[/green] {plugin_id}")
 
 
 @app.command()

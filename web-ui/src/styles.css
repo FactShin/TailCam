@@ -1272,3 +1272,18 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 
 /* AI Studio: built-in object detection card */
 .ais-det-tune { margin-top: 12px; display: grid; gap: 10px; max-width: 460px; }
+
+/* Plugins screen: marketplace */
+.plug-market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 10px; }
+.plug-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px; background: var(--bg1); display: flex; flex-direction: column; gap: 8px; }
+.plug-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.plug-ver { color: var(--muted); font-size: 12px; }
+.plug-kinds { display: flex; gap: 6px; flex-wrap: wrap; }
+.plug-kind { display: inline-flex; align-items: center; gap: 4px; }
+.plug-author { color: var(--muted); font-size: 12px; }
+.plug-card-actions { margin-top: auto; display: flex; align-items: center; gap: 10px; padding-top: 6px; }
+.plug-link { color: var(--muted); font-size: 12px; text-decoration: none; }
+.plug-link:hover { color: var(--fg); }
+.plug-settings summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+.plug-settings pre { margin: 6px 0 0; padding: 8px 10px; background: var(--bg0); border: 1px solid var(--border); border-radius: 8px; font-size: 12px; overflow-x: auto; }
+.plug-registry { margin-top: 12px; color: var(--muted); font-size: 11.5px; word-break: break-all; }
