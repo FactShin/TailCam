@@ -11,6 +11,7 @@ ways, so they can be "added at any time":
 from __future__ import annotations
 
 import importlib.util
+from pathlib import Path
 
 import pluggy
 
@@ -32,6 +33,11 @@ def _flatten(results: list) -> list:
     return out
 
 
+def dropin_dir() -> Path:
+    """Where drop-in / marketplace plugins live: ``<config-dir>/plugins/``."""
+    return paths.config_dir() / "plugins"
+
+
 class PluginRegistry:
     def __init__(
         self,
@@ -44,6 +50,7 @@ class PluginRegistry:
         self._disabled = set(disabled or [])
         self._errors: list[str] = []
         self._external: list[str] = []
+        self._skipped: list[str] = []  # present but disabled by the user
         self._pm = pluggy.PluginManager(PROJECT)
         self._pm.add_hookspecs(hookspecs)
         self._pm.register(OllamaPlugin(), name="builtin.ollama")
@@ -56,6 +63,10 @@ class PluginRegistry:
     # -- discovery ---------------------------------------------------------
     def _load_entrypoints(self) -> None:
         try:
+            # The disabled list holds entry-point names / drop-in file stems;
+            # blocking prevents a disabled plugin's code from even registering.
+            for name in self._disabled:
+                self._pm.set_blocked(name)
             count = self._pm.load_setuptools_entrypoints(PROJECT)
             if count:
                 log.info("Loaded %d plugin(s) from entry points", count)
@@ -63,13 +74,17 @@ class PluginRegistry:
             log.warning("Plugin entry-point loading failed: %s", exc)
             self._errors.append(f"entry points: {exc}")
 
-    def _load_dropins(self, dropin_dir) -> None:
-        directory = dropin_dir or (paths.config_dir() / "plugins")
+    def _load_dropins(self, dir_override) -> None:
+        directory = dir_override or dropin_dir()
         try:
             if not directory.is_dir():
                 return
             for file in sorted(directory.glob("*.py")):
                 if file.name.startswith("_"):
+                    continue
+                if file.stem in self._disabled:
+                    self._skipped.append(file.stem)
+                    log.info("Drop-in plugin %s is disabled; not loaded", file.name)
                     continue
                 try:
                     spec = importlib.util.spec_from_file_location(
@@ -95,8 +110,21 @@ class PluginRegistry:
     def notification_channels(self) -> list:
         return _flatten(self._pm.hook.tailcam_notification_channels())
 
+    def event_hooks(self) -> list:
+        return _flatten(self._pm.hook.tailcam_event_hooks())
+
     def plugin_infos(self) -> list[PluginInfo]:
         return _flatten(self._pm.hook.tailcam_plugin_info())
+
+    @property
+    def loaded_dropins(self) -> list[str]:
+        """File stems of drop-in plugins that loaded this run."""
+        return list(self._external)
+
+    @property
+    def skipped_dropins(self) -> list[str]:
+        """File stems present on disk but disabled by the user."""
+        return list(self._skipped)
 
     def analyzer_provider(self, provider_id: str):
         for provider in self.analyzer_providers():

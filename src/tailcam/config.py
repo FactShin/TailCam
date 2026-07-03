@@ -191,12 +191,22 @@ class TrainingConfig:
 
 @dataclass
 class PluginsConfig:
-    # Plugin system. Plugins extend TailCam with extra AI analyzer providers and
-    # notification channels, discovered via Python entry points (pip-installed)
-    # and a drop-in folder. ``disabled`` lists plugin ids to skip; ``load_dropins``
-    # toggles loading single-file plugins from the config dir's ``plugins/`` folder.
+    # Plugin system. Plugins extend TailCam with AI analyzer providers,
+    # notification channels, and motion-event hooks, discovered via Python entry
+    # points (pip-installed) and a drop-in folder. ``disabled`` lists plugin ids
+    # (drop-in file stems / entry-point names) to skip; ``load_dropins`` toggles
+    # loading single-file plugins from the config dir's ``plugins/`` folder.
     disabled: list[str] = field(default_factory=list)
     load_dropins: bool = True
+    # The curated plugin marketplace index. Every plugin in it is reviewed and
+    # sha256-pinned; installs verify the checksum before a file touches disk.
+    # Point this at your own index to run a private registry.
+    registry_url: str = (
+        "https://raw.githubusercontent.com/FactShin/TailCam/main/marketplace/index.json"
+    )
+    # Per-plugin settings, e.g. [plugins.settings.slack] webhook_url = "…".
+    # Plugins read their table via tailcam.plugins.sdk.plugin_settings("slack").
+    settings: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

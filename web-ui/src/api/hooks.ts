@@ -297,6 +297,28 @@ export function usePlugins() {
   return useQuery({ queryKey: ["plugins"], queryFn: api.getPlugins });
 }
 
+export function usePluginsMarket() {
+  return useQuery({ queryKey: ["plugins-market"], queryFn: () => api.getPluginsMarket() });
+}
+
+export function usePluginAction() {
+  const qc = useQueryClient();
+  const onSuccess = (data: import("../types").PluginsMarketInfo) => {
+    qc.setQueryData(["plugins-market"], data);
+    qc.invalidateQueries({ queryKey: ["plugins"] });
+  };
+  return {
+    install: useMutation({ mutationFn: (id: string) => api.installPlugin(id), onSuccess }),
+    uninstall: useMutation({ mutationFn: (stem: string) => api.uninstallPlugin(stem), onSuccess }),
+    toggle: useMutation({
+      mutationFn: (v: { stem: string; enabled: boolean }) => api.togglePlugin(v.stem, v.enabled),
+      onSuccess,
+    }),
+    reload: useMutation({ mutationFn: () => api.reloadPlugins(), onSuccess }),
+    refresh: useMutation({ mutationFn: () => api.getPluginsMarket(true), onSuccess }),
+  };
+}
+
 export function useStorage() {
   return useQuery({ queryKey: ["storage"], queryFn: api.getStorage });
 }

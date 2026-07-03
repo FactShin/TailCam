@@ -201,6 +201,25 @@ export const updateDetection = (body: import("../types").DetectionUpdate) =>
     body: JSON.stringify(body),
   });
 
+export const getPluginsMarket = (refresh = false) =>
+  jsonFetch<import("../types").PluginsMarketInfo>(`/api/plugins/market${refresh ? "?refresh=true" : ""}`);
+export const installPlugin = (id: string) =>
+  jsonFetch<import("../types").PluginsMarketInfo>("/api/plugins/market/install", {
+    method: "POST",
+    body: JSON.stringify({ id }),
+  });
+export const uninstallPlugin = (stem: string) =>
+  jsonFetch<import("../types").PluginsMarketInfo>(`/api/plugins/installed/${encodeURIComponent(stem)}`, {
+    method: "DELETE",
+  });
+export const togglePlugin = (stem: string, enabled: boolean) =>
+  jsonFetch<import("../types").PluginsMarketInfo>(
+    `/api/plugins/installed/${encodeURIComponent(stem)}/toggle`,
+    { method: "POST", body: JSON.stringify({ enabled }) },
+  );
+export const reloadPlugins = () =>
+  jsonFetch<import("../types").PluginsMarketInfo>("/api/plugins/reload", { method: "POST" });
+
 export const getModels = () => jsonFetch<import("../types").ModelInfo[]>("/api/models");
 export const registerModel = (body: {
   name: string;
