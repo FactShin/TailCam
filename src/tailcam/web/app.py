@@ -61,12 +61,13 @@ def create_app(config: AppConfig | None = None, context: AppContext | None = Non
     app.include_router(routes_proxy.router)
     app.include_router(routes_api.router)
 
-    # Streamable HTTP MCP endpoint, only when explicitly enabled. Mounted before
-    # the SPA catch-all so /mcp is never swallowed by client-side routing.
-    if config.mcp.enabled and config.mcp.http_enabled:
-        from tailcam.mcp import transport_http
+    # Streamable HTTP MCP endpoint. Always mounted (before the SPA catch-all so
+    # /mcp is never swallowed by client-side routing) but fail-closed: the
+    # handler checks ``[mcp] enabled + http_enabled`` per request, so the MCP
+    # page's toggle takes effect immediately — no restart.
+    from tailcam.mcp import transport_http
 
-        app.include_router(transport_http.router)
+    app.include_router(transport_http.router)
 
     spa_index = _SPA_DIR / "index.html"
     if spa_index.exists():

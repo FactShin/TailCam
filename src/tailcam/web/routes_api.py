@@ -40,6 +40,8 @@ from tailcam.web.schemas import (
     InstalledPluginEntry,
     IntegrationsInfo,
     MarketPluginEntry,
+    McpInfo,
+    McpUpdate,
     MediaCreatedResponse,
     MediaInfo,
     ModelInfo,
@@ -1192,6 +1194,48 @@ def plugins_info(ctx: AppContext = Depends(get_context)) -> PluginsInfo:
         active_provider=ctx.config.ai.provider,
         errors=reg.errors,
     )
+
+
+def _mcp_info(ctx: AppContext) -> McpInfo:
+    from tailcam.mcp.tools import build_tools
+
+    cfg = ctx.config.mcp
+    port = ctx.config.server.port
+    status = ctx.tailscale.status()
+    access = ctx.tailscale.access_url(port, ctx.served, ctx.config.tailscale.serve_port)
+    # The tailnet MCP URL only exists when Tailscale Serve fronts the node with
+    # HTTPS + identity headers; a plain http:// access URL can't authenticate.
+    http_tailnet = access + "mcp" if access.startswith("https://") else ""
+    return McpInfo(
+        enabled=cfg.enabled,
+        http_enabled=cfg.http_enabled,
+        http_live=cfg.enabled and cfg.http_enabled,
+        tools_count=len(build_tools()),
+        stdio_command="tailcam mcp stdio",
+        tailcam_url=f"http://127.0.0.1:{port}",
+        http_url_tailnet=http_tailnet,
+        http_url_local=f"http://localhost:{port}/mcp",
+        tailscale_running=status.running,
+    )
+
+
+@router.get("/mcp", response_model=McpInfo)
+def mcp_info(ctx: AppContext = Depends(get_context)) -> McpInfo:
+    """MCP server status + the URLs/commands agents need to connect."""
+    return _mcp_info(ctx)
+
+
+@router.post("/mcp", response_model=McpInfo)
+def update_mcp(update: McpUpdate, ctx: AppContext = Depends(get_context)) -> McpInfo:
+    """Toggle the MCP server / its HTTP endpoint (persisted, effective
+    immediately — the /mcp route checks config per request)."""
+    cfg = ctx.config.mcp
+    if update.enabled is not None:
+        cfg.enabled = update.enabled
+    if update.http_enabled is not None:
+        cfg.http_enabled = update.http_enabled
+    ctx.config.save()
+    return _mcp_info(ctx)
 
 
 def _market_info(ctx: AppContext, *, force: bool = False) -> PluginsMarketInfo:

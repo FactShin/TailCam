@@ -11,6 +11,7 @@ import { Dashboard } from "./screens/Dashboard";
 import { Docs } from "./screens/Docs";
 import { Events } from "./screens/Events";
 import { Gallery } from "./screens/Gallery";
+import { McpSetup } from "./screens/McpSetup";
 import { Plugins } from "./screens/Plugins";
 import { Settings } from "./screens/Settings";
 import { Timelapse } from "./screens/Timelapse";
@@ -38,6 +39,7 @@ createRoot(document.getElementById("root")!).render(
               {/* Old destinations now live as AI Studio tabs. */}
               <Route path="/training" element={<Navigate to="/ai?tab=training" replace />} />
               <Route path="/models" element={<Navigate to="/ai?tab=models" replace />} />
+              <Route path="/agents" element={<McpSetup />} />
               <Route path="/plugins" element={<Plugins />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/docs" element={<Docs />} />

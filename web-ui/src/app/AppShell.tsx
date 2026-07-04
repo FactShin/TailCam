@@ -15,6 +15,7 @@ import {
   IconFilm,
   IconGrid,
   IconMore,
+  IconServer,
   IconMotion,
   IconSearch,
   IconSettings,
@@ -32,8 +33,9 @@ const NAV: { to: string; label: string; icon: (p: IconProps) => JSX.Element; key
   { to: "/ai", label: "AI Studio", icon: IconAi, key: "4" },
   { to: "/timelapse", label: "Timelapse", icon: IconTimelapse, key: "5" },
   { to: "/plugins", label: "Plugins", icon: IconChip, key: "6" },
-  { to: "/settings", label: "Settings", icon: IconSettings, key: "7" },
-  { to: "/docs", label: "Docs", icon: IconBook, key: "8" },
+  { to: "/agents", label: "MCP", icon: IconServer, key: "7" },
+  { to: "/settings", label: "Settings", icon: IconSettings, key: "8" },
+  { to: "/docs", label: "Docs", icon: IconBook, key: "9" },
 ];
 
 // Mobile bottom bar shows the primary destinations; the rest live in a "More"
