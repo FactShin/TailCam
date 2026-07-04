@@ -35,6 +35,16 @@ async def mcp_get() -> Response:
 
 @router.post("/mcp")
 async def mcp_post(request: Request) -> Response:
+    # Runtime gate (not mount-time): the MCP settings page toggles this live.
+    mcp_cfg = request.app.state.ctx.config.mcp
+    if not (mcp_cfg.enabled and mcp_cfg.http_enabled):
+        return JSONResponse(
+            error_response(
+                None, INVALID_REQUEST,
+                "the MCP HTTP endpoint is disabled on this node (enable it on the MCP page)",
+            ),
+            status_code=404,
+        )
     principal = principal_from_request(request)
     if not principal.verified:
         return JSONResponse(

@@ -201,6 +201,10 @@ export const updateDetection = (body: import("../types").DetectionUpdate) =>
     body: JSON.stringify(body),
   });
 
+export const getMcp = () => jsonFetch<import("../types").McpInfo>("/api/mcp");
+export const updateMcp = (body: { enabled?: boolean; http_enabled?: boolean }) =>
+  jsonFetch<import("../types").McpInfo>("/api/mcp", { method: "POST", body: JSON.stringify(body) });
+
 export const getPluginsMarket = (refresh = false) =>
   jsonFetch<import("../types").PluginsMarketInfo>(`/api/plugins/market${refresh ? "?refresh=true" : ""}`);
 export const installPlugin = (id: string) =>
