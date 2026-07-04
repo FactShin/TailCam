@@ -1,5 +1,10 @@
 # Connecting agents
 
+> **Fastest path: the MCP page.** Open **MCP** in the nav — it shows this
+> node's live MCP URLs and ready-to-paste setup for Claude Code, Codex,
+> OpenClaw, Hermes, and Claude Desktop, plus the network-endpoint toggle
+> (no restart needed). This page is the reference behind it.
+
 This page shows how to connect Codex, Claude, Hermes, and OpenClaw to TailCam's
 [MCP](mcp-overview) server. Example config files also ship in the repo under
 `examples/mcp/`.

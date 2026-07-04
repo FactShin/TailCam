@@ -297,6 +297,18 @@ export function usePlugins() {
   return useQuery({ queryKey: ["plugins"], queryFn: api.getPlugins });
 }
 
+export function useMcp() {
+  return useQuery({ queryKey: ["mcp-info"], queryFn: api.getMcp, refetchInterval: 30_000 });
+}
+
+export function useUpdateMcp() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.updateMcp,
+    onSuccess: (data) => qc.setQueryData(["mcp-info"], data),
+  });
+}
+
 export function usePluginsMarket() {
   return useQuery({ queryKey: ["plugins-market"], queryFn: () => api.getPluginsMarket() });
 }

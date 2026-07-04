@@ -550,3 +550,16 @@ export interface PluginsMarketInfo {
   installed: InstalledPluginEntry[];
   load_errors: string[];
 }
+
+/** MCP server status + connection info for the MCP page. */
+export interface McpInfo {
+  enabled: boolean;
+  http_enabled: boolean;
+  http_live: boolean;
+  tools_count: number;
+  stdio_command: string;
+  tailcam_url: string;
+  http_url_tailnet: string;
+  http_url_local: string;
+  tailscale_running: boolean;
+}

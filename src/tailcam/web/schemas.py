@@ -580,6 +580,25 @@ class TrainingInfo(BaseModel):
     collected_session: int = 0
 
 
+class McpInfo(BaseModel):
+    """Everything the MCP page needs to show plug-and-play setup."""
+
+    enabled: bool
+    http_enabled: bool
+    http_live: bool  # the /mcp endpoint answers right now (enabled + http_enabled)
+    tools_count: int
+    stdio_command: str  # e.g. "tailcam mcp stdio"
+    tailcam_url: str  # TAILCAM_URL env for stdio (this node's local API)
+    http_url_tailnet: str = ""  # https://<magicdns>:8443/mcp when Tailscale is up
+    http_url_local: str = ""  # http://localhost:<port>/mcp
+    tailscale_running: bool = False
+
+
+class McpUpdate(BaseModel):
+    enabled: bool | None = None
+    http_enabled: bool | None = None
+
+
 class SystemInfo(BaseModel):
     version: str
     host: str = ""  # this node's identity (used for peer discovery)

@@ -466,3 +466,38 @@ def test_config_mcp_roundtrips():
     restored = AppConfig.from_dict(data)
     assert restored.mcp.enabled is True
     assert restored.mcp.require_confirm_for_fleet_writes is True
+
+
+# -- /api/mcp status + live HTTP gate (1.1.0: MCP page) ----------------------
+def test_api_mcp_info_and_toggle(client):
+    info = client.get("/api/mcp").json()
+    assert info["enabled"] is True
+    assert info["http_enabled"] is False  # network endpoint is opt-in
+    assert info["http_live"] is False
+    assert info["stdio_command"] == "tailcam mcp stdio"
+    assert info["tools_count"] >= 40
+    assert info["http_url_local"].endswith("/mcp")
+    assert info["tailcam_url"].startswith("http://127.0.0.1:")
+
+    on = client.post("/api/mcp", json={"http_enabled": True}).json()
+    assert on["http_enabled"] is True and on["http_live"] is True
+    off = client.post("/api/mcp", json={"enabled": False}).json()
+    assert off["http_live"] is False
+
+
+def test_mcp_http_gate_is_live_no_restart(client):
+    # Disabled by default: the route exists but answers 404 with a JSON-RPC error.
+    init = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+    resp = client.post("/mcp", json=init)
+    assert resp.status_code == 404
+    assert "disabled" in resp.json()["error"]["message"]
+
+    # Flip the toggle through the API — the same app instance starts answering
+    # (fail-closed auth still applies: an unverified caller gets 401, not 404).
+    client.post("/api/mcp", json={"http_enabled": True})
+    resp = client.post("/mcp", json=init)
+    assert resp.status_code == 401
+
+    # And off again, immediately.
+    client.post("/api/mcp", json={"http_enabled": False})
+    assert client.post("/mcp", json=init).status_code == 404

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useCameras } from "../api/hooks";
-import { IconAi, IconBook, IconBrain, IconCamera, IconChip, IconFilm, IconGrid, IconMotion, IconSearch, IconSettings, IconTimelapse, IconWall } from "../icons";
+import { IconAi, IconBook, IconBrain, IconCamera, IconChip, IconFilm, IconGrid, IconMotion, IconSearch, IconServer, IconSettings, IconTimelapse, IconWall } from "../icons";
 import { cameraPath } from "../lib/nav";
 
 interface PalItem {
@@ -39,6 +39,7 @@ export function CommandPalette({
       { kind: "screen", id: "/training", label: "Training", icon: IconBrain, meta: "AI Studio tab", to: "/ai?tab=training" },
       { kind: "screen", id: "/models", label: "Models", icon: IconChip, meta: "AI Studio tab", to: "/ai?tab=models" },
       { kind: "screen", id: "/plugins", label: "Plugins", icon: IconChip, meta: "screen", to: "/plugins" },
+      { kind: "screen", id: "/agents", label: "MCP (agent access)", icon: IconServer, meta: "screen", to: "/agents" },
       { kind: "screen", id: "/settings", label: "Settings", icon: IconSettings, meta: "screen", to: "/settings" },
       { kind: "screen", id: "/docs", label: "Docs", icon: IconBook, meta: "screen", to: "/docs" },
     ];
