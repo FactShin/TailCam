@@ -558,6 +558,8 @@ export interface McpInfo {
   http_live: boolean;
   tools_count: number;
   stdio_command: string;
+  stdio_args: string[];
+  recommended_tools: string[];
   tailcam_url: string;
   http_url_tailnet: string;
   http_url_local: string;

@@ -130,6 +130,53 @@ def test_config_save_records_version_and_roundtrips(tmp_path):
     assert loaded.detection.confidence == 0.6
 
 
+def test_config_save_is_atomic_under_concurrency(tmp_path):
+    # Several settings endpoints save concurrently in FastAPI's threadpool; the
+    # file must never be observed torn/half-written. Hammer save() from many
+    # threads while another thread repeatedly loads, and assert every load
+    # parses to a valid config (never the defaults-fallback from a corrupt read).
+    import threading
+
+    cfg_file = tmp_path / "config.toml"
+    AppConfig().save(cfg_file)  # seed a valid file
+    errors: list[str] = []
+    stop = threading.Event()
+
+    def writer(port: int) -> None:
+        cfg = AppConfig()
+        cfg.server.port = port
+        for _ in range(40):
+            cfg.save(cfg_file)
+
+    def reader() -> None:
+        while not stop.is_set():
+            raw = cfg_file.read_bytes()
+            if not raw:
+                errors.append("observed empty config.toml")
+                return
+            try:
+                # A torn write would raise here; load() would then silently
+                # fall back to defaults, so parse strictly instead.
+                import tomllib
+
+                tomllib.loads(raw.decode("utf-8"))
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"torn read: {exc}")
+                return
+
+    r = threading.Thread(target=reader)
+    r.start()
+    writers = [threading.Thread(target=writer, args=(8100 + i,)) for i in range(6)]
+    for w in writers:
+        w.start()
+    for w in writers:
+        w.join()
+    stop.set()
+    r.join()
+    assert not errors, errors
+    assert not list(tmp_path.glob("*.tmp"))  # no stray temp files left behind
+
+
 def test_config_unknown_keys_do_not_reset_file(tmp_path):
     cfg_file = tmp_path / "config.toml"
     cfg_file.write_text(

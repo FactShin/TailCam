@@ -298,7 +298,15 @@ export function usePlugins() {
 }
 
 export function useMcp() {
-  return useQuery({ queryKey: ["mcp-info"], queryFn: api.getMcp, refetchInterval: 30_000 });
+  // MCP status is near-static config: it changes via this page's own mutation
+  // (which updates the cache) or a rare external event (Tailscale coming up).
+  // Don't poll on a timer — each GET forks a `tailscale status` subprocess;
+  // refetch on focus/reconnect instead so re-opening the tab still refreshes.
+  return useQuery({
+    queryKey: ["mcp-info"],
+    queryFn: api.getMcp,
+    refetchOnWindowFocus: true,
+  });
 }
 
 export function useUpdateMcp() {

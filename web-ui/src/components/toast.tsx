@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
 
+import { copyToClipboard } from "../lib/clipboard";
 import { IconClose } from "../icons";
 
 type Kind = "info" | "ok" | "err";
@@ -65,4 +66,15 @@ export function useToast(): ToastApi {
   const ctx = useContext(ToastCtx);
   if (!ctx) throw new Error("useToast must be used within ToastProvider");
   return ctx;
+}
+
+/** Copy-to-clipboard bound to toasts. Works over plain http:// (falls back to
+ * execCommand) and always reports success or failure — never a silent no-op. */
+export function useCopy(): (text: string, label?: string) => void {
+  const toast = useToast();
+  return (text: string, label = "Copied") => {
+    void copyToClipboard(text).then((ok) =>
+      ok ? toast.ok(`${label} copied`) : toast.err("Copy failed"),
+    );
+  };
 }

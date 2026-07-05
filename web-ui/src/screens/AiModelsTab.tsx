@@ -18,6 +18,7 @@ import {
 import { useToast } from "../components/toast";
 import { Button, ConfirmDialog } from "../components/ui";
 import { IconCheck, IconChip, IconCopy, IconDownload, IconSparkle, IconTrash } from "../icons";
+import { copyToClipboard } from "../lib/clipboard";
 import { fmtAgo } from "../lib/format";
 import type { DatasetTask, EngineInfo, ModelInfo } from "../types";
 
@@ -44,12 +45,10 @@ const CATALOG: {
 function CopyButton({ text, label }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
+    // copyToClipboard falls back to execCommand over http:// (no secure ctx).
+    if (await copyToClipboard(text)) {
       setDone(true);
       setTimeout(() => setDone(false), 1400);
-    } catch {
-      /* clipboard unavailable */
     }
   };
   return (

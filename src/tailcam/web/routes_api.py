@@ -1197,25 +1197,30 @@ def plugins_info(ctx: AppContext = Depends(get_context)) -> PluginsInfo:
 
 
 def _mcp_info(ctx: AppContext) -> McpInfo:
-    from tailcam.mcp.tools import build_tools
+    from tailcam.integrations.base import public_base_url
+    from tailcam.mcp import RECOMMENDED_TOOLS, STDIO_ARGS, STDIO_COMMAND
+    from tailcam.mcp.tools import tool_count
 
     cfg = ctx.config.mcp
     port = ctx.config.server.port
-    status = ctx.tailscale.status()
-    access = ctx.tailscale.access_url(port, ctx.served, ctx.config.tailscale.serve_port)
     # The tailnet MCP URL only exists when Tailscale Serve fronts the node with
-    # HTTPS + identity headers; a plain http:// access URL can't authenticate.
-    http_tailnet = access + "mcp" if access.startswith("https://") else ""
+    # HTTPS + identity headers; a plain http:// base can't authenticate callers.
+    # public_base_url() is the single source of truth for the served/HTTPS/port
+    # rules (reused instead of re-deriving them here).
+    base = public_base_url(ctx)
+    http_tailnet = f"{base}/mcp" if base.startswith("https://") else ""
     return McpInfo(
         enabled=cfg.enabled,
         http_enabled=cfg.http_enabled,
         http_live=cfg.enabled and cfg.http_enabled,
-        tools_count=len(build_tools()),
-        stdio_command="tailcam mcp stdio",
+        tools_count=tool_count(),
+        stdio_command=STDIO_COMMAND,
+        stdio_args=list(STDIO_ARGS),
+        recommended_tools=list(RECOMMENDED_TOOLS),
         tailcam_url=f"http://127.0.0.1:{port}",
         http_url_tailnet=http_tailnet,
         http_url_local=f"http://localhost:{port}/mcp",
-        tailscale_running=status.running,
+        tailscale_running=ctx.tailscale.status().running,
     )
 
 

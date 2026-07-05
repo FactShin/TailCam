@@ -6,6 +6,7 @@ import { NotificationsSettings } from "../components/NotificationsSettings";
 import { StoragePanel } from "../components/StoragePanel";
 import { useToast } from "../components/toast";
 import { IconCheck, IconCopy, IconDevice, IconInfo, IconServer, IconWifi, IconWifiOff } from "../icons";
+import { copyToClipboard } from "../lib/clipboard";
 import { fmtBytes } from "../lib/format";
 
 export function Settings() {
@@ -16,11 +17,12 @@ export function Settings() {
   const toast = useToast();
   const [copied, setCopied] = useState(false);
 
-  const copy = (text: string) => {
-    try {
-      navigator.clipboard.writeText(text);
-    } catch {
-      /* ignore */
+  const copy = async (text: string) => {
+    // Falls back to execCommand over http:// (no secure context, so
+    // navigator.clipboard is undefined) instead of silently failing.
+    if (!(await copyToClipboard(text))) {
+      toast.err("Copy failed");
+      return;
     }
     setCopied(true);
     toast.ok("Copied access URL");
