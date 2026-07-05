@@ -8,18 +8,8 @@ import {
 } from "../api/hooks";
 import { IconCopy, IconDevice, IconPhone, IconServer } from "../icons";
 import type { HomeAssistantStatus, HomeKitStatus } from "../types";
-import { useToast } from "./toast";
+import { useCopy, useToast } from "./toast";
 import { Button, Toggle } from "./ui";
-
-function useCopy() {
-  const toast = useToast();
-  return (text: string, label = "Copied") => {
-    navigator.clipboard
-      ?.writeText(text)
-      .then(() => toast.ok(`${label} copied`))
-      .catch(() => toast.err("Copy failed"));
-  };
-}
 
 function Badge({ ok, children }: { ok: boolean; children: React.ReactNode }) {
   return <span className={`ais-badge ${ok ? "ok" : "rec"}`}>{children}</span>;

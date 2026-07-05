@@ -588,6 +588,8 @@ class McpInfo(BaseModel):
     http_live: bool  # the /mcp endpoint answers right now (enabled + http_enabled)
     tools_count: int
     stdio_command: str  # e.g. "tailcam mcp stdio"
+    stdio_args: list[str] = []  # command args for JSON/TOML client configs
+    recommended_tools: list[str] = []  # safe starter tool set for autoEnableTools
     tailcam_url: str  # TAILCAM_URL env for stdio (this node's local API)
     http_url_tailnet: str = ""  # https://<magicdns>:8443/mcp when Tailscale is up
     http_url_local: str = ""  # http://localhost:<port>/mcp

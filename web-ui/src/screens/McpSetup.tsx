@@ -1,18 +1,10 @@
+import { useNavigate } from "react-router-dom";
+
 import { useMcp, useUpdateMcp } from "../api/hooks";
-import { useToast } from "../components/toast";
+import { useCopy, useToast } from "../components/toast";
 import { Button, Spinner, Toggle } from "../components/ui";
 import { IconBook, IconChip, IconCopy, IconGlobe, IconServer } from "../icons";
 import type { McpInfo } from "../types";
-
-function useCopy() {
-  const toast = useToast();
-  return (text: string, label = "Copied") => {
-    navigator.clipboard
-      ?.writeText(text)
-      .then(() => toast.ok(`${label} copied`))
-      .catch(() => toast.err("Copy failed"));
-  };
-}
 
 /** A code block with a copy button — the workhorse of this screen. */
 function CodeBlock({ label, code }: { label: string; code: string }) {
@@ -32,6 +24,16 @@ function CodeBlock({ label, code }: { label: string; code: string }) {
 
 function snippets(info: McpInfo) {
   const remote = info.http_url_tailnet || "https://<your-node>.your-tailnet.ts.net:8443/mcp";
+  // Derive command/args from the backend so a CLI rename can't leave these
+  // snippets advertising a stale invocation. stdio_command is "tailcam mcp stdio".
+  const parts = info.stdio_command.split(" ");
+  const cmd = parts[0];
+  const args = info.stdio_args.length ? info.stdio_args : parts.slice(1);
+  const argsJson = JSON.stringify(args);
+  // Recommended starter tool set (read + incident, no writes), indented for JSON.
+  const autoEnable = info.recommended_tools
+    .map((t) => `        "${t}"`)
+    .join(",\n");
   return {
     claudeCodeLocal:
       `claude mcp add tailcam -e TAILCAM_URL=${info.tailcam_url} -- ${info.stdio_command}`,
@@ -40,16 +42,16 @@ function snippets(info: McpInfo) {
   "mcpServers": {
     "tailcam": {
       "type": "stdio",
-      "command": "tailcam",
-      "args": ["mcp", "stdio"],
+      "command": "${cmd}",
+      "args": ${argsJson},
       "env": { "TAILCAM_URL": "${info.tailcam_url}" }
     }
   }
 }`,
     codex: `# ~/.codex/config.toml — local node over stdio
 [mcp_servers.tailcam]
-command = "tailcam"
-args = ["mcp", "stdio"]
+command = "${cmd}"
+args = ${argsJson}
 env = { TAILCAM_URL = "${info.tailcam_url}" }
 default_tools_approval_mode = "prompt"
 tool_timeout_sec = 60
@@ -61,9 +63,12 @@ tool_timeout_sec = 60
   "mcpServers": {
     "tailcam": {
       "transport": "stdio",
-      "command": "tailcam",
-      "args": ["mcp", "stdio"],
-      "env": { "TAILCAM_URL": "${info.tailcam_url}" }
+      "command": "${cmd}",
+      "args": ${argsJson},
+      "env": { "TAILCAM_URL": "${info.tailcam_url}" },
+      "autoEnableTools": [
+${autoEnable}
+      ]
     },
     "tailcam-remote": {
       "transport": "streamable-http",
@@ -87,6 +92,7 @@ export function McpSetup() {
   const update = useUpdateMcp();
   const toast = useToast();
   const copy = useCopy();
+  const navigate = useNavigate();
   const info = q.data;
 
   const set = async (body: { enabled?: boolean; http_enabled?: boolean }, msg: string) => {
@@ -249,7 +255,7 @@ export function McpSetup() {
           <b>Want the deep dive?</b>
           <span>Tool-by-tool reference, security model, and troubleshooting live in the docs.</span>
         </div>
-        <Button variant="ghost" onClick={() => (window.location.href = "/docs/mcp-overview")}>
+        <Button variant="ghost" onClick={() => navigate("/docs/mcp-overview")}>
           MCP docs →
         </Button>
       </div>

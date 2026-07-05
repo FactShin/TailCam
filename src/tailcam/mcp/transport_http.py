@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from tailcam.management.audit import AuditLog
 from tailcam.mcp.client import TailcamClient
@@ -26,25 +26,45 @@ from tailcam.security.principal import principal_from_request
 
 router = APIRouter()
 
+# The SPA page that documents/controls the MCP endpoint. /mcp itself is the
+# JSON-RPC endpoint (and is excluded from the SPA catch-all), so a human who
+# types /mcp is sent here instead of getting a bare protocol response.
+_MCP_PAGE = "/agents"
+
+_DISABLED_MESSAGE = (
+    "the MCP HTTP endpoint is disabled on this node (enable it on the MCP page)"
+)
+
+
+def _http_disabled(request: Request) -> bool:
+    """Runtime gate (not mount-time): the MCP settings page toggles this live."""
+    mcp_cfg = request.app.state.ctx.config.mcp
+    return not (mcp_cfg.enabled and mcp_cfg.http_enabled)
+
+
+def _disabled_response() -> JSONResponse:
+    return JSONResponse(
+        error_response(None, INVALID_REQUEST, _DISABLED_MESSAGE), status_code=404
+    )
+
 
 @router.get("/mcp")
-async def mcp_get() -> Response:
+async def mcp_get(request: Request) -> Response:
+    # A browser hitting /mcp wants the settings page, not a protocol response —
+    # send it to the SPA tab (which lives at /agents because /mcp is reserved).
+    if "text/html" in request.headers.get("accept", ""):
+        return RedirectResponse(_MCP_PAGE, status_code=302)
+    # Gated the same as POST so a disabled node doesn't advertise the endpoint.
+    if _http_disabled(request):
+        return _disabled_response()
     # We do not offer server-initiated SSE streams; advertise POST only.
     return Response(status_code=405, headers={"Allow": "POST"})
 
 
 @router.post("/mcp")
 async def mcp_post(request: Request) -> Response:
-    # Runtime gate (not mount-time): the MCP settings page toggles this live.
-    mcp_cfg = request.app.state.ctx.config.mcp
-    if not (mcp_cfg.enabled and mcp_cfg.http_enabled):
-        return JSONResponse(
-            error_response(
-                None, INVALID_REQUEST,
-                "the MCP HTTP endpoint is disabled on this node (enable it on the MCP page)",
-            ),
-            status_code=404,
-        )
+    if _http_disabled(request):
+        return _disabled_response()
     principal = principal_from_request(request)
     if not principal.verified:
         return JSONResponse(

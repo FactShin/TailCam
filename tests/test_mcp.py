@@ -393,14 +393,31 @@ async def test_viewer_cannot_reach_audit_via_camera_resource(mcp_env):
 
 
 # -- HTTP transport --------------------------------------------------------
-async def test_http_mount_absent_when_disabled(context):
+async def test_http_disabled_gates_both_verbs(context):
+    # The /mcp router is always mounted now; the runtime gate must fail-closed
+    # for BOTH verbs when http is disabled, so a disabled node doesn't advertise
+    # the endpoint (GET used to leak 405 Allow:POST here).
     context.config.mcp.http_enabled = False
     app = create_app(context.config, context=context)
     transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 123))
     async with httpx.AsyncClient(transport=transport, base_url="http://t.local") as c:
-        resp = await c.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "ping"})
-    # No POST /mcp handler exists: 404, or 405 when a GET catch-all owns the path.
-    assert resp.status_code in (404, 405)
+        post = await c.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "ping"})
+        get = await c.get("/mcp", headers={"accept": "application/json"})
+    assert post.status_code == 404
+    assert "disabled" in post.json()["error"]["message"]
+    assert get.status_code == 404  # not 405 — the endpoint stays hidden
+
+
+async def test_mcp_get_redirects_browsers_to_page(context):
+    # A human typing /mcp (Accept: text/html) gets sent to the SPA settings tab
+    # instead of a bare protocol response — even when http is disabled.
+    context.config.mcp.http_enabled = False
+    app = create_app(context.config, context=context)
+    transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 123))
+    async with httpx.AsyncClient(transport=transport, base_url="http://t.local") as c:
+        resp = await c.get("/mcp", headers={"accept": "text/html"})
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/agents"
 
 
 async def test_http_rejects_unverified(mcp_env):
@@ -475,6 +492,8 @@ def test_api_mcp_info_and_toggle(client):
     assert info["http_enabled"] is False  # network endpoint is opt-in
     assert info["http_live"] is False
     assert info["stdio_command"] == "tailcam mcp stdio"
+    assert info["stdio_args"] == ["mcp", "stdio"]
+    assert info["recommended_tools"]  # non-empty starter set for autoEnableTools
     assert info["tools_count"] >= 40
     assert info["http_url_local"].endswith("/mcp")
     assert info["tailcam_url"].startswith("http://127.0.0.1:")
@@ -483,6 +502,20 @@ def test_api_mcp_info_and_toggle(client):
     assert on["http_enabled"] is True and on["http_live"] is True
     off = client.post("/api/mcp", json={"enabled": False}).json()
     assert off["http_live"] is False
+
+
+def test_example_config_autoenabletools_matches_constant():
+    # The static examples/mcp/hermes-openclaw.json and the RECOMMENDED_TOOLS
+    # constant the MCP page renders must not drift.
+    import json
+    from pathlib import Path
+
+    from tailcam.mcp import RECOMMENDED_TOOLS
+
+    root = Path(__file__).resolve().parent.parent
+    example = json.loads((root / "examples" / "mcp" / "hermes-openclaw.json").read_text())
+    tools = example["mcpServers"]["tailcam"]["autoEnableTools"]
+    assert tools == RECOMMENDED_TOOLS
 
 
 def test_mcp_http_gate_is_live_no_restart(client):
