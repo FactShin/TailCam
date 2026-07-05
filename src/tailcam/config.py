@@ -7,7 +7,10 @@ App-level and per-camera *display* settings live here. Dynamic, queryable data
 from __future__ import annotations
 
 import logging
+import os
 import sys
+import tempfile
+import threading
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any, TypeVar
@@ -290,6 +293,10 @@ class HomeAssistantConfig:
 # ``AppConfig.load``). Version 2: motion.auto_record flipped to default-on.
 _CONFIG_VERSION = 2
 
+# Serializes AppConfig.save() so concurrent settings-writing requests can't
+# interleave writes to config.toml (see save()).
+_SAVE_LOCK = threading.Lock()
+
 _T = TypeVar("_T")
 
 
@@ -413,7 +420,29 @@ class AppConfig:
         }
 
     def save(self, path: Path | None = None) -> None:
+        # Atomic + serialized: several REST endpoints (storage, detection, ai,
+        # mcp, plugin toggles) run in FastAPI's threadpool and can call save()
+        # concurrently. A bare open("wb") truncates in place, so two interleaved
+        # writers would leave a torn config.toml that fails to parse on next
+        # load. Write to a temp file and os.replace() (atomic on POSIX + Windows)
+        # under a process-wide lock, so a reader always sees a complete file.
         cfg_path = path or paths.config_file()
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
-        with cfg_path.open("wb") as fh:
-            tomli_w.dump(self.to_dict(), fh)
+        payload = tomli_w.dumps(self.to_dict()).encode("utf-8")
+        with _SAVE_LOCK:
+            fd, tmp_name = tempfile.mkstemp(
+                dir=str(cfg_path.parent), prefix=f".{cfg_path.name}.", suffix=".tmp"
+            )
+            try:
+                with os.fdopen(fd, "wb") as fh:
+                    fh.write(payload)
+                    fh.flush()
+                    os.fsync(fh.fileno())
+                os.replace(tmp_name, cfg_path)
+            except BaseException:
+                # Never leave a stray temp file behind on failure.
+                try:
+                    os.unlink(tmp_name)
+                except OSError:
+                    pass
+                raise

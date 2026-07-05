@@ -871,6 +871,19 @@ async def _suggest_retention_cleanup(ctx: ToolContext, args: dict[str, Any]) -> 
     )
 
 
+_TOOL_COUNT: int | None = None
+
+
+def tool_count() -> int:
+    """Number of registered MCP tools, computed once. The count is a build-time
+    constant, so callers that only need the count (e.g. GET /api/mcp, polled by
+    the MCP page) must not rebuild all Tool objects each time."""
+    global _TOOL_COUNT
+    if _TOOL_COUNT is None:
+        _TOOL_COUNT = len(build_tools())
+    return _TOOL_COUNT
+
+
 # --------------------------------------------------------------------------
 # arg helpers
 # --------------------------------------------------------------------------

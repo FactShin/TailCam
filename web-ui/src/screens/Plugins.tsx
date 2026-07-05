@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { usePluginAction, usePlugins, usePluginsMarket } from "../api/hooks";
 import { PluginsPanel } from "../components/PluginsPanel";
@@ -23,6 +24,7 @@ function kindChip(kind: string) {
  * and learn how to build your own. */
 export function Plugins() {
   const toast = useToast();
+  const navigate = useNavigate();
   const market = usePluginsMarket();
   const actions = usePluginAction();
   const data = market.data;
@@ -203,7 +205,7 @@ export function Plugins() {
             the marketplace for everyone.
           </span>
         </div>
-        <Button variant="ghost" onClick={() => (window.location.href = "/docs/plugins")}>
+        <Button variant="ghost" onClick={() => navigate("/docs/plugins")}>
           Authoring guide →
         </Button>
       </div>

@@ -19,5 +19,31 @@ PROTOCOL_VERSION = "2025-06-18"
 # compatible: initialize/tools/resources/prompts with no batching reliance).
 SUPPORTED_PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 SERVER_NAME = "tailcam"
+# The local-stdio invocation agents put in their MCP client config. Single
+# source of truth so the CLI, docs, and the MCP page can't advertise different
+# commands (matches the `tailcam mcp stdio` CLI subcommand).
+STDIO_COMMAND = "tailcam mcp stdio"
+STDIO_ARGS = ["mcp", "stdio"]
 
-__all__ = ["PROTOCOL_VERSION", "SERVER_NAME", "SUPPORTED_PROTOCOL_VERSIONS"]
+# The safe starter tool set an agent should auto-enable first: read + incident
+# tools, no admin/writes. Single source of truth for both the connect snippets
+# the MCP page renders and the examples/mcp/* files (kept in sync by test).
+RECOMMENDED_TOOLS = [
+    "get_system_status",
+    "list_fleet_nodes",
+    "list_cameras",
+    "inspect_camera",
+    "list_recent_events",
+    "summarize_fleet_health",
+    "find_offline_cameras",
+    "investigate_motion_event",
+]
+
+__all__ = [
+    "PROTOCOL_VERSION",
+    "RECOMMENDED_TOOLS",
+    "SERVER_NAME",
+    "STDIO_ARGS",
+    "STDIO_COMMAND",
+    "SUPPORTED_PROTOCOL_VERSIONS",
+]
