@@ -53,12 +53,20 @@ def create_app(config: AppConfig | None = None, context: AppContext | None = Non
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
     # Import here to avoid circular imports at module load.
-    from tailcam.web import routes_api, routes_fleet_v1, routes_node_v1, routes_proxy, routes_stream
+    from tailcam.web import (
+        routes_active,
+        routes_api,
+        routes_fleet_v1,
+        routes_node_v1,
+        routes_proxy,
+        routes_stream,
+    )
 
     app.include_router(routes_stream.router)
     app.include_router(routes_node_v1.router)
     app.include_router(routes_fleet_v1.router)
     app.include_router(routes_proxy.router)
+    app.include_router(routes_active.router)
     app.include_router(routes_api.router)
 
     # Streamable HTTP MCP endpoint. Always mounted (before the SPA catch-all so

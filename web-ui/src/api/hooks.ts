@@ -152,6 +152,97 @@ export function useDeleteModel() {
   return useMutation({ mutationFn: (id: number) => api.deleteModel(id), onSuccess: () => _invTraining(qc) });
 }
 
+// -- active learning --
+
+export function useActiveLearning() {
+  // Poll fast while the loop runs so the status panel counts up live.
+  return useQuery({
+    queryKey: ["active-learning"],
+    queryFn: api.getActiveLearning,
+    refetchInterval: (q) => (q.state.data?.running ? 2500 : 10_000),
+  });
+}
+
+export function useUpdateActiveLearning() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: import("../types").ActiveLearningSettings) =>
+      api.updateActiveLearning(body),
+    onSuccess: (data) => qc.setQueryData(["active-learning"], data),
+  });
+}
+
+export function useStartActiveLearning() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.startActiveLearning,
+    onSuccess: (data) => {
+      qc.setQueryData(["active-learning"], data);
+      qc.invalidateQueries({ queryKey: ["datasets"] });
+    },
+  });
+}
+
+export function useStopActiveLearning() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.stopActiveLearning,
+    onSuccess: (data) => qc.setQueryData(["active-learning"], data),
+  });
+}
+
+export function useLabelingBackends() {
+  return useQuery({
+    queryKey: ["al-backends"],
+    queryFn: api.getLabelingBackends,
+    refetchInterval: 30_000,
+  });
+}
+
+export function useFinetuneBackends() {
+  return useQuery({
+    queryKey: ["al-finetune-backends"],
+    queryFn: api.getFinetuneBackends,
+    refetchInterval: 60_000,
+  });
+}
+
+export function useTestLabelStudio() {
+  return useMutation({ mutationFn: api.testLabelStudio });
+}
+
+export function useLabelStudioProjects(enabled: boolean) {
+  return useQuery({
+    queryKey: ["ls-projects"],
+    queryFn: api.getLabelStudioProjects,
+    enabled,
+    retry: false,
+  });
+}
+
+export function useSyncActiveLearning() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.syncActiveLearning,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["active-learning"] });
+      qc.invalidateQueries({ queryKey: ["datasets"] });
+      qc.invalidateQueries({ queryKey: ["samples"] });
+    },
+  });
+}
+
+export function useStartActiveLearningTrain() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { epochs?: number }) => api.startActiveLearningTrain(body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["runs"] });
+      qc.invalidateQueries({ queryKey: ["active-learning"] });
+    },
+  });
+}
+
 export function useRuns() {
   // Poll fast only while a run is actually in flight; idle lists barely change.
   return useQuery({

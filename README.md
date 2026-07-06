@@ -279,6 +279,11 @@ thumbnail. To let one node analyze another's events, point the URL at that node
   **classification** model (one label per frame) or an **object-detection** model — draw bounding
   boxes (where *and* what) right in the dashboard, train a YOLO detector, and overlay live boxes on
   any camera. Use our base model, one you've trained, or bring your own `.pt`.
+- **Active learning (human-in-the-loop)** — a labeling model (built-in YOLO, your trained model,
+  Ollama, **Florence-2**, or **Qwen2.5-VL**) watches your cameras, auto-labels confident
+  detections, and sends only the *uncertain* frames to **Label Studio** for you to review; synced
+  annotations fine-tune YOLO, Florence-2, or Qwen2.5-VL (via Unsloth, CUDA). One click in
+  **AI Studio → Active Learning**; see the in-app **Docs → Active learning** page.
 - **Multi-host aggregation** — see every camera across all your tailnet devices from any one of them.
 - **Multi-camera** — auto-detects connected webcams; name them and view them in a grid.
 - **Resolution, zoom & pan** — set capture resolution; per-viewer digital zoom + pan;

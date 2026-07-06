@@ -18,6 +18,7 @@ from tailcam.persistence.models import (
     MediaRecord,
     ModelRecord,
     MotionEventRecord,
+    ReviewItemRecord,
     SampleAnnotationRecord,
     TimelapseAnalysisEventRecord,
     TimelapseRecord,
@@ -130,8 +131,27 @@ _SCHEMA = [
         name TEXT NOT NULL,
         task TEXT NOT NULL DEFAULT 'classification',
         created_ts REAL NOT NULL,
-        note TEXT NOT NULL DEFAULT ''
+        note TEXT NOT NULL DEFAULT '',
+        version INTEGER NOT NULL DEFAULT 1
     );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS al_review_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sample_id INTEGER NOT NULL,
+        dataset_id INTEGER NOT NULL,
+        ls_project_id INTEGER NOT NULL,
+        ls_task_id INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        labeling_model TEXT NOT NULL DEFAULT '',
+        confidence REAL,
+        created_ts REAL NOT NULL,
+        completed_ts REAL,
+        FOREIGN KEY(sample_id) REFERENCES dataset_samples(id) ON DELETE CASCADE
+    );
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_review_status ON al_review_items (status, created_ts DESC);
     """,
     """
     CREATE TABLE IF NOT EXISTS dataset_samples (
@@ -217,7 +237,7 @@ _SCHEMA = [
     CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_events (created_ts DESC);
     """,
 ]
-_CURRENT_VERSION = 9
+_CURRENT_VERSION = 10
 
 # Columns added after v1 — applied to existing DBs via ALTER TABLE on migrate().
 _EVENT_COLUMNS = {
@@ -247,6 +267,11 @@ _TIMELAPSE_COLUMNS = {
 # Object-detection column added after the v7 models table (older DBs).
 _MODEL_COLUMNS = {
     "task": "TEXT NOT NULL DEFAULT 'classification'",
+}
+
+# Active-learning dataset versioning added after the v9 datasets table.
+_DATASET_COLUMNS = {
+    "version": "INTEGER NOT NULL DEFAULT 1",
 }
 
 
@@ -287,6 +312,11 @@ class Store:
             for col, col_type in _MODEL_COLUMNS.items():
                 if col not in model_cols:
                     conn.execute(f"ALTER TABLE models ADD COLUMN {col} {col_type}")
+            # Dataset version column added to a pre-existing (v9) datasets table.
+            ds_cols = {r["name"] for r in conn.execute("PRAGMA table_info(datasets)")}
+            for col, col_type in _DATASET_COLUMNS.items():
+                if col not in ds_cols:
+                    conn.execute(f"ALTER TABLE datasets ADD COLUMN {col} {col_type}")
             row = conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
             if row is None:
                 conn.execute("INSERT INTO schema_version (version) VALUES (?)", (_CURRENT_VERSION,))
@@ -654,8 +684,21 @@ class Store:
 
     def delete_dataset(self, dataset_id: int) -> None:
         with self._conn() as conn:
+            conn.execute("DELETE FROM al_review_items WHERE dataset_id=?", (dataset_id,))
             conn.execute("DELETE FROM dataset_samples WHERE dataset_id=?", (dataset_id,))
             conn.execute("DELETE FROM datasets WHERE id=?", (dataset_id,))
+
+    def bump_dataset_version(self, dataset_id: int) -> int:
+        """Increment a dataset's version (after a sync lands new human labels).
+        Returns the new version, or 0 if the dataset doesn't exist."""
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE datasets SET version = version + 1 WHERE id=?", (dataset_id,)
+            )
+            row = conn.execute(
+                "SELECT version FROM datasets WHERE id=?", (dataset_id,)
+            ).fetchone()
+            return int(row["version"]) if row else 0
 
     # -- dataset samples ---------------------------------------------------
     def add_sample(self, record: DatasetSampleRecord) -> int:
@@ -703,6 +746,17 @@ class Store:
         with self._conn() as conn:
             conn.execute(
                 "UPDATE dataset_samples SET label=?, confidence=NULL WHERE id=?", (label, sample_id)
+            )
+
+    def set_sample_machine_label(
+        self, sample_id: int, label: str, confidence: float | None
+    ) -> None:
+        """A machine-produced label keeps its confidence (unlike a human
+        relabel, which clears it — see set_sample_label)."""
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE dataset_samples SET label=?, confidence=? WHERE id=?",
+                (label, confidence, sample_id),
             )
 
     def delete_sample(self, sample_id: int) -> None:
@@ -774,6 +828,58 @@ class Store:
             (dataset_id,),
         ).fetchall()
         return {str(r["label"]): int(r["n"]) for r in rows}
+
+    # -- active-learning review items ---------------------------------------
+    def add_review_item(self, record: ReviewItemRecord) -> int:
+        with self._conn() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO al_review_items
+                    (sample_id, dataset_id, ls_project_id, ls_task_id, status,
+                     labeling_model, confidence, created_ts, completed_ts)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.sample_id, record.dataset_id, record.ls_project_id,
+                    record.ls_task_id, record.status, record.labeling_model,
+                    record.confidence, record.created_ts, record.completed_ts,
+                ),
+            )
+            return int(cur.lastrowid or 0)
+
+    def list_review_items(
+        self, status: str | None = None, dataset_id: int | None = None, limit: int = 1000
+    ) -> list[ReviewItemRecord]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if status:
+            clauses.append("status=?")
+            params.append(status)
+        if dataset_id:
+            clauses.append("dataset_id=?")
+            params.append(dataset_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(limit)
+        rows = self._conn().execute(
+            f"SELECT * FROM al_review_items {where} ORDER BY created_ts DESC LIMIT ?", params
+        ).fetchall()
+        return [_review_item_from_row(r) for r in rows]
+
+    def update_review_item(self, item_id: int, **fields: Any) -> None:
+        """Patch arbitrary columns. Keys are code-controlled (never user input)."""
+        if not fields:
+            return
+        cols = ", ".join(f"{k}=?" for k in fields)
+        with self._conn() as conn:
+            conn.execute(
+                f"UPDATE al_review_items SET {cols} WHERE id=?", (*fields.values(), item_id)
+            )
+
+    def review_counts(self) -> dict[str, int]:
+        rows = self._conn().execute(
+            "SELECT status, COUNT(*) AS n FROM al_review_items GROUP BY status"
+        ).fetchall()
+        return {str(r["status"]): int(r["n"]) for r in rows}
 
     # -- models ------------------------------------------------------------
     def add_model(self, record: ModelRecord) -> int:
@@ -993,6 +1099,22 @@ def _dataset_from_row(row: sqlite3.Row) -> DatasetRecord:
         task=row["task"],
         created_ts=row["created_ts"],
         note=row["note"],
+        version=row["version"],
+    )
+
+
+def _review_item_from_row(row: sqlite3.Row) -> ReviewItemRecord:
+    return ReviewItemRecord(
+        id=row["id"],
+        sample_id=row["sample_id"],
+        dataset_id=row["dataset_id"],
+        ls_project_id=row["ls_project_id"],
+        ls_task_id=row["ls_task_id"],
+        status=row["status"],
+        labeling_model=row["labeling_model"],
+        confidence=row["confidence"],
+        created_ts=row["created_ts"],
+        completed_ts=row["completed_ts"],
     )
 
 

@@ -31,12 +31,24 @@ python -m pip install "tailcam[webrtc]"
 
 # Faster JPEG encoding (TurboJPEG)
 python -m pip install "tailcam[turbojpeg]"
+
+# Model training (Ultralytics/PyTorch)
+python -m pip install "tailcam[training]"
+
+# Active learning: Label Studio SDK + optional VLM watchers
+python -m pip install "tailcam[activelearning]"
+python -m pip install "tailcam[florence2]"   # Florence-2 labeling/fine-tune
+python -m pip install "tailcam[qwen-vl]"     # Qwen2.5-VL labeling
 ```
 
 - **AI analysis** needs a running [Ollama](ai-analysis) instance (separate
   install). TailCam talks to it over HTTP.
 - **Model training** needs the Ultralytics/PyTorch engine. TailCam auto-detects
   it; install it to enable the [Training](training) page.
+- **Active learning** additionally needs a running
+  [Label Studio](active-learning) server (`pip install label-studio`,
+  `label-studio start`) — see the [Active learning](active-learning) page for
+  Linux/macOS setup and Unsloth (CUDA-only) fine-tuning notes.
 - **Timelapse smoothing** uses `ffmpeg` (bundled or system) and optionally
   `rife-ncnn-vulkan` for GPU frame interpolation. See [Timelapse](timelapse).
 
