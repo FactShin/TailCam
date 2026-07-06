@@ -7,6 +7,7 @@ import time
 from typing import cast
 
 from tailcam import paths
+from tailcam.activelearning.service import ActiveLearningService
 from tailcam.ai.analyzer import OllamaAnalyzer
 from tailcam.ai.detector import BuiltinDetector
 from tailcam.ai.pull import ModelPuller
@@ -133,6 +134,12 @@ class AppContext:
         # Built-in plug-and-play object detection (boxes + labels, zero setup).
         # Provisions itself in the background on first use.
         self.detector = BuiltinDetector(config.detection)
+        # Human-in-the-loop active learning: watch frames, auto-label confident
+        # detections, send uncertain ones to Label Studio for review.
+        self.active_learning = ActiveLearningService(
+            self.manager, self.store, config, self.detector, self.analyzer,
+            self.training, self.local_host,
+        )
         # Motion analysis routes through the active trained/BYO model if set,
         # else Ollama, else the built-in detector's best box.
         self.inference = InferenceRouter(
@@ -198,6 +205,7 @@ class AppContext:
         self._motion_workers.clear()
         self.recorder.stop_all()
         self.timelapse.shutdown()
+        self.active_learning.shutdown()
         self.training.shutdown()
         self.manager.stop_all()
 

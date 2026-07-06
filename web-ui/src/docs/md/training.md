@@ -106,3 +106,10 @@ The **Models** screen lists base, trained, and bring-your-own models:
 Everything above is exposed over [MCP](mcp-tools), so an agent can create a
 dataset, import events, kick off a run, poll it, and activate the model — entirely
 from a chat. See [Connecting agents](mcp-connect) for a worked example.
+
+## Label less: active learning
+
+Instead of labeling everything by hand, let a model watch your cameras,
+auto-label what it's confident about, and send only the uncertain frames to
+Label Studio for review — then fine-tune from the result. See
+[Active learning](active-learning).

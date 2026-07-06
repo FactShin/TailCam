@@ -51,6 +51,21 @@ homekit = ["HAP-python[QRCode]>=4.9,<6"]
 # Home Assistant MQTT discovery (cameras themselves need no extra — they use
 # HA's built-in MJPEG IP Camera integration).
 mqtt = ["paho-mqtt~=2.1"]
+# On-device model training (AI Studio → Training). Ultralytics pulls in torch,
+# which is huge and platform/GPU-specific — that's why it's opt-in.
+training = ["ultralytics>=8.3"]
+# Human-in-the-loop active learning (AI Studio → Active Learning): the official
+# Label Studio Python SDK for the review workflow. The Label Studio *server* is
+# installed separately (pip install label-studio) or run anywhere reachable.
+activelearning = ["label-studio-sdk>=1.0"]
+# Florence-2 labeling/fine-tuning. timm + einops are required by the model's
+# remote code; runs on CUDA, Apple MPS, or CPU (slow).
+florence2 = ["torch>=2.2", "transformers>=4.44", "timm>=1.0", "einops>=0.8", "pillow>=10"]
+# Qwen2.5-VL inference. qwen-vl-utils handles its image preprocessing. For
+# fine-tuning additionally `pip install unsloth` on a Linux CUDA machine —
+# unsloth pins CUDA-specific wheels, so it is deliberately not an extra here.
+qwen-vl = ["torch>=2.2", "transformers>=4.49", "qwen-vl-utils>=0.0.8",
+           "accelerate>=1.0", "pillow>=10"]
 dev = [
     "pytest~=8.3",
     "pytest-asyncio~=0.24",

@@ -5,18 +5,20 @@ import { useAi, useAiTest, useCameras, useDetectionInfo, useOllamaModels, useUpd
 import { useToast } from "../components/toast";
 import { Button, ControlSlider, Segmented, Spinner, Toggle } from "../components/ui";
 import { IconBrain, IconCheck, IconChip, IconMotion, IconSparkle } from "../icons";
+import { AiActiveLearningTab } from "./AiActiveLearningTab";
 import { AiModelsTab } from "./AiModelsTab";
 import { AiTrainingTab } from "./AiTrainingTab";
 
 export const AI_LABELS = ["person", "animal", "vehicle", "package", "plant", "nothing"];
 
-type Tab = "overview" | "models" | "training";
+type Tab = "overview" | "models" | "training" | "active";
 
 /** One place for everything AI: status + testing (Overview), Ollama & local
- * model management (Models), and dataset/training workflow (Training). */
+ * model management (Models), dataset/training workflow (Training), and the
+ * human-in-the-loop pipeline (Active Learning). */
 export function AiStudio() {
   const [params, setParams] = useSearchParams();
-  const tab = (["overview", "models", "training"].includes(params.get("tab") ?? "")
+  const tab = (["overview", "models", "training", "active"].includes(params.get("tab") ?? "")
     ? params.get("tab")
     : "overview") as Tab;
   const setTab = (t: Tab) =>
@@ -64,6 +66,7 @@ export function AiStudio() {
             { value: "overview", label: "Overview" },
             { value: "models", label: "Models" },
             { value: "training", label: "Training" },
+            { value: "active", label: "Active Learning" },
           ]}
         />
       </div>
@@ -71,6 +74,7 @@ export function AiStudio() {
       {tab === "overview" && <OverviewTab onGoto={setTab} />}
       {tab === "models" && <AiModelsTab />}
       {tab === "training" && <AiTrainingTab />}
+      {tab === "active" && <AiActiveLearningTab />}
     </div>
   );
 }
