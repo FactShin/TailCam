@@ -103,6 +103,9 @@ class DatasetRecord:
     task: str  # "classification" | "detection"
     created_ts: float
     note: str = ""
+    # Bumped every time an active-learning sync lands new human annotations, so
+    # a trained model can be traced back to the dataset state it saw.
+    version: int = 1
 
 
 @dataclass
@@ -133,6 +136,27 @@ class SampleAnnotationRecord:
     w: float
     h: float
     created_ts: float
+
+
+@dataclass
+class ReviewItemRecord:
+    """One frame sent to Label Studio for human review (active learning).
+
+    Ties a dataset sample to its Label Studio task so completed annotations can
+    be pulled back and written onto the right sample, and records the labeling
+    provenance the pipeline needs (which model pre-labeled, how confident)."""
+
+    id: int | None
+    sample_id: int
+    dataset_id: int
+    ls_project_id: int
+    ls_task_id: int
+    # pending | completed | error
+    status: str
+    labeling_model: str  # backend id that pre-labeled the frame
+    confidence: float | None  # lowest prediction confidence that triggered review
+    created_ts: float
+    completed_ts: float | None = None
 
 
 @dataclass

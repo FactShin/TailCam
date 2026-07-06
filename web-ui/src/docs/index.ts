@@ -11,6 +11,7 @@ import recording from "./md/recording-media.md?raw";
 import timelapse from "./md/timelapse.md?raw";
 import ai from "./md/ai-analysis.md?raw";
 import training from "./md/training.md?raw";
+import activeLearning from "./md/active-learning.md?raw";
 import homeAutomation from "./md/home-automation.md?raw";
 import notifications from "./md/notifications.md?raw";
 import plugins from "./md/plugins.md?raw";
@@ -58,6 +59,8 @@ export const DOCS: DocPage[] = [
     summary: "Label motion events locally with Ollama." },
   { slug: "training", title: "Training & models", group: "Intelligence", body: training,
     summary: "Datasets, training runs, and model lifecycle." },
+  { slug: "active-learning", title: "Active learning", group: "Intelligence", body: activeLearning,
+    summary: "Human-in-the-loop labeling with Label Studio, Florence-2, Qwen2.5-VL." },
   { slug: "notifications", title: "Notifications", group: "Intelligence", body: notifications,
     summary: "Discord / Telegram / webhook alerts for motion, offline, and training." },
 

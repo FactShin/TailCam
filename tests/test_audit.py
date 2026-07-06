@@ -75,5 +75,6 @@ def test_audit_schema_advances_store_version(store) -> None:
         )
     }
 
-    assert row["version"] == 9
+    assert row["version"] == 10
     assert "audit_events" in tables
+    assert "al_review_items" in tables

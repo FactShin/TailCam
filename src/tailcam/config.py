@@ -193,6 +193,43 @@ class TrainingConfig:
 
 
 @dataclass
+class ActiveLearningConfig:
+    # Human-in-the-loop active learning: a labeling model watches frames, keeps
+    # the confident detections as machine labels, and sends only the uncertain
+    # ones to Label Studio for human review. Reviewed annotations sync back into
+    # the training dataset, closing the loop (AI Studio → Active Learning).
+    #
+    # Label Studio connection. The server is external — start it with
+    # ``label-studio start`` (Linux/macOS) and paste the API token from
+    # Account & Settings. The token lives in config.toml next to the other
+    # integration secrets; it is never logged.
+    label_studio_url: str = "http://localhost:8080"
+    label_studio_token: str = ""
+    project_id: int = 0  # 0 = create/find by project_name
+    project_name: str = "TailCam Active Learning"
+    # Which model watches + pre-labels frames. "builtin" (plug-and-play YOLO),
+    # "ollama", "florence2", "qwen2.5-vl", or "model:<id>" for a trained/BYO
+    # detection model from the registry.
+    labeling_model: str = "builtin"
+    # Which model the accumulated dataset fine-tunes. "yolo" uses the existing
+    # Ultralytics pipeline; "florence2" / "qwen2.5-vl" use their own trainers.
+    finetune_model: str = "yolo"
+    # Frame source: "cameras" samples every online camera; "camera:<id>" one
+    # camera; "dataset:<id>" runs the loop over an existing dataset's images.
+    source: str = "cameras"
+    interval_seconds: float = 10.0
+    # Detections at/above this confidence are auto-labeled; frames with any
+    # detection below it go to Label Studio for human review.
+    confidence_threshold: float = 0.60
+    # Frames where the model sees nothing: skip (default) or send for review.
+    review_empty_frames: bool = False
+    # Target dataset for auto-labels + synced human annotations (0 = auto-create).
+    dataset_id: int = 0
+    # Safety cap on Label Studio submissions per session (0 = unlimited).
+    max_review_per_session: int = 200
+
+
+@dataclass
 class PluginsConfig:
     # Plugin system. Plugins extend TailCam with AI analyzer providers,
     # notification channels, and motion-event hooks, discovered via Python entry
@@ -328,6 +365,7 @@ class AppConfig:
     ai: AIConfig = field(default_factory=AIConfig)
     timelapse: TimelapseConfig = field(default_factory=TimelapseConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
+    active_learning: ActiveLearningConfig = field(default_factory=ActiveLearningConfig)
     plugins: PluginsConfig = field(default_factory=PluginsConfig)
     notifications: NotificationsConfig = field(default_factory=NotificationsConfig)
     homekit: HomeKitConfig = field(default_factory=HomeKitConfig)
@@ -379,6 +417,7 @@ class AppConfig:
             ai=_section(AIConfig, raw, "ai"),
             timelapse=_section(TimelapseConfig, raw, "timelapse"),
             training=_section(TrainingConfig, raw, "training"),
+            active_learning=_section(ActiveLearningConfig, raw, "active_learning"),
             plugins=_section(PluginsConfig, raw, "plugins"),
             notifications=_section(NotificationsConfig, raw, "notifications"),
             homekit=_section(HomeKitConfig, raw, "homekit"),
@@ -412,6 +451,7 @@ class AppConfig:
             "ai": asdict(self.ai),
             "timelapse": asdict(self.timelapse),
             "training": asdict(self.training),
+            "active_learning": asdict(self.active_learning),
             "plugins": asdict(self.plugins),
             "notifications": asdict(self.notifications),
             "homekit": asdict(self.homekit),

@@ -580,6 +580,101 @@ class TrainingInfo(BaseModel):
     collected_session: int = 0
 
 
+class LabelingBackendInfo(BaseModel):
+    id: str
+    name: str
+    kind: str  # detector | vlm | classifier
+    available: bool
+    detail: str = ""
+    boxes: bool = True
+
+
+class FinetuneBackendInfo(BaseModel):
+    id: str
+    name: str
+    available: bool
+    detail: str = ""
+
+
+class LabelStudioStatusInfo(BaseModel):
+    sdk_installed: bool
+    configured: bool
+    connected: bool
+    url: str
+    project_id: int = 0
+    project_name: str = ""
+    error: str = ""
+
+
+class LabelStudioProjectInfo(BaseModel):
+    id: int
+    title: str
+    task_count: int = 0
+
+
+class ActiveLearningSettings(BaseModel):
+    """PATCH-style update; every field optional. The token is write-only —
+    ActiveLearningInfo only reports whether one is set."""
+
+    label_studio_url: str | None = None
+    label_studio_token: str | None = None
+    project_id: int | None = None
+    project_name: str | None = None
+    labeling_model: str | None = None
+    finetune_model: str | None = None
+    source: str | None = None
+    interval_seconds: float | None = None
+    confidence_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    review_empty_frames: bool | None = None
+    dataset_id: int | None = None
+    max_review_per_session: int | None = None
+
+
+class ActiveLearningInfo(BaseModel):
+    """Everything the Active Learning tab renders in one call."""
+
+    running: bool
+    started_ts: float | None = None
+    frames_processed: int = 0
+    auto_labeled: int = 0
+    sent_for_review: int = 0
+    skipped: int = 0
+    errors: int = 0
+    last_error: str = ""
+    # review queue across sessions (persisted)
+    review_pending: int = 0
+    review_completed: int = 0
+    # settings (token itself never leaves the server)
+    label_studio_url: str = ""
+    token_set: bool = False
+    project_id: int = 0
+    project_name: str = ""
+    labeling_model: str = ""
+    finetune_model: str = ""
+    source: str = ""
+    interval_seconds: float = 10.0
+    confidence_threshold: float = 0.6
+    review_empty_frames: bool = False
+    dataset_id: int = 0
+    max_review_per_session: int = 200
+    # environment
+    platform: dict = {}
+    # training readiness
+    annotated_samples: int = 0
+    dataset_version: int = 1
+    training_ready: bool = False
+
+
+class ActiveLearningTrainRequest(BaseModel):
+    epochs: int | None = Field(default=None, ge=1, le=300)
+
+
+class ActiveLearningSyncResult(BaseModel):
+    completed: int
+    pending: int
+    dataset_version: int = 0
+
+
 class McpInfo(BaseModel):
     """Everything the MCP page needs to show plug-and-play setup."""
 

@@ -241,6 +241,45 @@ export const deactivateModel = () =>
 export const deleteModel = (id: number) =>
   jsonFetch<{ ok: boolean }>(`/api/models/${id}`, { method: "DELETE" });
 
+// ---- active learning ----
+
+export const getActiveLearning = () =>
+  jsonFetch<import("../types").ActiveLearningInfo>("/api/active-learning");
+export const updateActiveLearning = (body: import("../types").ActiveLearningSettings) =>
+  jsonFetch<import("../types").ActiveLearningInfo>("/api/active-learning/settings", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+export const startActiveLearning = () =>
+  jsonFetch<import("../types").ActiveLearningInfo>("/api/active-learning/start", {
+    method: "POST",
+  });
+export const stopActiveLearning = () =>
+  jsonFetch<import("../types").ActiveLearningInfo>("/api/active-learning/stop", {
+    method: "POST",
+  });
+export const getLabelingBackends = () =>
+  jsonFetch<import("../types").LabelingBackendInfo[]>("/api/active-learning/backends");
+export const getFinetuneBackends = () =>
+  jsonFetch<import("../types").FinetuneBackendInfo[]>("/api/active-learning/finetune-backends");
+export const testLabelStudio = () =>
+  jsonFetch<import("../types").LabelStudioStatusInfo>("/api/active-learning/labelstudio/test", {
+    method: "POST",
+  });
+export const getLabelStudioProjects = () =>
+  jsonFetch<import("../types").LabelStudioProjectInfo[]>(
+    "/api/active-learning/labelstudio/projects",
+  );
+export const syncActiveLearning = () =>
+  jsonFetch<import("../types").ActiveLearningSyncResult>("/api/active-learning/sync", {
+    method: "POST",
+  });
+export const startActiveLearningTrain = (body: { epochs?: number }) =>
+  jsonFetch<import("../types").TrainingRunInfo>("/api/active-learning/train", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
 export const getRuns = () => jsonFetch<import("../types").TrainingRunInfo[]>("/api/training/runs");
 export const startRun = (body: {
   dataset_id: number;

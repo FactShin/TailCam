@@ -393,6 +393,90 @@ export interface TrainingRunInfo {
   ended_ts: number | null;
 }
 
+// -- active learning --
+
+export interface ActiveLearningInfo {
+  running: boolean;
+  started_ts: number | null;
+  frames_processed: number;
+  auto_labeled: number;
+  sent_for_review: number;
+  skipped: number;
+  errors: number;
+  last_error: string;
+  review_pending: number;
+  review_completed: number;
+  label_studio_url: string;
+  token_set: boolean;
+  project_id: number;
+  project_name: string;
+  labeling_model: string;
+  finetune_model: string;
+  source: string;
+  interval_seconds: number;
+  confidence_threshold: number;
+  review_empty_frames: boolean;
+  dataset_id: number;
+  max_review_per_session: number;
+  platform: { os: string; device: string; cuda: boolean; mps: boolean };
+  annotated_samples: number;
+  dataset_version: number;
+  training_ready: boolean;
+}
+
+export interface ActiveLearningSettings {
+  label_studio_url?: string;
+  label_studio_token?: string;
+  project_id?: number;
+  project_name?: string;
+  labeling_model?: string;
+  finetune_model?: string;
+  source?: string;
+  interval_seconds?: number;
+  confidence_threshold?: number;
+  review_empty_frames?: boolean;
+  dataset_id?: number;
+  max_review_per_session?: number;
+}
+
+export interface LabelingBackendInfo {
+  id: string;
+  name: string;
+  kind: "detector" | "vlm" | "classifier";
+  available: boolean;
+  detail: string;
+  boxes: boolean;
+}
+
+export interface FinetuneBackendInfo {
+  id: string;
+  name: string;
+  available: boolean;
+  detail: string;
+}
+
+export interface LabelStudioStatusInfo {
+  sdk_installed: boolean;
+  configured: boolean;
+  connected: boolean;
+  url: string;
+  project_id: number;
+  project_name: string;
+  error: string;
+}
+
+export interface LabelStudioProjectInfo {
+  id: number;
+  title: string;
+  task_count: number;
+}
+
+export interface ActiveLearningSyncResult {
+  completed: number;
+  pending: number;
+  dataset_version: number;
+}
+
 export type TimelapseState = "capturing" | "encoding" | "complete" | "interrupted" | "error";
 
 export interface TimelapseInfo {
