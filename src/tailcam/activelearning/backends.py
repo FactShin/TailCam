@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 import sys
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 import numpy as np
 
@@ -101,7 +101,8 @@ class RegistryModelBackend:
         self._store = store
         self.model_id = model_id
         self._min_conf = min_conf
-        self._detector = None
+        # Lazily-built LocalDetector (imported on first use; torch is optional).
+        self._detector: Any = None
 
     def info(self) -> BackendInfo:
         record = self._store.get_model(self.model_id)

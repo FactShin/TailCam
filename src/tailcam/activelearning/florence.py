@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -45,8 +46,9 @@ class Florence2Backend:
     def __init__(self, model_name: str = DEFAULT_MODEL, model_path: str = "") -> None:
         # model_path: a fine-tuned checkpoint directory; falls back to the hub name.
         self.model_name = model_path or model_name
-        self._model = None
-        self._processor = None
+        # Lazily-loaded transformers handles (heavy optional deps).
+        self._model: Any = None
+        self._processor: Any = None
         self._device = "cpu"
         self._load_error = ""
 
