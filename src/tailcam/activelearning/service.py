@@ -16,6 +16,7 @@ Routing rule (the "active" in active learning):
 
 from __future__ import annotations
 
+import copy
 import json
 import threading
 import time
@@ -189,10 +190,9 @@ class ActiveLearningService:
 
     def stats(self) -> SessionStats:
         with self._lock:
-            stats = SessionStats(**{
-                k: (set(v) if isinstance(v, set) else v)
-                for k, v in vars(self._stats).items()
-            })
+            # Deep-copy so callers get a stable snapshot (the sets keep mutating
+            # on the worker thread after the lock is released).
+            stats = copy.deepcopy(self._stats)
         stats.running = self.is_running()
         return stats
 
