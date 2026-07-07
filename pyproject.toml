@@ -23,7 +23,16 @@ classifiers = [
 ]
 dependencies = [
     "fastapi~=0.115",
-    "uvicorn[standard]~=0.34",
+    # Native Windows-ARM64 Python (platform_machine == 'ARM64' is the Windows
+    # spelling; Linux ARM reports aarch64 and is unaffected): skip the
+    # [standard] extras — httptools has never shipped a win_arm64 wheel and
+    # has no pure-Python fallback. Plain uvicorn (h11) + pure websockets keep
+    # the server fully functional there. NOTE: the supported install path on
+    # ARM64 PCs is x64 Python under Windows 11 emulation (see install.ps1) —
+    # these markers are defense in depth for hand-built native envs.
+    "uvicorn[standard]~=0.34; platform_machine != 'ARM64'",
+    "uvicorn~=0.34; platform_machine == 'ARM64'",
+    "websockets>=13; platform_machine == 'ARM64'",
     "opencv-python-headless~=4.10",
     "numpy~=2.1",
     "jinja2~=3.1",
@@ -35,8 +44,10 @@ dependencies = [
     "tomli~=2.0; python_version < '3.11'",
     "httpx~=0.28",
     # Static ffmpeg for timelapse post-processing (smoothing/interpolation), so
-    # it works out of the box; a system ffmpeg is preferred when present.
-    "imageio-ffmpeg~=0.5",
+    # it works out of the box; a system ffmpeg is preferred when present. No
+    # win_arm64 wheel exists; the code degrades gracefully without it, so skip
+    # it on native Windows-ARM64 Python rather than failing the whole install.
+    "imageio-ffmpeg~=0.5; platform_machine != 'ARM64'",
     # Windows only: friendly DirectShow camera names (import is guarded, so
     # TailCam still works if it's unavailable).
     "pygrabber~=0.2; sys_platform == 'win32'",

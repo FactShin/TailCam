@@ -42,6 +42,14 @@ Each installer:
 After install, open the URL printed at the end (your tailnet HTTPS address, or
 `http://localhost:8088/` locally).
 
+**Windows on ARM** (Surface Laptop 7 / Snapdragon X, and other ARM64 PCs): the
+installer automatically uses **x64 Python**, which Windows 11 runs
+transparently under emulation — TailCam's camera stack (OpenCV) publishes no
+native ARM64 wheels yet, so native ARM64 Python cannot install it. Windows 11
+is required on ARM (Windows 10 on ARM can't emulate x64). Every install writes
+a full log to `%LOCALAPPDATA%\TailCam\install-<timestamp>.log`; if something
+fails, the window now stays open and points you at that file.
+
 ### Installer options
 
 ```bash
