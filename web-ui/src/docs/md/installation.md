@@ -1,6 +1,8 @@
 # Installation
 
-TailCam runs on Linux, macOS, and Windows. It needs Python 3.10+ and a webcam
+TailCam runs on Linux, macOS, and Windows — including **Windows on ARM**
+(Surface / Snapdragon X), where the installer uses x64 Python under Windows 11
+emulation because OpenCV has no native ARM64 wheels yet. It needs Python 3.10+ and a webcam
 (or the built-in synthetic camera for testing).
 
 > Prefer containers? TailCam has a dedicated Docker image that bundles Tailscale
