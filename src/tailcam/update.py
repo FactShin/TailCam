@@ -26,7 +26,12 @@ _cache: tuple[float, str | None] | None = None
 # Self-update fetches the version/zip from the GitHub repo on `main`.
 RAW_VERSION_URL = "https://raw.githubusercontent.com/factshin/tailcam/main/src/tailcam/__init__.py"
 ZIP_URL = "https://github.com/factshin/tailcam/archive/refs/heads/main.zip"
-PS_INSTALL_CMD = "irm https://raw.githubusercontent.com/factshin/tailcam/main/install.ps1 | iex"
+# TAILCAM_INSTALL_NONINTERACTIVE stops the installer's pause-on-error prompt —
+# this runs detached with no console, so a Read-Host would hang forever.
+PS_INSTALL_CMD = (
+    "$env:TAILCAM_INSTALL_NONINTERACTIVE='1'; "
+    "irm https://raw.githubusercontent.com/factshin/tailcam/main/install.ps1 | iex"
+)
 
 
 def parse_version(v: str) -> tuple[int, ...]:

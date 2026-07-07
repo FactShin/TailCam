@@ -121,3 +121,31 @@ If the camera still shows offline:
    desktop app and is blocked when this is off.
 3. `tailcam restart` and watch the camera page; the status line under the
    camera shows the exact error TailCam sees.
+
+## Windows on ARM (Surface / Snapdragon X): install fails
+
+TailCam's camera stack (OpenCV) publishes **no native ARM64 Windows wheels**,
+so `pip install` fails on native ARM64 Python. The installer handles this
+automatically: on an ARM64 PC it selects (or installs) **x64 Python**, which
+Windows 11 runs transparently under emulation — all dependencies install and
+run normally.
+
+If your install failed:
+
+1. Make sure you're on **Windows 11** — Windows 10 on ARM cannot emulate x64.
+2. Re-run the installer (`irm .../install.ps1 | iex`). It skips any native
+   ARM64 Python it finds and uses/installs an x64 build instead.
+3. Every run writes a full transcript to
+   `%LOCALAPPDATA%\TailCam\install-<timestamp>.log` — if it still fails, the
+   real error (usually pip's) is in there.
+
+If you installed Python yourself, grab the **Windows installer (64-bit)** from
+python.org — not the ARM64 one — until OpenCV ships ARM64 wheels.
+
+## Install window closed before I could read the error
+
+Fixed in 1.1.2: the installer used to `exit` on failure, which closed the
+PowerShell window instantly when run via `irm | iex`. It now keeps the window
+open (press Enter to close) and always writes the full transcript to
+`%LOCALAPPDATA%\TailCam\install-<timestamp>.log`, so the error is never lost
+— even for background self-updates.

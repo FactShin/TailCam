@@ -111,6 +111,21 @@ def run(
     finally:
         probe.close()
 
+    # Preflight OpenCV before importing the app: several modules import cv2 at
+    # module level, so a broken/missing build (e.g. a hand-built native ARM64
+    # Windows env — no cv2 wheels exist there) would otherwise die in a raw
+    # ImportError traceback instead of an actionable message.
+    try:
+        import cv2  # noqa: F401
+    except Exception as exc:
+        typer.echo(f"OpenCV (cv2) failed to load: {exc}")
+        typer.echo(
+            "TailCam's camera stack needs OpenCV. Re-run the installer; on an "
+            "ARM64 Windows PC (Surface/Snapdragon X) it must use x64 Python — "
+            "OpenCV publishes no native ARM64 wheels yet."
+        )
+        raise typer.Exit(code=1) from None
+
     from tailcam.web.app import create_app
 
     application = create_app(config)
