@@ -91,6 +91,9 @@ function HomeKitCard({ hk }: { hk: HomeKitStatus }) {
               <span className="ais-badge warn">ffmpeg missing — snapshots only</span>
             )}
           </div>
+          {!hk.running && hk.error && (
+            <div className="ais-pipe-err">Couldn't start the bridge: {hk.error}</div>
+          )}
 
           {!hk.paired && (
             <div className="hk-pair">

@@ -742,6 +742,23 @@ class Store:
         ).fetchall()
         return [_sample_from_row(r) for r in rows]
 
+    def list_unprocessed_samples(
+        self, dataset_id: int, limit: int
+    ) -> list[DatasetSampleRecord]:
+        """Samples in a dataset that have no annotations and aren't already
+        under review — the active-learning candidate set. Filtered in SQL so a
+        big dataset doesn't load its entire samples table each tick just to
+        keep a handful of rows."""
+        rows = self._conn().execute(
+            "SELECT s.* FROM dataset_samples s "
+            "WHERE s.dataset_id=? "
+            "AND NOT EXISTS (SELECT 1 FROM sample_annotations a WHERE a.sample_id=s.id) "
+            "AND NOT EXISTS (SELECT 1 FROM al_review_items r WHERE r.sample_id=s.id) "
+            "ORDER BY s.created_ts DESC LIMIT ?",
+            (dataset_id, limit),
+        ).fetchall()
+        return [_sample_from_row(r) for r in rows]
+
     def set_sample_label(self, sample_id: int, label: str | None) -> None:
         with self._conn() as conn:
             conn.execute(

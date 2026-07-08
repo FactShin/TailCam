@@ -85,6 +85,11 @@ class OllamaAnalyzer:
     def enabled(self) -> bool:
         return self.config.enabled
 
+    def close(self) -> None:
+        """Release the keep-alive connection pool (called on context shutdown /
+        when the analyzer is swapped out, so sockets don't leak)."""
+        self._client.close()
+
     def _encode(self, image: np.ndarray) -> str:
         # Downscale large frames — the model doesn't need full res and it keeps
         # the request small/fast.

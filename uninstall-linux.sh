@@ -4,9 +4,13 @@ set -eu
 
 VENV_DIR="${HOME}/.local/share/tailcam/venv"
 LEGACY_VENV_DIR="${HOME}/.local/share/anycam/venv"
-DATA_DIRS=""
-for d in "${TAILCAM_DATA_DIR:-}" "${ANYCAM_DATA_DIR:-}" "${HOME}/.local/share/tailcam" "${HOME}/.local/share/anycam"; do
-    [ -n "$d" ] && [ -d "$d" ] && DATA_DIRS="${DATA_DIRS} $d"
+# A bash array, not a space-joined string: a data dir containing a space
+# (e.g. TAILCAM_DATA_DIR="/mnt/My Cams") would otherwise word-split and
+# rm -rf the wrong directory.
+DATA_DIRS=()
+for d in "${TAILCAM_DATA_DIR:-}" "${ANYCAM_DATA_DIR:-}" \
+         "${HOME}/.local/share/tailcam" "${HOME}/.local/share/anycam"; do
+    [ -n "$d" ] && [ -d "$d" ] && DATA_DIRS+=("$d")
 done
 BIN=""
 [ -x "${VENV_DIR}/bin/tailcam" ] && BIN="${VENV_DIR}/bin/tailcam"
@@ -32,7 +36,7 @@ for v in "$VENV_DIR" "$LEGACY_VENV_DIR"; do
     [ -d "$v" ] && { rm -rf "$v"; log "Removed virtualenv $v"; }
 done
 
-for d in $DATA_DIRS; do
+for d in ${DATA_DIRS[@]+"${DATA_DIRS[@]}"}; do
     [ -d "$d" ] || continue
     printf 'Delete stored media and database at %s? [y/N] ' "$d"
     read -r reply

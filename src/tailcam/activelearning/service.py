@@ -275,17 +275,15 @@ class ActiveLearningService:
         Returns True when there was nothing left to do (idle)."""
         stats = self._stats
         ds_id = stats.dataset_id
-        annotated = self._store.annotation_counts(ds_id)
-        pending_paths = {
-            item.sample_id for item in self._store.list_review_items(dataset_id=ds_id)
-        }
-        todo = [
-            s for s in self._store.list_samples(ds_id, limit=1_000_000)
-            if s.id is not None
-            and s.id not in stats.seen_sample_ids
-            and s.id not in annotated  # already has boxes
-            and s.id not in pending_paths  # already under review
-        ]
+        # SQL excludes annotated + under-review rows; we additionally skip the
+        # ones already inferenced *this session* (seen_sample_ids — in-memory,
+        # e.g. frames where the model saw nothing). Fetch a window large enough
+        # to still yield `batch` fresh rows after that filter, instead of
+        # loading the whole samples table.
+        with self._lock:
+            seen = set(stats.seen_sample_ids)
+        window = self._store.list_unprocessed_samples(ds_id, limit=batch + len(seen))
+        todo = [s for s in window if s.id is not None and s.id not in seen]
         for sample in todo[:batch]:
             if self._stop.is_set():
                 return False

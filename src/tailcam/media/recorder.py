@@ -5,11 +5,13 @@ from __future__ import annotations
 import threading
 import time
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 
 import cv2
 
 from tailcam import paths
+from tailcam.camera.frame import FrameConsumer
 from tailcam.camera.manager import CameraManager
 from tailcam.logging_setup import get_logger
 from tailcam.media.snapshot import _write_thumbnail
@@ -20,15 +22,18 @@ log = get_logger(__name__)
 
 
 class _RecordingSession:
-    def __init__(self, camera_id: str, buffer, fps: int, trigger: str) -> None:
+    def __init__(self, camera_id: str, buffer, fps: int, trigger: str, reacquire=None) -> None:
         self.camera_id = camera_id
         self.buffer = buffer
+        self._reacquire = reacquire  # follow the camera across a Restart
         self.fps = max(1, fps)
         self.trigger = trigger
         self.start_ts = time.time()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._writer: cv2.VideoWriter | None = None
+        self._writer_size: tuple[int, int] | None = None  # (w, h) locked at open
+        self._resize_warned = False
         self.path: Path | None = None
         self._first_image = None
         self.frames_written = 0
@@ -41,27 +46,45 @@ class _RecordingSession:
         self._thread.join(timeout=10.0)
 
     def _run(self) -> None:
-        last_seq = -1
         interval = 1.0 / self.fps
         next_due = time.monotonic()
-        while not self._stop.is_set():
-            frame = self.buffer.await_latest(last_seq, timeout=1.0)
-            if frame is None:
-                continue
-            last_seq = frame.seq
-            now = time.monotonic()
-            if now < next_due:
-                continue
-            next_due = now + interval
-            if self._writer is None:
-                self._open_writer(frame.image)
+        consumer = FrameConsumer(self.buffer, self._reacquire)
+        try:
+            while not self._stop.is_set():
+                frame = consumer.next_frame(timeout=1.0)
+                if frame is None:
+                    if consumer.ended:  # camera removed — end the recording
+                        break
+                    continue
+                now = time.monotonic()
+                if now < next_due:
+                    continue
+                next_due = now + interval
+                if self._writer is None:
+                    self._open_writer(frame.image)
+                if self._writer is not None:
+                    self._writer.write(self._fit(frame.image))
+                    self.frames_written += 1
+                    if self._first_image is None:
+                        self._first_image = frame.image.copy()
+        finally:
             if self._writer is not None:
-                self._writer.write(frame.image)
-                self.frames_written += 1
-                if self._first_image is None:
-                    self._first_image = frame.image.copy()
-        if self._writer is not None:
-            self._writer.release()
+                self._writer.release()
+
+    def _fit(self, image):
+        """A VideoWriter is fixed to its first frame's size; a mid-recording
+        resolution change (rotation, reconnect at new res) would otherwise
+        silently drop every mismatched frame. Resize back to keep it continuous."""
+        h, w = image.shape[:2]
+        if self._writer_size is not None and (w, h) != self._writer_size:
+            if not self._resize_warned:
+                log.warning(
+                    "recording %s: frame %sx%s != writer %s; resizing to keep the clip continuous",
+                    self.camera_id, w, h, self._writer_size,
+                )
+                self._resize_warned = True
+            return cv2.resize(image, self._writer_size)
+        return image
 
     def _open_writer(self, image) -> None:
         h, w = image.shape[:2]
@@ -74,6 +97,8 @@ class _RecordingSession:
         if not self._writer.isOpened():
             log.error("Failed to open VideoWriter for %s", self.path)
             self._writer = None
+            return
+        self._writer_size = (w, h)
 
 
 class RecordingService:
@@ -94,7 +119,10 @@ class RecordingService:
             buffer = self._manager.get_buffer(camera_id)
             if buffer is None:
                 return False
-            session = _RecordingSession(camera_id, buffer, fps, trigger)
+            session = _RecordingSession(
+                camera_id, buffer, fps, trigger,
+                reacquire=partial(self._manager.get_buffer, camera_id),
+            )
             session.start()
             self._sessions[camera_id] = session
             return True

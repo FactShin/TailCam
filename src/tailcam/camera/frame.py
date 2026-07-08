@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
@@ -76,3 +77,45 @@ class FrameBuffer:
     @property
     def closed(self) -> bool:
         return self._closed
+
+
+class FrameConsumer:
+    """A camera-following read side of a FrameBuffer.
+
+    A camera Restart/rescan replaces the worker's buffer with a fresh one and
+    closes the old, so a consumer holding the old buffer would (a) busy-spin —
+    ``await_latest`` returns None instantly once closed — and (b) silently
+    never see the new camera. FrameConsumer re-acquires the live buffer from a
+    callable (typically ``lambda: manager.get_buffer(camera_id)``) when its
+    current one closes, so motion/recording/timelapse follow the camera across
+    restarts. When re-acquire yields nothing (camera removed), it reports
+    ``ended`` so the loop can exit instead of spinning.
+    """
+
+    def __init__(
+        self, buffer: FrameBuffer, reacquire: Callable[[], FrameBuffer | None] | None = None
+    ) -> None:
+        self.buffer = buffer
+        self._reacquire = reacquire
+        self._last_seq = -1
+        self.ended = False
+
+    def next_frame(self, timeout: float = 1.0) -> Frame | None:
+        """The next frame newer than the last one returned, or None on timeout.
+
+        On timeout, if the buffer has closed, try to follow the camera to its
+        new buffer; if that fails (removed), set ``ended``. Callers should
+        ``break`` when ``ended`` and ``continue`` on a plain None.
+        """
+        frame = self.buffer.await_latest(self._last_seq, timeout)
+        if frame is not None:
+            self._last_seq = frame.seq
+            return frame
+        if self.buffer.closed:
+            new = self._reacquire() if self._reacquire is not None else None
+            if new is not None and not new.closed:
+                self.buffer = new
+                self._last_seq = -1  # fresh buffer restarts sequence at 0
+            else:
+                self.ended = True
+        return None
