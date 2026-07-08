@@ -180,6 +180,20 @@ def test_dns_rebinding_host_blocked(client):
     assert ts_ok.status_code in (200, 503)
 
 
+def test_foreign_ip_origin_blocked(client):
+    # A drive-by page served from a bare public IP: the Host is our own
+    # loopback, but the Origin is a *different* IP. An IP Origin is trusted
+    # only when it equals the request Host, so this cross-origin POST is
+    # blocked (plain CSRF, not rebinding).
+    cam_id = client.get("/api/cameras").json()[0]["id"]
+    snap = f"/api/cameras/{cam_id}/snapshot"
+    bad = client.post(snap, headers={"host": "127.0.0.1:8088", "origin": "http://203.0.113.9"})
+    assert bad.status_code == 403
+    # …but the dashboard's own same-IP origin is allowed (LAN access).
+    ok = client.post(snap, headers={"host": "192.168.1.5:8088", "origin": "http://192.168.1.5:8088"})
+    assert ok.status_code in (200, 503)
+
+
 def test_disabling_motion_closes_open_event(client, context):
     """Regression: toggling motion off mid-event left it 'ongoing' forever."""
     cam_id = client.get("/api/cameras").json()[0]["id"]

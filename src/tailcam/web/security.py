@@ -84,19 +84,39 @@ def _host_allowed(value: str) -> bool:
     return _is_ip_literal(host)
 
 
+def _origin_allowed(origin: str, host_value: str) -> bool:
+    """Whether a mutating request's Origin is trusted.
+
+    localhost and tailnet (*.ts.net) origins are always fine. An IP-literal
+    Origin is trusted ONLY when it is the same IP the request is served as
+    (same-origin) — otherwise a drive-by page hosted at a bare public IP would
+    pass (the Host allowlist can't catch that, since an IP Host is legitimate).
+    """
+    host = _hostname(urlsplit(origin).netloc)
+    if not host:
+        return False
+    if host == "localhost" or host.endswith(".ts.net"):
+        return True
+    if _is_ip_literal(host):
+        return host == _hostname(host_value)
+    return False
+
+
 class SecurityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         if request.method in _MUTATING:
             # Reject on the Host header first: this catches DNS rebinding even
             # when the page sends no Origin (a rebound hostname reaches us as
-            # the Host). Then reject a foreign Origin. Tools with an IP Host and
-            # no Origin (curl, the CLI) pass, matching the prior behavior.
-            if not _host_allowed(request.headers.get("host", "")):
+            # the Host). Then reject a foreign Origin (CSRF / drive-by). Tools
+            # with an IP Host and no Origin (curl, the CLI) pass, matching the
+            # prior behavior.
+            host = request.headers.get("host", "")
+            if not _host_allowed(host):
                 return JSONResponse(
                     {"detail": "cross-origin request blocked"}, status_code=403
                 )
             origin = request.headers.get("origin")
-            if origin and not _host_allowed(urlsplit(origin).netloc):
+            if origin and not _origin_allowed(origin, host):
                 return JSONResponse(
                     {"detail": "cross-origin request blocked"}, status_code=403
                 )
