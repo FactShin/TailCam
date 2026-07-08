@@ -105,6 +105,17 @@ setup_service() {
     warn "First run may prompt for camera access — approve it in System Settings › Privacy."
 }
 
+setup_desktop_app() {
+    # The menu-bar app (issue #38): optional backends + a real TailCam.app in
+    # ~/Applications. Best-effort — the server works fine without it.
+    log "Installing the TailCam menu-bar app"
+    if "${VENV_DIR}/bin/pip" install --quiet "pywebview>=5" "pystray>=0.19" "pillow>=10"; then
+        "$TAILCAM_BIN" app install || warn "Could not create TailCam.app (run 'tailcam app install' later)."
+    else
+        warn "Desktop backends failed to install — skip for now; retry with: pip install 'tailcam[desktop]'"
+    fi
+}
+
 ensure_tailscale() {
     [ "$DO_TAILSCALE" -eq 0 ] && return 0
     if ! have tailscale && [ ! -x "/Applications/Tailscale.app/Contents/MacOS/Tailscale" ]; then
@@ -142,6 +153,7 @@ install_tailcam
 remove_legacy_anycam
 link_cli
 setup_service
+setup_desktop_app
 ensure_tailscale
 ensure_ai_hint
 echo

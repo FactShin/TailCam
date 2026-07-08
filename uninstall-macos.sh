@@ -25,6 +25,7 @@ fi
 launchctl unload "$HOME/Library/LaunchAgents/com.anycam.plist" 2>/dev/null || true
 rm -f "$HOME/Library/LaunchAgents/com.anycam.plist"
 rm -f "$HOME/.local/bin/tailcam" "$HOME/.local/bin/anycam"
+rm -rf "$HOME/Applications/TailCam.app"
 for v in "$VENV_DIR" "$LEGACY_VENV_DIR"; do
     [ -d "$v" ] && { rm -rf "$v"; log "Removed virtualenv $v"; }
 done
