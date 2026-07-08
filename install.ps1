@@ -29,7 +29,7 @@ $ErrorActionPreference = "Stop"
 $Repo = "factshin/tailcam"
 $AppDir = Join-Path $env:LOCALAPPDATA "TailCam"
 $VenvDir = Join-Path $AppDir "venv"
-$StageDir = "$VenvDir.new"
+$BackupDir = "$VenvDir.old"
 $LegacyVenvDir = Join-Path $env:LOCALAPPDATA "AnyCam\venv"
 $LogPath = Join-Path $AppDir ("install-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".log")
 
@@ -142,52 +142,69 @@ function Install-TailCam {
   }
   Info ("Using Python: " + $py.Exe + " " + ($py.Args -join " "))
 
-  # --- build into a STAGING venv first, so a failed install (or upgrade) never
-  # destroys a working TailCam. The old venv is only replaced after pip succeeds.
-  if (Test-Path $StageDir) { Remove-Item -Recurse -Force $StageDir }
-  Info "Creating virtualenv (staging) at $StageDir"
+  # --- non-destructive install, built AT THE FINAL PATH -----------------------
+  # pip's Windows console-script launchers (tailcam.exe, pip.exe) embed the
+  # ABSOLUTE path of their interpreter at install time, so a venv built at
+  # venv.new and renamed to venv leaves every launcher pointing at a path that
+  # no longer exists ("Fatal error in launcher: Unable to create process").
+  # Windows venvs are not relocatable. So instead: set the OLD venv aside with
+  # a rename (cheap, reversible), build the new one at its final path, and put
+  # the old one back if pip fails — a failed upgrade never bricks a node.
   New-Item -ItemType Directory -Force -Path $AppDir | Out-Null
+  if (Test-Path $BackupDir) { Remove-Item -Recurse -Force $BackupDir -ErrorAction SilentlyContinue }
+  $HadPrevious = $false
+  if (Test-Path $VenvDir) {
+    Info "Stopping TailCam service"
+    Stop-TailCamProcesses
+    Info "Setting the current install aside (restored automatically if this run fails)"
+    try {
+      Move-Item $VenvDir $BackupDir
+      $HadPrevious = $true
+    } catch {
+      Fail ("Couldn't set aside the current install at $VenvDir — a TailCam process or " +
+            "terminal is holding files open. Close them (or reboot) and re-run the installer.")
+    }
+  }
+
+  function Restore-Previous($why) {
+    Remove-Item -Recurse -Force $VenvDir -ErrorAction SilentlyContinue
+    if ($HadPrevious) {
+      Move-Item $BackupDir $VenvDir -ErrorAction SilentlyContinue
+      Start-ScheduledTask -TaskName "TailCam" -ErrorAction SilentlyContinue
+      Warn "The previous TailCam install was restored and restarted."
+    }
+    Fail $why
+  }
+
+  Info "Creating virtualenv at $VenvDir"
   $PyArgs = $py.Args
-  & $py.Exe @PyArgs -m venv $StageDir
-  if ($LASTEXITCODE -ne 0) { Fail "Failed to create the virtualenv (python -m venv). See the log for details." }
-  $StagePy = Join-Path $StageDir "Scripts\python.exe"
-
-  & $StagePy -m pip install --upgrade pip
-  $Zip = "https://github.com/$Repo/archive/refs/heads/$Ref.zip"
-  Info "Installing TailCam from $Zip"
-  & $StagePy -m pip install $Zip
-  if ($LASTEXITCODE -ne 0) {
-    Remove-Item -Recurse -Force $StageDir -ErrorAction SilentlyContinue
-    if ($IsArm64) {
-      Fail ("pip install failed. This is an ARM64 PC: make sure the Python used above is x64 " +
-            "(this installer selects it automatically) and that you're on Windows 11, which can " +
-            "run x64 programs under emulation. Scroll up for pip's error, or read the log.")
-    }
-    Fail "pip install failed. Scroll up for pip's error, or read the log."
-  }
-
-  # --- swap staging into place (stop the old service first: running pythonw
-  # locks the old venv's files) ------------------------------------------------
-  foreach ($dir in @($VenvDir, $LegacyVenvDir)) {
-    if (Test-Path $dir) {
-      Info "Stopping TailCam service"
-      Stop-TailCamProcesses
-      Info "Removing old virtualenv at $dir"
-      try {
-        Remove-Item -Recurse -Force $dir
-      } catch {
-        Remove-Item -Recurse -Force $StageDir -ErrorAction SilentlyContinue
-        Fail ("Couldn't remove the old install at $dir — a TailCam process or terminal is " +
-              "holding files open. Close them (or reboot) and re-run the installer.")
-      }
-    }
-  }
-  Move-Item $StageDir $VenvDir
+  & $py.Exe @PyArgs -m venv $VenvDir
+  if ($LASTEXITCODE -ne 0) { Restore-Previous "Failed to create the virtualenv (python -m venv). See the log for details." }
   $VenvPy = Join-Path $VenvDir "Scripts\python.exe"
   $TailcamBin = Join-Path $VenvDir "Scripts\tailcam.exe"
   $Scripts = Join-Path $VenvDir "Scripts"
+
+  & $VenvPy -m pip install --upgrade pip
+  $Zip = "https://github.com/$Repo/archive/refs/heads/$Ref.zip"
+  Info "Installing TailCam from $Zip"
+  & $VenvPy -m pip install $Zip
+  if ($LASTEXITCODE -ne 0) {
+    if ($IsArm64) {
+      Restore-Previous ("pip install failed. This is an ARM64 PC: make sure the Python used above is x64 " +
+            "(this installer selects it automatically) and that you're on Windows 11, which can " +
+            "run x64 programs under emulation. Scroll up for pip's error, or read the log.")
+    }
+    Restore-Previous "pip install failed. Scroll up for pip's error, or read the log."
+  }
   if (-not (Test-Path $TailcamBin)) {
-    Fail "tailcam.exe was not created by pip — the install is incomplete. See the log."
+    Restore-Previous "tailcam.exe was not created by pip — the install is incomplete. See the log."
+  }
+  # New install verified: the old one can go, along with the pre-rename AnyCam venv.
+  if ($HadPrevious) { Remove-Item -Recurse -Force $BackupDir -ErrorAction SilentlyContinue }
+  if (Test-Path $LegacyVenvDir) {
+    Info "Removing old AnyCam virtualenv at $LegacyVenvDir"
+    Stop-TailCamProcesses
+    Remove-Item -Recurse -Force $LegacyVenvDir -ErrorAction SilentlyContinue
   }
 
   # Remove the pre-rename AnyCam logon task if present. Runs even with
@@ -213,10 +230,10 @@ function Install-TailCam {
 
   # --- background service (logon Scheduled Task) ------------------------------
   # Persist the chosen port so the service and `tailscale serve` both use it.
-  & $TailcamBin config --port $Port | Out-Null
+  & $VenvPy -m tailcam config --port $Port | Out-Null
   if (-not $NoService) {
     Info "Registering logon task"
-    & $TailcamBin install-service
+    & $VenvPy -m tailcam install-service
   } else { Warn "Skipping service registration (-NoService)." }
 
   # --- Tailscale serve --------------------------------------------------------
@@ -232,7 +249,7 @@ function Install-TailCam {
   if (-not $NoTailscale) {
     if (Find-Tailscale) {
       Info "Exposing TailCam over Tailscale"
-      & $TailcamBin tailscale serve
+      & $VenvPy -m tailcam tailscale serve
     } else {
       Warn "Tailscale not found. Install it from https://tailscale.com/download/windows, run 'tailscale up', then: tailcam tailscale serve"
     }
@@ -259,7 +276,7 @@ function Install-TailCam {
 
   Write-Host ""
   Info "TailCam installed."
-  & $TailcamBin status
+  & $VenvPy -m tailcam status
   Write-Host ""
   Info "Open the web UI at one of the URLs above."
   Info "Manage it with: $TailcamBin <command>   (status, tailscale serve, uninstall-service, ...)"
