@@ -50,22 +50,49 @@ def test_arm64_selects_x64_python():
     assert "amd64.exe" in SCRIPT
 
 
-def test_install_is_staged_not_destructive():
-    # pip installs into a staging venv; the working venv is only removed after
-    # pip succeeds — a failed install/upgrade must never brick a working node.
-    stage_decl = SCRIPT.index('$StageDir = "$VenvDir.new"')
-    pip_install = SCRIPT.index("pip install $Zip")
-    swap = SCRIPT.index("Move-Item $StageDir $VenvDir")
-    old_removal = SCRIPT.index("Removing old virtualenv")
-    assert stage_decl < pip_install < old_removal < swap
-    # Failure paths clean up the staging dir, not the live install.
-    assert SCRIPT.count("Remove-Item -Recurse -Force $StageDir") >= 2
+def test_venv_is_built_at_its_final_path():
+    # pip's Windows launcher .exes embed the ABSOLUTE interpreter path at
+    # install time, so a venv built at one path and renamed to another leaves
+    # every console script broken ("Fatal error in launcher"). The new venv
+    # must be created at $VenvDir directly and NEVER moved into place.
+    assert "-m venv $VenvDir" in SCRIPT
+    # The only Move-Item calls touch the BACKUP (old venv aside / restore) —
+    # never a freshly built venv.
+    moves = re.findall(r"Move-Item\s+(\S+)\s+(\S+)", SCRIPT)
+    assert ("$VenvDir", "$BackupDir") in moves  # old install set aside
+    assert ("$BackupDir", "$VenvDir") in moves  # rollback restore
+    for src, _dest in moves:
+        assert src in ("$VenvDir", "$BackupDir"), f"unexpected venv move from {src}"
+
+
+def test_failed_install_restores_previous():
+    # A failed pip run must put the old venv back (rename back = launchers
+    # valid again, since the path is restored) and restart the service.
+    assert "function Restore-Previous" in SCRIPT
+    body = SCRIPT[SCRIPT.index("function Restore-Previous"):]
+    assert "Move-Item $BackupDir $VenvDir" in body
+    assert 'Start-ScheduledTask -TaskName "TailCam"' in body
+    # Every install failure path routes through the restore helper.
+    assert SCRIPT.count("Restore-Previous ") >= 3  # venv fail, pip fail(s), exe missing
+    # The backup is only discarded after tailcam.exe is verified present.
+    discard = SCRIPT.index("if ($HadPrevious) { Remove-Item -Recurse -Force $BackupDir")
+    assert SCRIPT.index("Test-Path $TailcamBin") < discard
+
+
+def test_setup_runs_via_python_m_not_launcher_exes():
+    # Setup steps invoke `python -m tailcam ...` so they can never hit a stale
+    # launcher stub; tailcam.exe is only checked for existence and displayed.
+    assert "-m tailcam config --port" in SCRIPT
+    assert "-m tailcam install-service" in SCRIPT
+    assert "-m tailcam tailscale serve" in SCRIPT
+    assert "-m tailcam status" in SCRIPT
+    assert not re.search(r"& \$TailcamBin ", SCRIPT), "no direct launcher-exe invocations"
 
 
 def test_exit_codes_checked():
     # venv creation and pip both gate on $LASTEXITCODE; tailcam.exe presence
     # is verified before use.
-    assert re.search(r"-m venv \$StageDir\s*\n\s*if \(\$LASTEXITCODE -ne 0\)", SCRIPT)
+    assert re.search(r"-m venv \$VenvDir\s*\n\s*if \(\$LASTEXITCODE -ne 0\)", SCRIPT)
     assert "Test-Path $TailcamBin" in SCRIPT
 
 

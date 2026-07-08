@@ -149,3 +149,11 @@ PowerShell window instantly when run via `irm | iex`. It now keeps the window
 open (press Enter to close) and always writes the full transcript to
 `%LOCALAPPDATA%\TailCam\install-<timestamp>.log`, so the error is never lost
 — even for background self-updates.
+
+## Windows: "Fatal error in launcher: Unable to create process"
+
+Fixed in 1.2.2. Installs done with v1.2.1 built the virtualenv at a staging
+path and renamed it, but pip's Windows launcher `.exe`s embed the absolute
+interpreter path — so `tailcam.exe` pointed at a folder that no longer
+existed. Re-run the installer: it now builds the venv at its final path (and
+keeps the previous install as an automatic rollback if anything fails).
