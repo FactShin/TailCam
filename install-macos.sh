@@ -62,14 +62,28 @@ ensure_python() {
 
 install_tailcam() {
     local spec="git+https://github.com/${REPO}.git@${REF}"
+    local backup="${VENV_DIR}.bak"
     # Stop a running agent so the upgrade actually takes effect.
     launchctl unload "$HOME/Library/LaunchAgents/com.tailcam.plist" 2>/dev/null || true
+    # Non-destructive: set the working venv aside and only remove it once the
+    # new one builds, so a failed upgrade never bricks a node. POSIX venvs bake
+    # their absolute path, so we build AT the final path (not temp + mv).
+    rm -rf "$backup"
+    [ -d "$VENV_DIR" ] && mv "$VENV_DIR" "$backup"
     log "Creating virtualenv at ${VENV_DIR}"
-    rm -rf "$VENV_DIR"
-    "$PYTHON" -m venv "$VENV_DIR"
-    "${VENV_DIR}/bin/pip" install --upgrade pip >/dev/null
-    log "Installing TailCam ($spec)"
-    "${VENV_DIR}/bin/pip" install "$spec"
+    if ! ( "$PYTHON" -m venv "$VENV_DIR" \
+           && "${VENV_DIR}/bin/pip" install --upgrade pip >/dev/null \
+           && { log "Installing TailCam ($spec)"; "${VENV_DIR}/bin/pip" install "$spec"; } ); then
+        rm -rf "$VENV_DIR"
+        if [ -d "$backup" ]; then
+            mv "$backup" "$VENV_DIR"
+            launchctl load "$HOME/Library/LaunchAgents/com.tailcam.plist" 2>/dev/null || true
+            warn "Install failed — restored the previous version."
+        fi
+        err "TailCam installation failed (see the pip output above)."
+        exit 1
+    fi
+    rm -rf "$backup"
     TAILCAM_BIN="${VENV_DIR}/bin/tailcam"
 }
 

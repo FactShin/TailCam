@@ -159,6 +159,7 @@ class HomeKitBridge:
         self._driver: Any = None
         self._bridge: Any = None
         self._thread: threading.Thread | None = None
+        self._last_error: str | None = None
         self._lock = threading.Lock()
 
     @staticmethod
@@ -209,7 +210,11 @@ class HomeKitBridge:
                 return
             try:
                 self._start_locked()
+                self._last_error = None
             except Exception as exc:
+                # Surface the reason (e.g. "Address already in use") instead of
+                # a bare running:false, so the UI can tell the user what to fix.
+                self._last_error = str(exc)
                 log.warning("HomeKit bridge failed to start: %s", exc)
                 self._driver = self._bridge = self._thread = None
 
@@ -281,6 +286,7 @@ class HomeKitBridge:
             "setup_qr": qr_svg(uri) if uri else None,
             "bridge_name": self._cfg.bridge_name,
             "port": self._cfg.port,
+            "error": self._last_error or "",
             "selected": list(self._cfg.cameras),
             "cameras": [
                 {"id": c.id, "name": c.name} for c in selected_cameras(self._ctx, [])

@@ -15,6 +15,9 @@ DO_SERVICE=1
 DO_TAILSCALE=1
 VENV_DIR="${HOME}/.local/share/tailcam/venv"
 LEGACY_VENV_DIR="${HOME}/.local/share/anycam/venv"
+# $USER isn't exported in some non-login/provisioning shells; derive it
+# from the effective UID so `set -u` never aborts the install.
+USER_NAME="${USER:-$(id -un)}"
 
 log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
@@ -82,15 +85,30 @@ ensure_python() {
 
 install_tailcam() {
     local spec="git+https://github.com/${REPO}.git@${REF}"
+    local backup="${VENV_DIR}.bak"
     # Stop a running service so the upgrade actually takes effect (an active
     # process would keep serving the old code from the deleted venv).
     systemctl --user stop tailcam.service 2>/dev/null || true
+    # Non-destructive: set the working venv aside and only remove it once the
+    # new one builds — a failed upgrade must never brick a node. POSIX venvs
+    # bake their absolute path into scripts/pyvenv.cfg, so we build AT the
+    # final path (not a temp dir + mv, which would break the shebangs).
+    rm -rf "$backup"
+    [ -d "$VENV_DIR" ] && mv "$VENV_DIR" "$backup"
     log "Creating virtualenv at ${VENV_DIR}"
-    rm -rf "$VENV_DIR"
-    "$PYTHON" -m venv "$VENV_DIR"
-    "${VENV_DIR}/bin/pip" install --upgrade pip >/dev/null
-    log "Installing TailCam ($spec)"
-    "${VENV_DIR}/bin/pip" install "$spec"
+    if ! ( "$PYTHON" -m venv "$VENV_DIR" \
+           && "${VENV_DIR}/bin/pip" install --upgrade pip >/dev/null \
+           && { log "Installing TailCam ($spec)"; "${VENV_DIR}/bin/pip" install "$spec"; } ); then
+        rm -rf "$VENV_DIR"
+        if [ -d "$backup" ]; then
+            mv "$backup" "$VENV_DIR"
+            systemctl --user start tailcam.service 2>/dev/null || true
+            warn "Install failed — restored and restarted the previous version."
+        fi
+        err "TailCam installation failed (see the pip output above)."
+        exit 1
+    fi
+    rm -rf "$backup"
     TAILCAM_BIN="${VENV_DIR}/bin/tailcam"
 }
 
@@ -127,9 +145,9 @@ setup_service() {
     # Lingering lets the user service start at boot without an interactive login
     # (important for a headless Pi).
     if have loginctl; then
-        sudo loginctl enable-linger "$USER" 2>/dev/null \
-            || loginctl enable-linger "$USER" 2>/dev/null \
-            || warn "Could not enable lingering; run: sudo loginctl enable-linger $USER (so it starts at boot)."
+        sudo loginctl enable-linger "$USER_NAME" 2>/dev/null \
+            || loginctl enable-linger "$USER_NAME" 2>/dev/null \
+            || warn "Could not enable lingering; run: sudo loginctl enable-linger $USER_NAME (so it starts at boot)."
     fi
 }
 
@@ -145,11 +163,11 @@ ensure_tailscale() {
     fi
     # `tailscale serve` needs operator rights or root; grant the current user
     # operator so it works without sudo (avoids "Access denied").
-    sudo tailscale set --operator="$USER" 2>/dev/null \
-        || warn "If serve is denied, run: sudo tailscale set --operator=$USER"
+    sudo tailscale set --operator="$USER_NAME" 2>/dev/null \
+        || warn "If serve is denied, run: sudo tailscale set --operator=$USER_NAME"
     log "Exposing TailCam over Tailscale"
     "$TAILCAM_BIN" tailscale serve \
-        || warn "tailscale serve failed (try: sudo tailscale set --operator=$USER). UI still works locally."
+        || warn "tailscale serve failed (try: sudo tailscale set --operator=$USER_NAME). UI still works locally."
 }
 
 # --- AI motion labeling (optional, local Ollama) ----------------------------

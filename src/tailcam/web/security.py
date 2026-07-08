@@ -14,6 +14,7 @@ defense-in-depth for that model:
 
 from __future__ import annotations
 
+import ipaddress
 from urllib.parse import urlsplit
 
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -45,24 +46,57 @@ _HEADERS = {
 }
 
 
-def _origin_allowed(origin: str, host_header: str) -> bool:
-    """Allow same-host, localhost, and tailnet (*.ts.net) origins."""
-    host = urlsplit(origin).hostname or ""
-    host = host.lower()
-    if host in ("localhost", "127.0.0.1", "::1"):
+def _hostname(value: str) -> str:
+    """The bare host from a Host header or origin authority (drops the port,
+    unwraps a bracketed IPv6 literal)."""
+    host = (value or "").strip().lower()
+    if host.startswith("["):
+        end = host.find("]")
+        return host[1:end] if end != -1 else host.strip("[]")
+    return host.split(":", 1)[0]
+
+
+def _is_ip_literal(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        return False
+
+
+def _host_allowed(value: str) -> bool:
+    """Whether a Host/Origin host is legitimate for a mutating request.
+
+    A DNS-rebinding attack needs a *hostname* (e.g. evil.com) that the attacker
+    rebinds to 127.0.0.1, so we reject any hostname that isn't localhost or the
+    tailnet (*.ts.net). Bare IP literals can't be rebinding targets (the user
+    typed/knows the address), so every IP-based access — loopback, tailnet
+    100.64/10, or a LAN IP — is allowed, preserving TailCam's supported
+    local/LAN/tailnet reach.
+    """
+    host = _hostname(value)
+    if not host:
+        return False
+    if host in ("localhost",):
         return True
     if host.endswith(".ts.net"):
         return True
-    # Same host as the request (ignoring port differences from a proxy).
-    req_host = (host_header.split(":", 1)[0] or "").lower()
-    return bool(req_host) and host == req_host
+    return _is_ip_literal(host)
 
 
 class SecurityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         if request.method in _MUTATING:
+            # Reject on the Host header first: this catches DNS rebinding even
+            # when the page sends no Origin (a rebound hostname reaches us as
+            # the Host). Then reject a foreign Origin. Tools with an IP Host and
+            # no Origin (curl, the CLI) pass, matching the prior behavior.
+            if not _host_allowed(request.headers.get("host", "")):
+                return JSONResponse(
+                    {"detail": "cross-origin request blocked"}, status_code=403
+                )
             origin = request.headers.get("origin")
-            if origin and not _origin_allowed(origin, request.headers.get("host", "")):
+            if origin and not _host_allowed(urlsplit(origin).netloc):
                 return JSONResponse(
                     {"detail": "cross-origin request blocked"}, status_code=403
                 )

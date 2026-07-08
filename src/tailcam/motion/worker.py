@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -13,6 +14,7 @@ import cv2
 
 from tailcam import paths
 from tailcam.ai.analyzer import FrameAnalyzer
+from tailcam.camera.frame import FrameBuffer, FrameConsumer
 from tailcam.config import MotionConfig
 from tailcam.logging_setup import get_logger
 from tailcam.media.recorder import RecordingService
@@ -35,9 +37,13 @@ class MotionWorker:
         recorder: RecordingService | None = None,
         analyzer: FrameAnalyzer | None = None,
         notifier: NotificationService | None = None,
+        reacquire: Callable[[], FrameBuffer | None] | None = None,
     ) -> None:
         self.camera_id = camera_id
         self.buffer = buffer
+        # Follows the camera across a Restart (buffer swap). None in tests that
+        # drive a single buffer directly.
+        self._reacquire = reacquire
         self.config = config
         self._event_log = event_log
         self._recorder = recorder
@@ -94,7 +100,7 @@ class MotionWorker:
 
     def _run(self) -> None:
         interval = 1.0 / max(1, self.config.sample_fps)
-        last_seq = -1
+        consumer = FrameConsumer(self.buffer, self._reacquire)
         event_id: int | None = None
         peak_score = 0.0
         last_motion_ts = 0.0
@@ -102,10 +108,11 @@ class MotionWorker:
 
         try:
             while not self._stop.is_set():
-                frame = self.buffer.await_latest(last_seq, timeout=1.0)
+                frame = consumer.next_frame(timeout=1.0)
                 if frame is None:
+                    if consumer.ended:  # camera removed — stop cleanly
+                        break
                     continue
-                last_seq = frame.seq
                 result = self._detector.process(frame.image)
                 self.boxes = result.boxes
                 now = time.time()

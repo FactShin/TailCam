@@ -187,6 +187,7 @@ export interface HomeKitStatus {
   setup_qr: string | null;
   bridge_name: string;
   port: number;
+  error: string;
   selected: string[];
   cameras: { id: string; name: string }[];
 }

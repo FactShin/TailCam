@@ -72,9 +72,14 @@ class ModelPuller:
     def _run(self, model: str) -> None:
         base = self._config.base_url.rstrip("/")
         try:
+            # A pull can legitimately run for minutes, so the read window is
+            # generous — but never None: a silently-stalled socket would leave
+            # the UI stuck 'active' forever. A ReadTimeout is an HTTPError,
+            # caught below, which clears active.
             with httpx.stream(
                 "POST", f"{base}/api/pull",
-                json={"model": model, "stream": True}, timeout=None,
+                json={"model": model, "stream": True},
+                timeout=httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=10.0),
             ) as response:
                 response.raise_for_status()
                 for line in response.iter_lines():

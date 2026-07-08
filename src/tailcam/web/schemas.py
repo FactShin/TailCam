@@ -221,6 +221,7 @@ class HomeKitStatus(BaseModel):
     setup_qr: str | None = None  # inline SVG of the pairing QR
     bridge_name: str = "TailCam"
     port: int = 51826
+    error: str = ""  # why the bridge isn't running (e.g. port in use), if enabled
     selected: list[str] = Field(default_factory=list)  # configured subset; [] = all
     cameras: list[IntegrationCamera] = Field(default_factory=list)  # all available cameras
 
@@ -228,7 +229,7 @@ class HomeKitStatus(BaseModel):
 class HomeKitUpdate(BaseModel):
     enabled: bool | None = None
     bridge_name: str | None = None
-    port: int | None = None
+    port: int | None = Field(default=None, ge=1, le=65535)
     cameras: list[str] | None = None
     regenerate_pin: bool | None = None
 
@@ -261,12 +262,15 @@ class HomeAssistantStatus(BaseModel):
 class HomeAssistantUpdate(BaseModel):
     enabled: bool | None = None
     mqtt_host: str | None = None
-    mqtt_port: int | None = None
+    mqtt_port: int | None = Field(default=None, ge=1, le=65535)
     mqtt_username: str | None = None
     mqtt_password: str | None = None
     mqtt_tls: bool | None = None
-    discovery_prefix: str | None = None
-    node_id: str | None = None
+    # node_id / discovery_prefix become MQTT topic segments; reject anything
+    # that isn't a safe topic token so a stray '/', '+' or '#' can't silently
+    # break HA discovery (returns 422 instead of quietly publishing nothing).
+    discovery_prefix: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9_-]+$")
+    node_id: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9_-]+$")
     publish_motion: bool | None = None
     publish_status: bool | None = None
 

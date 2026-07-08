@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from tailcam.camera.frame import FrameBuffer
+from tailcam.camera.frame import FrameBuffer, FrameConsumer
 from tailcam.logging_setup import get_logger
 from tailcam.streaming.encoder import encode_jpeg
 
@@ -37,10 +37,12 @@ class TimelapseCaptureWorker:
         duration_seconds: float = 0.0,
         on_frame: Callable[[int], None] | None = None,
         on_complete: Callable[[], None] | None = None,
+        reacquire: Callable[[], FrameBuffer | None] | None = None,
     ) -> None:
         self.tl_id = tl_id
         self.camera_id = camera_id
         self.buffer = buffer
+        self._reacquire = reacquire  # follow the camera across a Restart
         self.frames_dir = frames_dir
         self.interval = max(0.1, interval_seconds)
         self.jpeg_quality = jpeg_quality
@@ -64,18 +66,19 @@ class TimelapseCaptureWorker:
         self._thread.join(timeout=12.0)
 
     def _run(self) -> None:
-        last_seq = -1
         next_due = time.monotonic()
         deadline = (time.monotonic() + self.duration) if self.duration else None
         natural = False
+        consumer = FrameConsumer(self.buffer, self._reacquire)
         while not self._stop.is_set():
             if deadline is not None and time.monotonic() >= deadline:
                 natural = True
                 break
-            frame = self.buffer.await_latest(last_seq, timeout=1.0)
+            frame = consumer.next_frame(timeout=1.0)
             if frame is None:
+                if consumer.ended:  # camera removed — stop the capture
+                    break
                 continue
-            last_seq = frame.seq
             now = time.monotonic()
             if now < next_due:
                 continue

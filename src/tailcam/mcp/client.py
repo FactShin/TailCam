@@ -79,8 +79,12 @@ class TailcamClient:
         # parser treats in-process calls as trusted loopback, so tools can
         # execute against the node while the MCP layer does its own role checks.
         transport = httpx.ASGITransport(app=app)
+        # base_url host must be loopback: it becomes the Host header, and
+        # SecurityMiddleware's anti-DNS-rebinding guard only allows localhost /
+        # IP-literal / *.ts.net hosts on mutating requests (write tools like
+        # snapshot/record would otherwise be blocked with 403).
         http = httpx.AsyncClient(
-            transport=transport, base_url="http://tailcam.local", timeout=timeout
+            transport=transport, base_url="http://127.0.0.1", timeout=timeout
         )
         return cls(http, owns_client=True)
 

@@ -213,6 +213,10 @@ over your tailnet, with no per-request login. On top of that, TailCam ships defe
 - **Security headers** on every response — `Content-Security-Policy` (same-origin only),
   `X-Frame-Options`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`.
 - **No SSRF amplification** — the peer reverse-proxy does not follow redirects.
+- **Anti-DNS-rebinding** — state-changing requests are accepted only when the `Host` is
+  loopback, an IP literal, or your tailnet (`*.ts.net`); a rebound attacker hostname is rejected.
+- **Secrets** (MQTT password, HomeKit pin, Tailscale keys) live in `config.toml`, written
+  `0600` in cleartext — secure your backups and support bundles accordingly.
 - No accounts, tokens, telemetry, or third-party calls (except checking GitHub for updates).
 
 Keep the default `127.0.0.1` bind — don't expose TailCam directly to a public network; let

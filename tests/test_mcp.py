@@ -400,7 +400,7 @@ async def test_http_disabled_gates_both_verbs(context):
     context.config.mcp.http_enabled = False
     app = create_app(context.config, context=context)
     transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 123))
-    async with httpx.AsyncClient(transport=transport, base_url="http://t.local") as c:
+    async with httpx.AsyncClient(transport=transport, base_url="http://node.ts.net") as c:
         post = await c.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "ping"})
         get = await c.get("/mcp", headers={"accept": "application/json"})
     assert post.status_code == 404
@@ -414,7 +414,7 @@ async def test_mcp_get_redirects_browsers_to_page(context):
     context.config.mcp.http_enabled = False
     app = create_app(context.config, context=context)
     transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 123))
-    async with httpx.AsyncClient(transport=transport, base_url="http://t.local") as c:
+    async with httpx.AsyncClient(transport=transport, base_url="http://node.ts.net") as c:
         resp = await c.get("/mcp", headers={"accept": "text/html"})
     assert resp.status_code == 302
     assert resp.headers["location"] == "/agents"
@@ -424,7 +424,7 @@ async def test_http_rejects_unverified(mcp_env):
     app, _ = mcp_env
     # Non-loopback client => principal unverified => 401 before any tool runs.
     transport = httpx.ASGITransport(app=app, client=("9.9.9.9", 1))
-    async with httpx.AsyncClient(transport=transport, base_url="http://t.local") as c:
+    async with httpx.AsyncClient(transport=transport, base_url="http://node.ts.net") as c:
         resp = await c.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "ping"})
     assert resp.status_code == 401
 
@@ -432,7 +432,7 @@ async def test_http_rejects_unverified(mcp_env):
 async def test_http_initialize_with_tailscale_identity(mcp_env):
     app, _ = mcp_env
     transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 123))
-    async with httpx.AsyncClient(transport=transport, base_url="http://t.local") as c:
+    async with httpx.AsyncClient(transport=transport, base_url="http://node.ts.net") as c:
         resp = await c.post(
             "/mcp",
             headers={"tailscale-user-login": "alice@example.com"},
@@ -445,7 +445,7 @@ async def test_http_initialize_with_tailscale_identity(mcp_env):
 async def test_http_notification_returns_202(mcp_env):
     app, _ = mcp_env
     transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 123))
-    async with httpx.AsyncClient(transport=transport, base_url="http://t.local") as c:
+    async with httpx.AsyncClient(transport=transport, base_url="http://node.ts.net") as c:
         resp = await c.post(
             "/mcp",
             headers={"tailscale-user-login": "alice@example.com"},
@@ -457,7 +457,7 @@ async def test_http_notification_returns_202(mcp_env):
 async def test_http_get_not_allowed(mcp_env):
     app, _ = mcp_env
     transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 123))
-    async with httpx.AsyncClient(transport=transport, base_url="http://t.local") as c:
+    async with httpx.AsyncClient(transport=transport, base_url="http://node.ts.net") as c:
         resp = await c.get("/mcp", headers={"tailscale-user-login": "alice@example.com"})
     assert resp.status_code == 405
 

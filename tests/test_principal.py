@@ -113,3 +113,54 @@ def test_spoofed_headers_on_non_loopback_request_are_rejected() -> None:
     assert principal.source == "unverified"
     assert principal.verified is False
     assert principal.roles == frozenset()
+
+
+def test_user_login_with_restricted_grant_is_not_upgraded_to_admin() -> None:
+    # A user carrying an explicit operator grant must get exactly that — not
+    # the personal-mode admin default (the privilege-escalation regression).
+    principal = principal_from_request(
+        _request(
+            host="tailcam.example.ts.net:8443",
+            headers={
+                "Tailscale-User-Login": "bob@example.com",
+                "Tailscale-App-Capabilities": json.dumps(
+                    {APP_CAPABILITY: [{"roles": ["viewer", "operator"]}]}
+                ),
+            },
+        )
+    )
+    assert principal.actor == "bob@example.com"
+    assert principal.source == "tailscale-user"
+    assert principal.verified is True
+    assert _roles(principal) == {TailCamRole.VIEWER, TailCamRole.OPERATOR}
+    assert TailCamRole.ADMIN not in principal.roles
+
+
+def test_user_login_with_admin_grant_keeps_admin() -> None:
+    principal = principal_from_request(
+        _request(
+            host="tailcam.example.ts.net:8443",
+            headers={
+                "Tailscale-User-Login": "carol@example.com",
+                "Tailscale-App-Capabilities": json.dumps(
+                    {APP_CAPABILITY: [{"roles": ["viewer", "operator", "admin"]}]}
+                ),
+            },
+        )
+    )
+    assert _roles(principal) == {TailCamRole.VIEWER, TailCamRole.OPERATOR, TailCamRole.ADMIN}
+
+
+def test_user_login_with_empty_grant_is_locked_down() -> None:
+    # An explicit grant that lists no valid roles = no access (fail closed),
+    # NOT the admin default.
+    principal = principal_from_request(
+        _request(
+            host="tailcam.example.ts.net:8443",
+            headers={
+                "Tailscale-User-Login": "dave@example.com",
+                "Tailscale-App-Capabilities": json.dumps({APP_CAPABILITY: [{"roles": []}]}),
+            },
+        )
+    )
+    assert principal.roles == frozenset()

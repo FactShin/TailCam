@@ -266,10 +266,12 @@ async def detect_objects(
     detection model is active — the UI just shows no overlay."""
     import anyio
 
-    active_model = ctx.store.active_model()
-    detector_active = ctx.inference.detection_active
-    if not detector_active:
+    # Cheap early-return first: this endpoint is polled ~every 1.5s per open
+    # viewer, and the active_model() DB read is only needed for the display
+    # name once we know detection is on.
+    if not ctx.inference.detection_active:
         return DetectionResult(camera_id=camera_id, detector_active=False)
+    active_model = ctx.store.active_model()
     buffer = ctx.manager.get_buffer(camera_id)
     if buffer is None:
         raise HTTPException(status_code=404, detail="camera not found")
