@@ -23,6 +23,11 @@ tailscale_app = typer.Typer(help="Tailscale integration commands.", no_args_is_h
 app.add_typer(tailscale_app, name="tailscale")
 mcp_app = typer.Typer(help="Model Context Protocol server for agents.", no_args_is_help=True)
 app.add_typer(mcp_app, name="mcp")
+desktop_app = typer.Typer(
+    help="Desktop app: menu-bar/tray icon + dashboard window (pip install 'tailcam[desktop]').",
+    invoke_without_command=True,
+)
+app.add_typer(desktop_app, name="app")
 
 console = Console()
 
@@ -217,6 +222,26 @@ def doctor() -> None:
 
     pyv = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     (ok if sys.version_info[:2] >= (3, 10) else bad)("Python 3.10+", pyv)
+
+    # Desktop app backends (optional — the server runs fine without them).
+    from tailcam.desktop import have_tray, have_webview
+
+    tray_ok, tray_detail = have_tray()
+    web_ok, web_detail = have_webview()
+    if tray_ok:
+        ok("Desktop tray backend", tray_detail)
+    else:
+        console.print(
+            f"[dim]·[/dim] Desktop tray backend  "
+            f"[dim]{tray_detail} — pip install 'tailcam\\[desktop]'[/dim]"
+        )
+    if web_ok:
+        ok("Desktop webview backend", web_detail)
+    elif tray_ok:
+        console.print(
+            f"[dim]·[/dim] Desktop webview  "
+            f"[dim]{web_detail} — dashboard opens in the browser[/dim]"
+        )
 
     try:
         import cv2
@@ -655,6 +680,97 @@ def homekit() -> None:
 def version() -> None:
     """Print the TailCam version."""
     typer.echo(__version__)
+
+
+# --------------------------------------------------------------------------
+# desktop app (issue #38) — `tailcam app`
+# --------------------------------------------------------------------------
+# Note the escaped bracket: rich would otherwise parse [desktop] as markup.
+_DESKTOP_HINT = (
+    "The desktop app needs its optional backends. Install them into this venv:\n"
+    "    pip install 'tailcam\\[desktop]'"
+)
+
+
+@desktop_app.callback()
+def desktop_run(
+    ctx: typer.Context,
+    url: str = typer.Option(
+        "",
+        "--url",
+        help="Client mode: front a REMOTE node at its Tailscale Serve HTTPS URL.",
+    ),
+    no_window: bool = typer.Option(
+        False, "--no-window", help="Start the tray without opening the dashboard window."
+    ),
+    check: bool = typer.Option(
+        False, "--check", help="Verify GUI backends are importable and exit."
+    ),
+    smoke: bool = typer.Option(
+        False, "--smoke", help="Build the real state + menu model headlessly and exit (CI)."
+    ),
+) -> None:
+    """Run the TailCam desktop app (menu-bar on macOS, tray elsewhere)."""
+    if ctx.invoked_subcommand is not None:
+        return
+    from tailcam.desktop import have_tray, have_webview
+
+    if check:
+        tray_ok, tray_detail = have_tray()
+        web_ok, web_detail = have_webview()
+        tray_flag = "[green]ok[/green]" if tray_ok else "[red]missing[/red]"
+        web_flag = "[green]ok[/green]" if web_ok else "[yellow]missing[/yellow]"
+        web_note = "" if web_ok else " (dashboard opens in the browser instead)"
+        console.print(f"tray:    {tray_flag} — {tray_detail}")
+        console.print(f"webview: {web_flag} — {web_detail}{web_note}")
+        if not tray_ok:
+            console.print(_DESKTOP_HINT)
+        raise typer.Exit(0 if tray_ok else 1)
+
+    from tailcam.desktop.app import DesktopApp
+
+    application = DesktopApp(client_url=url or None)
+    if smoke:
+        result = application.smoke()
+        console.print_json(data=result)
+        raise typer.Exit(0)
+
+    tray_ok, tray_detail = have_tray()
+    if not tray_ok:
+        console.print(f"[red]{tray_detail}[/red]")
+        console.print(_DESKTOP_HINT)
+        raise typer.Exit(1)
+    raise typer.Exit(application.run(open_window_on_launch=not no_window))
+
+
+@desktop_app.command("install")
+def desktop_install() -> None:
+    """macOS: create ~/Applications/TailCam.app (regenerate after upgrades)."""
+    if sys.platform != "darwin":
+        console.print(
+            "`tailcam app install` currently supports macOS; "
+            "Linux and Windows are next (issue #38)."
+        )
+        raise typer.Exit(1)
+    from tailcam.desktop.macos_bundle import install_app
+
+    bundle = install_app()
+    console.print(f"[green]Installed[/green] {bundle}")
+    console.print("Launch it from Spotlight/Launchpad as “TailCam”.")
+
+
+@desktop_app.command("uninstall")
+def desktop_uninstall() -> None:
+    """Remove the desktop app bundle."""
+    if sys.platform != "darwin":
+        console.print("`tailcam app uninstall` currently supports macOS.")
+        raise typer.Exit(1)
+    from tailcam.desktop.macos_bundle import uninstall_app
+
+    if uninstall_app():
+        console.print("[green]Removed[/green] TailCam.app")
+    else:
+        console.print("TailCam.app was not installed.")
 
 
 def main() -> None:

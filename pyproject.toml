@@ -62,6 +62,10 @@ homekit = ["HAP-python[QRCode]>=4.9,<6"]
 # Home Assistant MQTT discovery (cameras themselves need no extra — they use
 # HA's built-in MJPEG IP Camera integration).
 mqtt = ["paho-mqtt~=2.1"]
+# Desktop app (`tailcam app`): menu-bar/tray + embedded dashboard window.
+# Without it the CLI prints an install hint; with only pystray the dashboard
+# opens in the browser instead of an embedded window.
+desktop = ["pywebview>=5", "pystray>=0.19", "pillow>=10"]
 # On-device model training (AI Studio → Training). Ultralytics pulls in torch,
 # which is huge and platform/GPU-specific — that's why it's opt-in.
 training = ["ultralytics>=8.3"]

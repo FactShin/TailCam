@@ -1,0 +1,57 @@
+name: desktop-app
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/tailcam/desktop/**"
+      - "src/tailcam/cli.py"
+      - "tests/test_desktop.py"
+      - "pyproject.toml"
+      - ".github/workflows/desktop.yml"
+  pull_request:
+    paths:
+      - "src/tailcam/desktop/**"
+      - "src/tailcam/cli.py"
+      - "tests/test_desktop.py"
+      - "pyproject.toml"
+      - ".github/workflows/desktop.yml"
+
+jobs:
+  linux-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: pytest tests/test_desktop.py -q
+
+  # The real-Mac gate: generates and validates the actual .app on macOS.
+  macos-smoke:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ".[desktop]"
+      - name: Create TailCam.app
+        run: tailcam app install
+      - name: Validate bundle
+        run: |
+          plutil -lint ~/Applications/TailCam.app/Contents/Info.plist
+          codesign --verify --deep ~/Applications/TailCam.app
+          test -x ~/Applications/TailCam.app/Contents/MacOS/TailCam
+          python -c "
+          from pathlib import Path
+          import struct
+          icns = (Path.home() / 'Applications/TailCam.app/Contents/Resources/TailCam.icns').read_bytes()
+          assert icns[:4] == b'icns' and struct.unpack('>I', icns[4:8])[0] == len(icns)
+          print('icns ok,', len(icns), 'bytes')
+          "
+      - name: Headless self-test
+        run: |
+          tailcam app --check
+          tailcam app --smoke
