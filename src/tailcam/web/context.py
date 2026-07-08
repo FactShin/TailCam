@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+from functools import partial
 from typing import cast
 
 from tailcam import paths
@@ -208,6 +209,14 @@ class AppContext:
         self.active_learning.shutdown()
         self.training.shutdown()
         self.manager.stop_all()
+        # Release the analyzer's keep-alive HTTP pool (a plugin analyzer may
+        # not implement close()).
+        closer = getattr(self.analyzer, "close", None)
+        if callable(closer):
+            try:
+                closer()
+            except Exception as exc:  # pragma: no cover - defensive
+                log.debug("analyzer close failed: %s", exc)
 
     # -- offline monitor ---------------------------------------------------
     def _start_notify_monitor(self) -> None:
@@ -328,6 +337,7 @@ class AppContext:
                 camera_id, buffer, self.config.motion, self.event_log, self.recorder,
                 analyzer=self.inference,
                 notifier=cast("NotificationService", self._motion_fanout),
+                reacquire=partial(self.manager.get_buffer, camera_id),
             )
             worker.start()
             self._motion_workers[camera_id] = worker

@@ -154,12 +154,44 @@ def test_security_headers_present(client):
 
 def test_cross_origin_mutation_blocked(client):
     cam_id = client.get("/api/cameras").json()[0]["id"]
+    snap = f"/api/cameras/{cam_id}/snapshot"
+    lh = {"host": "localhost:8088"}
     # A foreign Origin (drive-by / CSRF) is rejected on mutations…
-    bad = client.post(f"/api/cameras/{cam_id}/snapshot", headers={"origin": "https://evil.example"})
+    bad = client.post(snap, headers={**lh, "origin": "https://evil.example"})
     assert bad.status_code == 403
     # …while localhost / same-origin is allowed.
-    ok = client.post(f"/api/cameras/{cam_id}/snapshot", headers={"origin": "http://localhost:8088"})
+    ok = client.post(snap, headers={**lh, "origin": "http://localhost:8088"})
     assert ok.status_code in (200, 503)  # 503 only if no frame yet
+
+
+def test_dns_rebinding_host_blocked(client):
+    cam_id = client.get("/api/cameras").json()[0]["id"]
+    snap = f"/api/cameras/{cam_id}/snapshot"
+    # DNS rebinding: attacker hostname rebound to loopback → sent as Host, no
+    # Origin. The Host allowlist must reject it even without an Origin header.
+    rebind = client.post(snap, headers={"host": "evil.example:8088"})
+    assert rebind.status_code == 403
+    # An IP-literal Host (LAN / tailnet / loopback access) is allowed — a bare
+    # IP can't be a rebinding victim.
+    ip_ok = client.post(snap, headers={"host": "192.168.1.5:8088"})
+    assert ip_ok.status_code in (200, 503)
+    # Tailnet MagicDNS host is allowed.
+    ts_ok = client.post(snap, headers={"host": "mac-mini.tail0.ts.net:8443"})
+    assert ts_ok.status_code in (200, 503)
+
+
+def test_foreign_ip_origin_blocked(client):
+    # A drive-by page served from a bare public IP: the Host is our own
+    # loopback, but the Origin is a *different* IP. An IP Origin is trusted
+    # only when it equals the request Host, so this cross-origin POST is
+    # blocked (plain CSRF, not rebinding).
+    cam_id = client.get("/api/cameras").json()[0]["id"]
+    snap = f"/api/cameras/{cam_id}/snapshot"
+    bad = client.post(snap, headers={"host": "127.0.0.1:8088", "origin": "http://203.0.113.9"})
+    assert bad.status_code == 403
+    # …but the dashboard's own same-IP origin is allowed (LAN access).
+    ok = client.post(snap, headers={"host": "192.168.1.5:8088", "origin": "http://192.168.1.5:8088"})
+    assert ok.status_code in (200, 503)
 
 
 def test_disabling_motion_closes_open_event(client, context):

@@ -12,6 +12,7 @@ import math
 import shutil
 import threading
 import time
+from functools import partial
 from pathlib import Path
 
 import cv2
@@ -138,6 +139,7 @@ class TimelapseService:
                 tl_id, n, frames_dir, analysis_every, analysis_enabled
             ),
             on_complete=lambda: self._finalize_async(tl_id),
+            reacquire=partial(self._manager.get_buffer, camera_id),
         )
         with self._lock:
             self._workers[tl_id] = worker

@@ -317,6 +317,9 @@ class HomeAssistantConfig:
     mqtt_host: str = ""  # broker host; empty disables MQTT discovery
     mqtt_port: int = 1883
     mqtt_username: str = ""
+    # Stored in cleartext in config.toml (written mode 0600), consistent with
+    # the HomeKit pin and Tailscale keys. Secure your backups/support bundles
+    # accordingly — see the security note in the README.
     mqtt_password: str = ""
     mqtt_tls: bool = False
     discovery_prefix: str = "homeassistant"  # HA MQTT discovery prefix

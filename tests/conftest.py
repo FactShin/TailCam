@@ -65,5 +65,9 @@ def client(context):
     from tailcam.web.app import create_app
 
     app = create_app(context.config, context=context)
-    with TestClient(app) as c:
+    # base_url gives a Host header of "localhost" — a real browser value that
+    # SecurityMiddleware's Host allowlist accepts. TestClient's "testserver"
+    # default is a hostname the anti-DNS-rebinding guard (correctly) rejects
+    # for mutating requests.
+    with TestClient(app, base_url="http://localhost:8088") as c:
         yield c

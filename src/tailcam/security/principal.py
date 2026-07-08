@@ -40,17 +40,27 @@ def principal_from_request(request: Request) -> RequestPrincipal:
     if not _is_loopback(client_host):
         return _unverified()
 
+    caps_header = request.headers.get("tailscale-app-capabilities")
+    cap_roles = _roles_from_app_capabilities(caps_header)
+
     user_login = (request.headers.get("tailscale-user-login") or "").strip()
     if user_login:
+        # Honor an explicit TailCam grant if the admin configured one for this
+        # identity — including a restricted (viewer/operator-only) grant, and
+        # including one that omits admin. Only when NO tailcam capability is
+        # present at all do we treat a verified user as the node's admin
+        # ("personal mode": one person, no grants set up, it just works).
+        # Previously this branch unconditionally granted admin, silently
+        # nullifying every restricted grant (privilege escalation).
+        roles = cap_roles if _capability_present(caps_header) else _ADMIN_ROLES
         return RequestPrincipal(
             actor=user_login,
             display_name=_decode_header(request.headers.get("tailscale-user-name")),
             source="tailscale-user",
             verified=True,
-            roles=_ADMIN_ROLES,
+            roles=roles,
         )
 
-    cap_roles = _roles_from_app_capabilities(request.headers.get("tailscale-app-capabilities"))
     if cap_roles:
         return RequestPrincipal(
             actor="tailscale-node",
@@ -91,6 +101,19 @@ def _decode_header(value: str | None) -> str | None:
     except (LookupError, UnicodeError, ValueError):
         return value
     return decoded or None
+
+
+def _capability_present(raw: str | None) -> bool:
+    """True if this identity carries a TailCam capability grant at all (even an
+    empty/restricted one). Distinguishes 'admin configured a grant' from
+    'personal mode, no grant' so a restricted grant is never upgraded to admin."""
+    if not raw:
+        return False
+    try:
+        data = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return False
+    return isinstance(data, dict) and TAILCAM_APP_CAPABILITY in data
 
 
 def _roles_from_app_capabilities(raw: str | None) -> frozenset[TailCamRole]:
