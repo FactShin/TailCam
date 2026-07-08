@@ -274,15 +274,15 @@ def test_cli_app_smoke_headless(isolated_env, monkeypatch):
     assert "menu_items" in result.output
 
 
-def test_cli_app_install_requires_macos(monkeypatch):
+def test_cli_app_install_windows_pending(monkeypatch):
     from typer.testing import CliRunner
 
     from tailcam import cli
 
-    monkeypatch.setattr(cli.sys, "platform", "linux")
+    monkeypatch.setattr(cli.sys, "platform", "win32")
     result = CliRunner().invoke(cli.app, ["app", "install"])
     assert result.exit_code == 1
-    assert "macOS" in result.output
+    assert "Windows" in result.output
 
 
 def test_cli_app_install_on_macos(monkeypatch, tmp_path):
@@ -339,3 +339,94 @@ def test_smoke_model_shape(isolated_env, monkeypatch):
     assert result["running"] is False
     assert result["menu_items"] >= 4
     assert "quit" in result["actions"]
+
+
+# ------------------------------------------------------------------ Linux desktop
+def test_linux_desktop_entry_golden(tmp_path):
+    from tailcam.desktop import linux_desktop as ld
+
+    entry = ld.install_entries(home=tmp_path, python="/venv/bin/python")
+    assert entry == tmp_path / ".local/share/applications/tailcam.desktop"
+    text = entry.read_text()
+    icon = tmp_path / ".local/share/icons/hicolor/512x512/apps/tailcam.png"
+    # Golden content: every load-bearing freedesktop key.
+    assert "[Desktop Entry]" in text and "Type=Application" in text
+    assert "Name=TailCam" in text
+    assert f"Icon={icon}" in text
+    assert "Terminal=false" in text
+    assert "Categories=AudioVideo;Video;Network;" in text
+    # Exec uses an ABSOLUTE venv command (console script or python -m).
+    exec_line = next(line for line in text.splitlines() if line.startswith("Exec="))
+    assert "/venv/bin/" in exec_line and exec_line.endswith(" app")
+    # Icon was actually copied and is a PNG.
+    assert icon.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+    # No autostart unless asked.
+    assert not (tmp_path / ".config/autostart/tailcam-tray.desktop").exists()
+
+
+def test_linux_desktop_autostart_and_uninstall(tmp_path):
+    from tailcam.desktop import linux_desktop as ld
+
+    ld.install_entries(home=tmp_path, python="/venv/bin/python", autostart=True)
+    auto = tmp_path / ".config/autostart/tailcam-tray.desktop"
+    text = auto.read_text()
+    assert "--no-window" in text  # login start is tray-only
+    assert "X-GNOME-Autostart-enabled=true" in text
+
+    assert ld.uninstall_entries(home=tmp_path) is True
+    assert not auto.exists()
+    assert not (tmp_path / ".local/share/applications/tailcam.desktop").exists()
+    assert not (tmp_path / ".local/share/icons/hicolor/512x512/apps/tailcam.png").exists()
+    assert ld.uninstall_entries(home=tmp_path) is False
+
+
+def test_linux_exec_prefers_console_script(tmp_path):
+    from tailcam.desktop.linux_desktop import _tailcam_exec
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    (fake_bin / "tailcam").write_text("#!/bin/sh\n")
+    py = fake_bin / "python"
+    py.write_text("")
+    assert _tailcam_exec(str(py)) == f"{fake_bin}/tailcam app"
+    # No console script -> python -m fallback.
+    (fake_bin / "tailcam").unlink()
+    assert _tailcam_exec(str(py)) == f"{fake_bin}/python -m tailcam app"
+
+
+def test_linux_reinstall_rebakes_venv_path(tmp_path):
+    from tailcam.desktop import linux_desktop as ld
+
+    ld.install_entries(home=tmp_path, python="/old-venv/bin/python")
+    ld.install_entries(home=tmp_path, python="/new-venv/bin/python")
+    text = (tmp_path / ".local/share/applications/tailcam.desktop").read_text()
+    assert "/new-venv/bin/" in text and "/old-venv/" not in text
+
+
+def test_cli_app_install_on_linux(monkeypatch, tmp_path):
+    from typer.testing import CliRunner
+
+    from tailcam import cli
+    from tailcam.desktop import linux_desktop as ld
+
+    monkeypatch.setattr(cli.sys, "platform", "linux")
+    monkeypatch.setattr(ld.Path, "home", classmethod(lambda cls: tmp_path))
+    result = CliRunner().invoke(cli.app, ["app", "install", "--autostart"])
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / ".local/share/applications/tailcam.desktop").exists()
+    assert (tmp_path / ".config/autostart/tailcam-tray.desktop").exists()
+
+    result = CliRunner().invoke(cli.app, ["app", "uninstall"])
+    assert result.exit_code == 0
+    assert not (tmp_path / ".local/share/applications/tailcam.desktop").exists()
+
+
+def test_linux_gui_diagnostics_shape():
+    from tailcam.desktop.linux_desktop import gui_diagnostics
+
+    rows = gui_diagnostics()
+    assert rows, "diagnostics must always return at least the gi row"
+    for ok_flag, label, hint in rows:
+        assert isinstance(ok_flag, bool) and label
+        if not ok_flag:
+            assert hint  # every failure carries a remediation

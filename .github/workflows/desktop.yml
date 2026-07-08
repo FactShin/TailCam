@@ -28,6 +28,48 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: pytest tests/test_desktop.py -q
 
+  # The reference GUI platform: real pystray/pywebview stack under xvfb.
+  linux-gui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: System GUI deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb dbus-x11 python3-venv python3-gi python3-gi-cairo \
+            gir1.2-gtk-3.0 gir1.2-ayatanaappindicator3-0.1
+          sudo apt-get install -y gir1.2-webkit2-4.1 || sudo apt-get install -y gir1.2-webkit2gtk-4.1
+      - name: Install (system python sees gi)
+        run: |
+          python3 -m venv --system-site-packages ~/gui-venv
+          ~/gui-venv/bin/pip install ".[desktop]"
+      - name: Backend + diagnostics checks
+        run: |
+          xvfb-run -a ~/gui-venv/bin/tailcam app --check
+          ~/gui-venv/bin/tailcam app --smoke
+          ~/gui-venv/bin/python -c "
+          from tailcam.desktop.linux_desktop import gui_diagnostics
+          rows = gui_diagnostics()
+          assert all(ok for ok, *_ in rows), rows
+          print('all GI probes ok:', [label for _, label, _ in rows])
+          "
+      - name: Real tray runs under xvfb
+        run: |
+          set +e
+          timeout 10 xvfb-run -a dbus-launch ~/gui-venv/bin/tailcam app --no-window
+          code=$?
+          set -e
+          test "$code" = 124  # stayed alive until timeout = the tray ran
+      - name: Launcher entries round-trip
+        run: |
+          ~/gui-venv/bin/tailcam app install --autostart
+          test -f ~/.local/share/applications/tailcam.desktop
+          test -f ~/.local/share/icons/hicolor/512x512/apps/tailcam.png
+          test -f ~/.config/autostart/tailcam-tray.desktop
+          grep -q "Exec=.*tailcam.* app" ~/.local/share/applications/tailcam.desktop
+          ~/gui-venv/bin/tailcam app uninstall
+          test ! -f ~/.local/share/applications/tailcam.desktop
+
   # The real-Mac gate: generates and validates the actual .app on macOS.
   macos-smoke:
     runs-on: macos-latest

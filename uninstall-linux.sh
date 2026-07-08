@@ -25,6 +25,9 @@ fi
 systemctl --user disable --now anycam.service 2>/dev/null || true
 rm -f "$HOME/.config/systemd/user/anycam.service"
 rm -f "$HOME/.local/bin/tailcam" "$HOME/.local/bin/anycam"
+rm -f "$HOME/.local/share/applications/tailcam.desktop" \
+      "$HOME/.local/share/icons/hicolor/512x512/apps/tailcam.png" \
+      "$HOME/.config/autostart/tailcam-tray.desktop"
 for v in "$VENV_DIR" "$LEGACY_VENV_DIR"; do
     [ -d "$v" ] && { rm -rf "$v"; log "Removed virtualenv $v"; }
 done
