@@ -274,17 +274,6 @@ def test_cli_app_smoke_headless(isolated_env, monkeypatch):
     assert "menu_items" in result.output
 
 
-def test_cli_app_install_windows_pending(monkeypatch):
-    from typer.testing import CliRunner
-
-    from tailcam import cli
-
-    monkeypatch.setattr(cli.sys, "platform", "win32")
-    result = CliRunner().invoke(cli.app, ["app", "install"])
-    assert result.exit_code == 1
-    assert "Windows" in result.output
-
-
 def test_cli_app_install_on_macos(monkeypatch, tmp_path):
     from typer.testing import CliRunner
 
@@ -430,3 +419,78 @@ def test_linux_gui_diagnostics_shape():
         assert isinstance(ok_flag, bool) and label
         if not ok_flag:
             assert hint  # every failure carries a remediation
+
+
+# ------------------------------------------------------------------ Windows shortcut
+def test_windows_shortcut_ps_golden(tmp_path, monkeypatch):
+    # Force the pythonw path deterministically (no real Windows interpreter).
+    from pathlib import Path as _P
+
+    from tailcam.desktop import windows_shortcut as ws
+    monkeypatch.setattr(
+        ws, "_pythonw",
+        lambda python=None: _P(r"C:\Users\me\AppData\Local\TailCam\venv\Scripts\pythonw.exe"),
+    )
+    monkeypatch.setattr(ws, "_icon_path", lambda home=None: __import__("pathlib").Path(
+        r"C:\Users\me\AppData\Local\TailCam\tailcam.ico"
+    ))
+    captured = {}
+    monkeypatch.setattr(ws, "_run_ps", lambda script: captured.setdefault("s", script))
+
+    lnk = ws.install_shortcut(home=tmp_path, autostart=True)
+    assert lnk == ws.shortcut_path(tmp_path)
+    s = captured["s"]
+    # Targets pythonw + -m tailcam app (no console window, no launcher stub).
+    assert "WScript.Shell" in s and "CreateShortcut(" in s
+    assert r"pythonw.exe" in s
+    assert "$s.Arguments = '-m tailcam app'" in s
+    assert "$s.Save()" in s
+    # Autostart Run key added, with --no-window.
+    assert "CurrentVersion\\Run" in s and "TailCam" in s
+    assert "--no-window" in s
+
+
+def test_windows_shortcut_ps_quote_escapes():
+    from tailcam.desktop.windows_shortcut import _ps_single_quote
+
+    assert _ps_single_quote("a'b") == "'a''b'"
+    assert _ps_single_quote(r"C:\x") == r"'C:\x'"
+
+
+def test_windows_shortcut_no_autostart(tmp_path, monkeypatch):
+    from pathlib import Path as _P
+
+    from tailcam.desktop import windows_shortcut as ws
+    monkeypatch.setattr(ws, "_pythonw", lambda python=None: _P("pythonw.exe"))
+    monkeypatch.setattr(ws, "_icon_path", lambda home=None: None)
+    captured = {}
+    monkeypatch.setattr(ws, "_run_ps", lambda script: captured.setdefault("s", script))
+    ws.install_shortcut(home=tmp_path, autostart=False)
+    # No Run-key write when autostart is off.
+    assert "Set-ItemProperty" not in captured["s"]
+
+
+def test_cli_app_install_on_windows(monkeypatch, tmp_path):
+    from typer.testing import CliRunner
+
+    from tailcam import cli
+    from tailcam.desktop import windows_shortcut as ws
+
+    monkeypatch.setattr(cli.sys, "platform", "win32")
+    calls = {}
+    def fake_install(autostart=False):
+        calls["install"] = autostart
+        return tmp_path / "TailCam.lnk"
+
+    def fake_uninstall():
+        calls["uninstall"] = True
+        return True
+
+    monkeypatch.setattr(ws, "install_shortcut", fake_install)
+    monkeypatch.setattr(ws, "uninstall_shortcut", fake_uninstall)
+    r = CliRunner().invoke(cli.app, ["app", "install", "--autostart"])
+    assert r.exit_code == 0, r.output
+    assert calls["install"] is True
+    r = CliRunner().invoke(cli.app, ["app", "uninstall"])
+    assert r.exit_code == 0
+    assert calls["uninstall"] is True

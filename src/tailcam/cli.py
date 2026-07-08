@@ -754,10 +754,11 @@ def desktop_run(
 @desktop_app.command("install")
 def desktop_install(
     autostart: bool = typer.Option(
-        False, "--autostart", help="Linux: also start the tray at login."
+        False, "--autostart", help="Linux/Windows: also start the tray at login."
     ),
 ) -> None:
-    """Create the OS launcher: TailCam.app (macOS) / .desktop entry (Linux)."""
+    """Create the OS launcher: TailCam.app (macOS) / .desktop entry (Linux) /
+    Start-menu shortcut (Windows)."""
     if sys.platform == "darwin":
         from tailcam.desktop.macos_bundle import install_app
 
@@ -775,7 +776,17 @@ def desktop_install(
             + (" — the tray also starts at login." if autostart else ".")
         )
         return
-    console.print("`tailcam app install` supports macOS and Linux; Windows is next (issue #38).")
+    if sys.platform == "win32":
+        from tailcam.desktop.windows_shortcut import install_shortcut
+
+        lnk = install_shortcut(autostart=autostart)
+        console.print(f"[green]Installed[/green] {lnk}")
+        console.print(
+            "Launch it from the Start menu as “TailCam”"
+            + (" — the tray also starts at login." if autostart else ".")
+        )
+        return
+    console.print(f"`tailcam app install` doesn't support this platform ({sys.platform}).")
     raise typer.Exit(1)
 
 
@@ -790,8 +801,12 @@ def desktop_uninstall() -> None:
         from tailcam.desktop.linux_desktop import uninstall_entries
 
         removed = uninstall_entries()
+    elif sys.platform == "win32":
+        from tailcam.desktop.windows_shortcut import uninstall_shortcut
+
+        removed = uninstall_shortcut()
     else:
-        console.print("`tailcam app uninstall` supports macOS and Linux.")
+        console.print(f"`tailcam app uninstall` doesn't support this platform ({sys.platform}).")
         raise typer.Exit(1)
     console.print("[green]Removed[/green]" if removed else "Nothing was installed.")
 
