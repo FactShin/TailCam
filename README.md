@@ -274,8 +274,8 @@ thumbnail. To let one node analyze another's events, point the URL at that node
 
 ## Features
 
-- **Desktop app (macOS)** — a menu-bar app with the dashboard in its own window, service
-  controls, fleet-node switching, and one-click updates (`tailcam app`); Linux + Windows next.
+- **Desktop app (macOS + Linux)** — a menu-bar/tray app with the dashboard in its own window, service
+  controls, fleet-node switching, and one-click updates (`tailcam app`); Windows next.
 - **Polished dashboard (PWA)** — a responsive React web app (installable on phone or desktop) with
   a live camera grid grouped by device, a video wall, a command palette (Cmd/Ctrl+K), a
   mobile-first camera view with pinch/zoom, gallery, and motion events. Built and shipped inside

@@ -21,14 +21,17 @@ warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
 err()  { printf '\033[1;31mxx\033[0m %s\n' "$*" >&2; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
+DO_DESKTOP=0
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --port) PORT="$2"; shift ;;
         --ref) REF="$2"; shift ;;
         --no-service) DO_SERVICE=0 ;;
         --no-tailscale) DO_TAILSCALE=0 ;;
+        --desktop) DO_DESKTOP=1 ;;
         -h|--help)
-            echo "Usage: install-linux.sh [--port N] [--ref REF] [--no-service] [--no-tailscale]"
+            echo "Usage: install-linux.sh [--port N] [--ref REF] [--no-service] [--no-tailscale] [--desktop]"
             exit 0 ;;
         *) warn "Unknown option: $1" ;;
     esac
@@ -150,6 +153,28 @@ ensure_tailscale() {
 }
 
 # --- AI motion labeling (optional, local Ollama) ----------------------------
+setup_desktop_app() {
+    # Opt-in (--desktop): most Linux nodes are headless servers. Installs the
+    # tray/window system libraries (best-effort), the [desktop] pip extra, and
+    # the launcher .desktop entry. `tailcam doctor` explains anything missing.
+    [ "$DO_DESKTOP" -eq 1 ] || return 0
+    log "Setting up the TailCam desktop app (--desktop)"
+    case "$DISTRO" in
+        debian|ubuntu|raspbian)
+            local gui_deps="python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-ayatanaappindicator3-0.1"
+            # WebKit GI bindings renamed on Ubuntu 24.04 (webkit2-4.1 vs webkit2gtk-4.1).
+            sudo apt-get install -y gir1.2-webkit2-4.1 2>/dev/null || sudo apt-get install -y gir1.2-webkit2gtk-4.1 || warn "WebKitGTK GI bindings unavailable — the dashboard will open in the browser."
+            if sudo -n true 2>/dev/null || [ -t 0 ]; then
+                sudo apt-get install -y $gui_deps || warn "GUI libraries failed to install — run 'tailcam doctor' for hints."
+            else
+                warn "GUI libraries need sudo. Run: sudo apt-get install -y $gui_deps"
+            fi ;;
+        *) warn "Install your distro's GTK3/WebKit2GTK/AppIndicator GI packages, then run 'tailcam doctor'." ;;
+    esac
+    "${VENV_DIR}/bin/pip" install --quiet "pywebview>=5" "pystray>=0.19" "pillow>=10"         || { warn "Desktop backends failed to install; retry with: pip install 'tailcam[desktop]'"; return 0; }
+    "$TAILCAM_BIN" app install --autostart || warn "Could not create the launcher (run 'tailcam app install' later)."
+}
+
 ensure_ai_hint() {
     local rec="moondream"
     echo
@@ -177,6 +202,7 @@ install_tailcam
 remove_legacy_anycam
 link_cli
 setup_service
+setup_desktop_app
 ensure_tailscale
 ensure_ai_hint
 echo
