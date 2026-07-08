@@ -2,6 +2,7 @@
 // so the whole wiki is served locally with TailCam — no network, no GitHub.
 
 import overview from "./md/overview.md?raw";
+import desktop from "./md/desktop.md?raw";
 import installation from "./md/installation.md?raw";
 import docker from "./md/docker.md?raw";
 import quickstart from "./md/quickstart.md?raw";
@@ -39,6 +40,8 @@ export interface DocPage {
 export const DOCS: DocPage[] = [
   { slug: "overview", title: "Welcome", group: "Getting started", body: overview,
     summary: "What TailCam is and where to go next." },
+  { slug: "desktop", title: "Desktop app", group: "Getting started", body: desktop,
+    summary: "Menu-bar app for macOS (Linux/Windows next): dashboard window, service controls, fleet nodes." },
   { slug: "installation", title: "Installation", group: "Getting started", body: installation,
     summary: "Install TailCam, optional extras, and Tailscale." },
   { slug: "docker", title: "Running in Docker", group: "Getting started", body: docker,
