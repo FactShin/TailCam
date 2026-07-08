@@ -224,9 +224,32 @@ unit; tray reappears after logging out and back in (autostart).
 
 ## Windows
 
-Next up — tracked as the final #38 sub-issue: tray + Start-menu shortcut,
-embedded window via WebView2. The entire core — menu model, service control,
-node switching, updates — is already shared; only the packaging layer differs.
+\`install.ps1\` sets it up automatically: after the install you'll find
+**TailCam** in the Start menu, with a tray icon in the notification area. Same
+features as macOS/Linux — tray menu with service controls, Nodes ▸ switching,
+update alerts, and the dashboard in an embedded window.
+
+The embedded window uses the **Microsoft Edge WebView2 Runtime** (preinstalled
+on Windows 11 and current Windows 10). If it's missing, the installer points
+you at the download and the app opens the dashboard in your browser instead —
+everything else still works.
+
+Manual setup on an existing install:
+
+\`\`\`powershell
+& "$env:LOCALAPPDATA\\TailCam\venv\\Scripts\\python.exe" -m pip install "pywebview>=5" "pystray>=0.19" "pillow>=10"
+tailcam app install --autostart    # Start-menu shortcut + tray at login
+\`\`\`
+
+Notes: the shortcut and login autostart both launch \`pythonw.exe -m tailcam
+app\` (no console window ever flashes). Updates run through the official
+installer (Windows venvs aren't relocatable, so it swaps the venv safely) and
+the shortcut is re-created against the new venv. \`tailcam doctor\` reports
+whether the backends and WebView2 are available.
+
+Smoke checklist: tray icon in the notification area; Open Dashboard renders the
+UI (embedded or browser); Start/Stop from the tray round-trips the Scheduled
+Task; no console window flashes at any point.
 `,F1=`# Installation
 
 TailCam runs on Linux, macOS, and Windows — including **Windows on ARM**

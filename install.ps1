@@ -124,6 +124,38 @@ function Stop-TailCamProcesses {
   Start-Sleep -Seconds 1
 }
 
+function Test-WebView2 {
+  # WebView2 Runtime is registered under EdgeUpdate Clients (per-machine or
+  # per-user). Its absence isn't fatal — the app falls back to the browser.
+  $guid = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+  foreach ($root in @("HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients",
+                      "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients",
+                      "HKCU:\SOFTWARE\Microsoft\EdgeUpdate\Clients")) {
+    $v = (Get-ItemProperty "$root\$guid" -ErrorAction SilentlyContinue).pv
+    if ($v -and $v -ne "0.0.0.0") { return $true }
+  }
+  return $false
+}
+
+function Setup-DesktopApp($venvPy) {
+  # The tray app (issue #38): optional backends + a Start-menu shortcut. The
+  # embedded dashboard window needs the WebView2 Runtime; without it the app
+  # still works and opens the dashboard in the browser instead.
+  Write-Host ""
+  Info "Installing the TailCam desktop app (tray + Start menu)"
+  if (-not (Test-WebView2)) {
+    Warn "Microsoft Edge WebView2 Runtime not detected — the dashboard will open in your"
+    Warn "browser. For the embedded window, install it from:"
+    Write-Host "        https://developer.microsoft.com/microsoft-edge/webview2/"
+  }
+  & $venvPy -m pip install --quiet "pywebview>=5" "pystray>=0.19" "pillow>=10"
+  if ($LASTEXITCODE -eq 0) {
+    & $venvPy -m tailcam app install --autostart
+  } else {
+    Warn "Desktop backends failed to install — skip for now; retry: pip install 'tailcam[desktop]'"
+  }
+}
+
 function Install-TailCam {
   $script:RejectedArmPython = $false
   $py = Find-Python
@@ -254,6 +286,9 @@ function Install-TailCam {
       Warn "Tailscale not found. Install it from https://tailscale.com/download/windows, run 'tailscale up', then: tailcam tailscale serve"
     }
   }
+
+  # --- desktop app (tray + Start-menu shortcut) -------------------------------
+  Setup-DesktopApp $VenvPy
 
   # AI motion labeling (optional, local Ollama)
   Write-Host ""
