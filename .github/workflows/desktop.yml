@@ -97,3 +97,27 @@ jobs:
         run: |
           tailcam app --check
           tailcam app --smoke
+
+  # Windows smoke gate: shortcut generation + backends + headless self-test.
+  windows-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ".[desktop]"
+      - name: Backend + smoke checks
+        run: |
+          tailcam app --check
+          tailcam app --smoke
+      - name: Shortcut round-trips
+        shell: pwsh
+        run: |
+          tailcam app install --autostart
+          $lnk = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\TailCam.lnk"
+          if (-not (Test-Path $lnk)) { throw "shortcut not created" }
+          $run = (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run").TailCam
+          if (-not $run) { throw "autostart Run key missing" }
+          tailcam app uninstall
+          if (Test-Path $lnk) { throw "shortcut not removed" }
