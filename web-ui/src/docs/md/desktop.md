@@ -66,10 +66,46 @@ tailcam app uninstall      # remove it
 
 `tailcam doctor` also reports whether the desktop backends are available.
 
-## Linux & Windows
+## Linux
 
-Tracked as follow-ups on the same issue (#38): Linux gets the tray + a
-`.desktop` entry (needs WebKit2GTK + an AppIndicator-capable desktop), Windows
-gets the tray + a Start-menu shortcut (embedded window uses WebView2). The
-entire core — menu model, service control, node switching, updates — is
-shared; only the thin packaging layer differs per OS.
+Opt-in at install time (most Linux nodes are headless servers):
+
+```bash
+curl -fsSL .../install-linux.sh | bash -s -- --desktop
+```
+
+That installs the GUI system libraries (GTK3, WebKit2GTK, AppIndicator),
+the `tailcam[desktop]` backends, and a launcher — **TailCam appears in your
+app grid**, and the tray starts at login. Everything from the macOS app is
+here: tray menu with service controls, Nodes ▸ switching, update alerts,
+embedded dashboard window (or your browser when WebKit2GTK isn't available).
+
+Manual setup on an existing install:
+
+```bash
+sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0   gir1.2-ayatanaappindicator3-0.1 gir1.2-webkit2-4.1   # 22.04: gir1.2-webkit2gtk-4.1
+pip install 'tailcam[desktop]'      # into the TailCam venv
+tailcam app install --autostart     # launcher + start tray at login
+```
+
+Desktop notes:
+
+- **GNOME** hides tray icons by default — install the *AppIndicator and
+  KStatusNotifierItem Support* shell extension. KDE/XFCE/Cinnamon work out of
+  the box.
+- The venv must see the system `gi` bindings: the installer handles this; for
+  hand-built venvs use `--system-site-packages` (or `pip install PyGObject`).
+- `tailcam doctor` probes every GUI piece and prints the exact package to
+  install for anything missing.
+- No AppImage by design: the shell lives in the pip-managed venv so it shares
+  TailCam's updater and survives reinstalls.
+
+Smoke checklist after install: tray icon visible; Open Dashboard renders the
+UI (embedded or browser); Start/Stop Service round-trips the systemd user
+unit; tray reappears after logging out and back in (autostart).
+
+## Windows
+
+Next up — tracked as the final #38 sub-issue: tray + Start-menu shortcut,
+embedded window via WebView2. The entire core — menu model, service control,
+node switching, updates — is already shared; only the packaging layer differs.

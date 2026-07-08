@@ -242,6 +242,14 @@ def doctor() -> None:
             f"[dim]·[/dim] Desktop webview  "
             f"[dim]{web_detail} — dashboard opens in the browser[/dim]"
         )
+    if sys.platform.startswith("linux") and not (tray_ok and web_ok):
+        from tailcam.desktop.linux_desktop import gui_diagnostics
+
+        for row_ok, label, hint in gui_diagnostics():
+            if row_ok:
+                ok(label)
+            else:
+                console.print(f"[dim]·[/dim] {label}  [dim]{hint}[/dim]")
 
     try:
         import cv2
@@ -744,33 +752,48 @@ def desktop_run(
 
 
 @desktop_app.command("install")
-def desktop_install() -> None:
-    """macOS: create ~/Applications/TailCam.app (regenerate after upgrades)."""
-    if sys.platform != "darwin":
-        console.print(
-            "`tailcam app install` currently supports macOS; "
-            "Linux and Windows are next (issue #38)."
-        )
-        raise typer.Exit(1)
-    from tailcam.desktop.macos_bundle import install_app
+def desktop_install(
+    autostart: bool = typer.Option(
+        False, "--autostart", help="Linux: also start the tray at login."
+    ),
+) -> None:
+    """Create the OS launcher: TailCam.app (macOS) / .desktop entry (Linux)."""
+    if sys.platform == "darwin":
+        from tailcam.desktop.macos_bundle import install_app
 
-    bundle = install_app()
-    console.print(f"[green]Installed[/green] {bundle}")
-    console.print("Launch it from Spotlight/Launchpad as “TailCam”.")
+        bundle = install_app()
+        console.print(f"[green]Installed[/green] {bundle}")
+        console.print("Launch it from Spotlight/Launchpad as “TailCam”.")
+        return
+    if sys.platform.startswith("linux"):
+        from tailcam.desktop.linux_desktop import install_entries
+
+        entry = install_entries(autostart=autostart)
+        console.print(f"[green]Installed[/green] {entry}")
+        console.print(
+            "Launch it from your app grid as “TailCam”"
+            + (" — the tray also starts at login." if autostart else ".")
+        )
+        return
+    console.print("`tailcam app install` supports macOS and Linux; Windows is next (issue #38).")
+    raise typer.Exit(1)
 
 
 @desktop_app.command("uninstall")
 def desktop_uninstall() -> None:
-    """Remove the desktop app bundle."""
-    if sys.platform != "darwin":
-        console.print("`tailcam app uninstall` currently supports macOS.")
-        raise typer.Exit(1)
-    from tailcam.desktop.macos_bundle import uninstall_app
+    """Remove the desktop launcher."""
+    if sys.platform == "darwin":
+        from tailcam.desktop.macos_bundle import uninstall_app
 
-    if uninstall_app():
-        console.print("[green]Removed[/green] TailCam.app")
+        removed = uninstall_app()
+    elif sys.platform.startswith("linux"):
+        from tailcam.desktop.linux_desktop import uninstall_entries
+
+        removed = uninstall_entries()
     else:
-        console.print("TailCam.app was not installed.")
+        console.print("`tailcam app uninstall` supports macOS and Linux.")
+        raise typer.Exit(1)
+    console.print("[green]Removed[/green]" if removed else "Nothing was installed.")
 
 
 def main() -> None:
