@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="dark">
+  <title>Glance — TailCam</title>
+  <link rel="stylesheet" href="glance.css">
+</head>
+<body>
+  <div id="stage" class="stage">
+    <img id="stream" class="stream" alt="">
+
+    <div class="overlay top-bar">
+      <span id="rec-led" class="led err blink" hidden></span>
+      <span id="cam-name" class="cam-name">&hellip;</span>
+      <span id="node-name" class="node-name"></span>
+    </div>
+
+    <div id="controls" class="overlay controls">
+      <button id="btn-snapshot" class="ctl" type="button" title="Take snapshot" aria-label="Take snapshot"></button>
+      <button id="btn-record" class="ctl" type="button" title="Start recording" aria-label="Start recording"></button>
+      <button id="btn-float" class="ctl" type="button" title="Float (picture-in-picture)" aria-label="Float window" hidden></button>
+    </div>
+
+    <div id="status" class="status">
+      <span id="status-spinner" class="spinner" aria-hidden="true"></span>
+      <p id="status-text">Connecting&hellip;</p>
+      <button id="btn-retry" class="btn" type="button" hidden>Retry</button>
+    </div>
+
+    <div id="toast" class="toast" role="alert" hidden></div>
+  </div>
+
+  <!-- Shown in the opener window while the stage floats in a PiP window. -->
+  <div id="floating-note" class="floating-note" hidden>
+    <p>Playing in floating window</p>
+  </div>
+
+  <script type="module" src="glance.js"></script>
+</body>
+</html>

@@ -237,6 +237,26 @@ Building your own is one Python file with one import
 [`marketplace/`](marketplace/) for the template + contribution process.
 Community plugins land in the registry via reviewed pull requests.
 
+## Browser extension (optional)
+
+**TailCam Companion** brings the dashboard into your browser chrome — strictly an
+enhancement, never a requirement. One shared WebExtension codebase ships for
+**Chrome, Edge, Firefox, and Safari** (Manifest V3, no frameworks, no third-party
+servers, no analytics):
+
+- **Toolbar mini-dashboard** — live camera thumbnails across all your nodes, one-tap
+  snapshot/record, and the latest motion events with their AI label chips.
+- **Badge + notifications** — unseen-event count on the toolbar icon; native
+  notifications filterable to *labeled-only* or *person-only*, with quiet hours.
+- **Glance window** — pop any camera into a small floating viewer and keep working.
+- **Omnibox** — type `tc <camera name>` in the address bar to jump straight to it.
+- **Keyboard shortcuts** — open the dashboard or glance your pinned camera.
+
+The extension talks directly to the nodes you configure (over your tailnet), and
+host permission is requested per node at runtime. Source, build script, and
+per-browser install instructions live in
+[`browser-extensions/`](browser-extensions/).
+
 ## Object detection (built in, zero setup)
 
 Open any camera and TailCam draws **live bounding boxes with labels** — person,
@@ -284,6 +304,10 @@ thumbnail. To let one node analyze another's events, point the URL at that node
   a live camera grid grouped by device, a video wall, a command palette (Cmd/Ctrl+K), a
   mobile-first camera view with pinch/zoom, gallery, and motion events. Built and shipped inside
   the package; see [`web-ui/`](web-ui/).
+- **Browser extension (optional)** — *TailCam Companion* for Chrome, Edge, Firefox, and Safari:
+  a toolbar mini-dashboard, motion-event badge + native notifications (with AI-label filtering
+  and quiet hours), a floating "glance" window for any camera, omnibox `tc` quick-open, and
+  keyboard shortcuts. Talks only to your own nodes; see [`browser-extensions/`](browser-extensions/).
 - **Timelapse + smoothing** — capture a timelapse (great for 3D prints), then "Smooth" it into
   flowing motion. The interpolation engine is selectable on the **Models** page: a bundled **ffmpeg**
   (works everywhere) or an optional GPU **RIFE** model (`rife-ncnn-vulkan`) for higher quality, with
