@@ -19,3 +19,7 @@ venv/
 web-ui/node_modules/
 web-ui/dist/
 web-ui/.vite/
+
+# browser extensions — assembled packages and Safari converter output
+browser-extensions/safari/.build/
+browser-extensions/safari/TailCamCompanion/

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TailCam Companion — Options</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <header class="topbar">
+    <img class="logo" src="../icons/icon-32.png" alt="" width="28" height="28">
+    <div class="brand">TAILCAM <b>COMPANION</b></div>
+    <div class="topbar-sub">Options</div>
+  </header>
+
+  <main>
+    <!-- ============================ Nodes ============================ -->
+    <section class="panel" aria-labelledby="nodes-title">
+      <h2 id="nodes-title" class="microlabel">Nodes</h2>
+      <p class="hint">
+        Add each TailCam node you want the extension to talk to — a tailnet
+        address like <code>https://host.tailnet.ts.net:8443</code> or
+        <code>http://localhost:8088</code>. The extension asks for permission
+        to reach that address only; nothing else is requested.
+      </p>
+
+      <ul id="node-list" class="node-list"></ul>
+      <p id="nodes-empty" class="empty" hidden>
+        No nodes yet. Add your TailCam server below to get started.
+      </p>
+
+      <form id="add-node-form" class="add-node" autocomplete="off">
+        <input id="node-name" type="text" placeholder="Name (e.g. Home)"
+               maxlength="40" required aria-label="Node name">
+        <input id="node-url" type="text" placeholder="https://host.tailnet.ts.net:8443"
+               spellcheck="false" required aria-label="Node URL">
+        <button type="submit" class="btn primary">Add node</button>
+      </form>
+      <p id="add-node-error" class="field-error" role="alert" hidden></p>
+    </section>
+
+    <!-- ======================= Polling & badge ======================= -->
+    <section class="panel" aria-labelledby="poll-title">
+      <h2 id="poll-title" class="microlabel">Polling &amp; badge</h2>
+
+      <div class="row">
+        <label class="row-label" for="poll-interval">Check for new events every</label>
+        <select id="poll-interval">
+          <option value="30">30 seconds</option>
+          <option value="60">1 minute</option>
+          <option value="120">2 minutes</option>
+          <option value="300">5 minutes</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label class="check">
+          <input type="checkbox" id="badge-enabled">
+          <span>Show unseen-event count on the toolbar icon</span>
+        </label>
+      </div>
+    </section>
+
+    <!-- ======================== Notifications ======================== -->
+    <section class="panel" aria-labelledby="notify-title">
+      <h2 id="notify-title" class="microlabel">Notifications</h2>
+
+      <fieldset class="radio-group" id="notify-mode-group">
+        <legend class="sr-only">Notification mode</legend>
+        <label class="radio">
+          <input type="radio" name="notify-mode" value="off">
+          <span class="radio-text"><strong>Off</strong>
+            <small>Never notify (badge still works).</small></span>
+        </label>
+        <label class="radio">
+          <input type="radio" name="notify-mode" value="all">
+          <span class="radio-text"><strong>All motion</strong>
+            <small>Notify for every motion event.</small></span>
+        </label>
+        <label class="radio">
+          <input type="radio" name="notify-mode" value="labeled">
+          <span class="radio-text"><strong>Labeled only</strong>
+            <small>Only events the node's AI has labeled.</small></span>
+        </label>
+        <label class="radio">
+          <input type="radio" name="notify-mode" value="person">
+          <span class="radio-text"><strong>Person only</strong>
+            <small>Only events labeled as a person.</small></span>
+        </label>
+      </fieldset>
+
+      <div class="row quiet-row">
+        <span class="row-label">Quiet hours</span>
+        <input type="time" id="quiet-start" aria-label="Quiet hours start">
+        <span class="quiet-sep">to</span>
+        <input type="time" id="quiet-end" aria-label="Quiet hours end">
+      </div>
+      <p class="hint">
+        No notifications during quiet hours (overnight ranges like
+        22:00&nbsp;→&nbsp;07:00 work). Set both times equal to disable.
+        Labeled-only and person-only modes rely on AI labels, so the node's AI
+        processing must be enabled for them to fire.
+      </p>
+    </section>
+
+    <!-- ======================== Pinned camera ======================== -->
+    <section class="panel" aria-labelledby="pin-title">
+      <h2 id="pin-title" class="microlabel">Pinned camera</h2>
+
+      <div class="row">
+        <label class="row-label" for="pinned-camera">Camera</label>
+        <select id="pinned-camera"></select>
+      </div>
+      <p class="hint">
+        Opened by the “glance” keyboard shortcut and the toolbar-icon context
+        menu. The list fills in after the extension has polled your nodes at
+        least once.
+      </p>
+    </section>
+  </main>
+
+  <footer class="about">
+    TailCam Companion v1.6.0 — enhances your TailCam dashboard; everything
+    talks directly to your own nodes, no third-party servers.
+  </footer>
+
+  <div id="toast" class="toast" role="status" hidden>Saved</div>
+
+  <script type="module" src="options.js"></script>
+</body>
+</html>
