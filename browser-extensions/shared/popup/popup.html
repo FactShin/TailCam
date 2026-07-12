@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="dark">
+  <title>TailCam</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">TAIL<b>CAM</b></div>
+    <nav id="node-tabs" class="node-tabs" hidden></nav>
+  </header>
+
+  <main id="main">
+    <!-- Empty state: no nodes configured yet -->
+    <section id="empty" class="empty" hidden>
+      <div class="empty-glyph" aria-hidden="true"></div>
+      <h2>Add your TailCam node</h2>
+      <p>Connect the companion to your self-hosted TailCam server on your tailnet or localhost.</p>
+      <button id="empty-add" class="btn primary" type="button">Open options</button>
+    </section>
+
+    <div id="banner" class="banner" role="status" hidden></div>
+
+    <div id="loading" class="loading" hidden>
+      <span class="spinner" aria-hidden="true"></span>
+      <span>Loading&hellip;</span>
+    </div>
+
+    <section id="cameras-section" hidden>
+      <div class="microlabel">Cameras</div>
+      <div id="camera-list" class="camera-list"></div>
+    </section>
+
+    <section id="events-section" hidden>
+      <div class="microlabel">Recent events</div>
+      <div id="event-list" class="event-list"></div>
+    </section>
+  </main>
+
+  <footer class="foot" id="foot" hidden>
+    <button id="link-dashboard" class="foot-link" type="button">Open dashboard</button>
+    <button id="link-options" class="foot-link" type="button">Options</button>
+  </footer>
+
+  <div id="toast" class="toast" role="alert" hidden></div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

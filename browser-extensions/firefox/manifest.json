@@ -1,0 +1,61 @@
+{
+  "manifest_version": 3,
+  "name": "TailCam Companion",
+  "version": "1.6.0",
+  "description": "Companion for your self-hosted TailCam node: live camera glances, snapshot thumbnails, motion-event badges and notifications, right from the toolbar.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "tailcam-companion@factshin.github.io",
+      "strict_min_version": "128.0"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "TailCam Companion",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "background": {
+    "scripts": ["background.js"],
+    "type": "module"
+  },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
+  "permissions": [
+    "storage",
+    "alarms",
+    "notifications",
+    "contextMenus"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "omnibox": {
+    "keyword": "tc"
+  },
+  "commands": {
+    "open-dashboard": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+9",
+        "mac": "Command+Shift+9"
+      },
+      "description": "Open the TailCam dashboard"
+    },
+    "open-glance": {
+      "description": "Open the pinned camera in a glance window"
+    }
+  }
+}
