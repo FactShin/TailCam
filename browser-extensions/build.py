@@ -123,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:
 
     width = max(len(r[0]) for r in rows)
     print(f"TailCam Companion {version}")
-    for target, ver, artifact in rows:
+    for target, _ver, artifact in rows:
         print(f"  {target:<{width}}  {artifact}")
     return 0
 

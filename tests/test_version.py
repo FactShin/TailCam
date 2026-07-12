@@ -24,6 +24,12 @@ def test_web_ui_version_matches_app_version():
     )
 
 
-def test_version_is_semver():
+def test_version_is_release_string():
+    """Dotted numeric version, 3 or 4 segments (e.g. 1.6.5 or 1.6.5.1).
+
+    Four-segment versions are valid PEP 440 and compare correctly in
+    ``tailcam.update.parse_version``; npm tolerates them in package.json
+    (they only break ``npm publish``, which this project never does).
+    """
     parts = tailcam.__version__.split(".")
-    assert len(parts) == 3 and all(p.isdigit() for p in parts), tailcam.__version__
+    assert len(parts) in (3, 4) and all(p.isdigit() for p in parts), tailcam.__version__
