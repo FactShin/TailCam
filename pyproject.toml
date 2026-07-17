@@ -8,13 +8,12 @@ dynamic = ["version"]
 description = "TailCam — view any webcam from anywhere over Tailscale, with a web UI."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { text = "Elastic-2.0" }
 authors = [{ name = "TailCam contributors" }]
 keywords = ["webcam", "tailscale", "streaming", "mjpeg", "monitoring", "camera"]
 classifiers = [
     "Environment :: Web Environment",
     "Intended Audience :: End Users/Desktop",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS :: MacOS X",
     "Operating System :: Microsoft :: Windows",

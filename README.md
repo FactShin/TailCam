@@ -15,7 +15,7 @@ port forwarding.
 [![platforms](https://img.shields.io/badge/platform-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows-0E74FF?style=flat-square)](#install-in-60-seconds)
 [![python](https://img.shields.io/badge/python-3.10%2B-5A38F2?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
 [![docker](https://img.shields.io/badge/docker-ghcr.io%2Ffactshin%2Ftailcam-9C20EE?style=flat-square&logo=docker&logoColor=white)](#docker)
-[![license](https://img.shields.io/badge/license-MIT-2ee6a8?style=flat-square)](#license)
+[![license](https://img.shields.io/badge/license-ELv2-2ee6a8?style=flat-square)](#license)
 
 [Install](#install-in-60-seconds) · [Tour](#a-quick-tour) ·
 [Multi-host](#multi-host-every-camera-from-any-device) · [Local AI](#local-ai) ·
@@ -512,7 +512,7 @@ build you think it is.
 
 ## License
 
-MIT
+[Elastic License 2.0 (ELv2)](LICENSE)
 
 ---
 
