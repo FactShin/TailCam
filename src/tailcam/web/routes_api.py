@@ -1200,7 +1200,14 @@ def plugins_info(ctx: AppContext = Depends(get_context)) -> PluginsInfo:
 
 def _mcp_info(ctx: AppContext) -> McpInfo:
     from tailcam.integrations.base import public_base_url
-    from tailcam.mcp import RECOMMENDED_TOOLS, STDIO_ARGS, STDIO_COMMAND
+    from tailcam.mcp import (
+        PROTOCOL_VERSION,
+        RECOMMENDED_TOOLS,
+        STATELESS,
+        STDIO_ARGS,
+        STDIO_COMMAND,
+        SUPPORTED_PROTOCOL_VERSIONS,
+    )
     from tailcam.mcp.tools import tool_count
 
     cfg = ctx.config.mcp
@@ -1223,6 +1230,9 @@ def _mcp_info(ctx: AppContext) -> McpInfo:
         http_url_tailnet=http_tailnet,
         http_url_local=f"http://localhost:{port}/mcp",
         tailscale_running=ctx.tailscale.status().running,
+        protocol_version=PROTOCOL_VERSION,
+        supported_protocol_versions=list(SUPPORTED_PROTOCOL_VERSIONS),
+        stateless=STATELESS,
     )
 
 

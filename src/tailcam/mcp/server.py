@@ -1,13 +1,25 @@
-"""Transport-agnostic MCP server core.
+"""Transport-agnostic, stateless MCP server core.
 
-One :class:`McpServer` represents a single connection (a stdio process or one
-HTTP request). It owns the protocol handshake, the tool/resource/prompt
-registries, role-based authorization, and result shaping. Transports only feed it
-parsed JSON-RPC messages and a resolved principal.
+One :class:`McpServer` handles one exchange. It is *stateless*: nothing a message
+does is remembered for the next one, so there is no session to create, resume, or
+expire, and no ordering requirement between messages. ``initialize`` is a pure
+function of its params — an agent may call ``tools/call`` without ever sending
+one, and two requests may be served by different processes.
+
+Everything the core would otherwise have had to remember (the caller's identity,
+the client's announced name, the negotiated protocol revision) is passed in by
+the transport at construction, per exchange. Transports own whatever connection
+state genuinely exists at their layer: stdio remembers the name its single peer
+announced, and the HTTP transport reads it off each request.
+
+The core owns the protocol methods, the tool/resource/prompt registries,
+role-based authorization, and result shaping.
 """
 
 from __future__ import annotations
 
+from functools import lru_cache
+from types import MappingProxyType
 from typing import Any
 
 from tailcam import __version__
@@ -17,7 +29,6 @@ from tailcam.management.audit import AuditLog
 from tailcam.mcp import (
     PROTOCOL_VERSION,
     SERVER_NAME,
-    SUPPORTED_PROTOCOL_VERSIONS,
     prompts,
     resources,
 )
@@ -41,6 +52,7 @@ from tailcam.mcp.protocol import (
     JsonRpcError,
     error_response,
     is_notification,
+    negotiate_protocol_version,
     result_response,
 )
 from tailcam.mcp.toolctx import ToolContext, principal_rank
@@ -67,7 +79,22 @@ INSTRUCTIONS = (
 )
 
 
+@lru_cache(maxsize=1)
+def tool_registry() -> MappingProxyType[str, Tool]:
+    """The tool registry, built once per process.
+
+    Tools are static definitions, and a stateless server builds a fresh
+    :class:`McpServer` for every exchange — rebuilding ~50 schemas per request
+    would be pure waste. The mapping is read-only so no caller can mutate the
+    shared registry.
+    """
+
+    return MappingProxyType({t.name: t for t in build_tools()})
+
+
 class McpServer:
+    """One MCP exchange. Holds no state across :meth:`handle` calls."""
+
     def __init__(
         self,
         *,
@@ -76,14 +103,18 @@ class McpServer:
         config: MCPConfig,
         transport: str,
         audit: AuditLog | None = None,
+        client_name: str | None = None,
+        protocol_version: str = PROTOCOL_VERSION,
     ) -> None:
         self.client = client
         self.principal = principal
         self.config = config
         self.transport = transport
         self.audit = audit
-        self.client_name: str | None = None
-        self._tools: dict[str, Tool] = {t.name: t for t in build_tools()}
+        # Supplied by the transport, not learned from a remembered handshake.
+        self.client_name = client_name
+        self.protocol_version = protocol_version
+        self._tools = tool_registry()
 
     # -- public dispatch ---------------------------------------------------
     async def handle(self, message: dict[str, Any]) -> dict[str, Any] | None:
@@ -146,16 +177,11 @@ class McpServer:
 
     # -- handlers ----------------------------------------------------------
     def _initialize(self, params: dict[str, Any]) -> dict[str, Any]:
-        client_info = params.get("clientInfo")
-        if isinstance(client_info, dict):
-            name = client_info.get("name")
-            if isinstance(name, str):
-                self.client_name = name
-        # Version negotiation: echo the client's requested version when we
-        # support it; otherwise answer with our latest supported version (the
-        # spec then leaves it to the client to accept or disconnect).
+        # Pure: the handshake records nothing. A stateless server cannot rely on
+        # having seen an initialize before a tools/call, so it must not need to —
+        # the transport carries the client name and revision on every exchange.
         requested = params.get("protocolVersion")
-        version = requested if requested in SUPPORTED_PROTOCOL_VERSIONS else PROTOCOL_VERSION
+        version = negotiate_protocol_version(requested)
         if requested != version:
             log.info("MCP client requested protocol %r; answering with %s", requested, version)
         return {
@@ -215,6 +241,7 @@ class McpServer:
             config=self.config,
             transport=self.transport,
             client_name=self.client_name,
+            protocol_version=self.protocol_version,
             audit=self.audit,
         )
 

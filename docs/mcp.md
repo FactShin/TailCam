@@ -43,6 +43,42 @@ When TailCam is served through Tailscale, remote agents connect to
 `https://<host>.<tailnet>.ts.net:<serve-port>/mcp`. Remote access is fail-closed
 and uses the same Tailscale identity and role checks as the v1 management API.
 
+## Stateless by design
+
+`/mcp` is a **stateless** Streamable HTTP endpoint. It never issues an
+`Mcp-Session-Id`, keeps nothing between requests, and treats every POST as a
+self-contained exchange. For you that means:
+
+- **Nothing to resume or expire.** There is no session to create, keep alive, or
+  tear down, so a node restart, a config reload, or an agent reconnecting never
+  strands a client mid-session — the next request just works.
+- **No handshake replay.** An agent may call `tools/call` without having sent
+  `initialize` on that connection. `initialize` is still supported (and still
+  negotiates the revision); it simply isn't a prerequisite.
+- **Order doesn't matter**, and neither does which process serves a request —
+  useful behind a restarting service or a reverse proxy.
+
+The one thing a stateless server can't remember is the handshake, so each request
+carries what it needs:
+
+| Header | Direction | Meaning |
+| --- | --- | --- |
+| `MCP-Protocol-Version` | request | The revision this request speaks. Absent → `2025-03-26` is assumed (per the spec's backwards-compatibility rule, and the case for `initialize` itself). An unsupported value is rejected with **400** rather than silently mis-served. |
+| `MCP-Protocol-Version` | response | The revision the reply speaks. On `initialize` this is the freshly negotiated one — send it back on subsequent requests. |
+| `Mcp-Session-Id` | request | **Ignored.** Clients written against a stateful server keep working unchanged; they are never sent into a re-initialize loop. |
+| `Mcp-Session-Id` | response | **Never issued.** |
+
+`GET /mcp` and `DELETE /mcp` answer `405 Allow: POST`: there are no
+server-initiated SSE streams and no session to delete. (A browser hitting `/mcp`
+with `Accept: text/html` is redirected to the dashboard's MCP page instead.)
+
+Supported revisions are `2025-06-18` (default), `2025-03-26`, and `2024-11-05`;
+`GET /api/mcp` reports them along with `stateless: true`.
+
+Local stdio is a single long-lived connection, so it isn't a "session" in the HTTP
+sense either — the core is the same stateless implementation, and the transport
+remembers only the client name its peer announced, for the audit trail.
+
 ## Configuration
 
 ```toml
@@ -178,7 +214,8 @@ See [`examples/mcp/claude_desktop_config.json`](../examples/mcp/claude_desktop_c
 
 Use the remote `/mcp` URL with the MCP connector beta and an explicit allowlist
 for write tools. Keep read tools open and gate admin/fleet writes behind operator
-approval.
+approval. The endpoint is stateless, so the connector has no session to pin — any
+request can be retried on its own.
 
 ### OpenClaw / Hermes
 
@@ -193,4 +230,14 @@ fleet scope. See [`examples/mcp/hermes-openclaw.json`](../examples/mcp/hermes-op
 # Start a node, then verify the command is wired:
 tailcam mcp --help
 tailcam mcp stdio   # then send an MCP initialize over stdin from your client
+```
+
+Over HTTP, a single self-contained request is enough to prove the endpoint is
+live — no handshake first, because there is no session to establish:
+
+```bash
+curl -sS -X POST https://<host>.<tailnet>.ts.net:8443/mcp \
+  -H 'content-type: application/json' \
+  -H 'MCP-Protocol-Version: 2025-06-18' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```

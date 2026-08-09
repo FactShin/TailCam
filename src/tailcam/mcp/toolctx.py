@@ -4,6 +4,10 @@ Bundles the TailCam client, the resolved request principal, transport metadata,
 and an audit helper. Keeping this in one object means handlers stay small and the
 audit trail is uniform: every state-changing tool records who did what, over
 which transport, with which client.
+
+The context is built fresh per exchange (the server core keeps no session), so it
+is also where the per-request facts a stateless transport resolves — the client
+name and the negotiated protocol revision — reach the audit trail.
 """
 
 from __future__ import annotations
@@ -13,6 +17,7 @@ from typing import Any
 
 from tailcam.config import MCPConfig
 from tailcam.management.audit import AuditLog
+from tailcam.mcp import PROTOCOL_VERSION
 from tailcam.mcp.client import TailcamClient
 from tailcam.security.principal import RequestPrincipal, TailCamRole
 
@@ -34,6 +39,7 @@ class ToolContext:
     config: MCPConfig
     transport: str  # "stdio" | "streamable_http"
     client_name: str | None = None
+    protocol_version: str = PROTOCOL_VERSION
     audit: AuditLog | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -57,6 +63,7 @@ class ToolContext:
         meta: dict[str, Any] = {
             "mcp_transport": self.transport,
             "mcp_tool": action,
+            "mcp_protocol": self.protocol_version,
         }
         if self.client_name:
             meta["mcp_client"] = self.client_name

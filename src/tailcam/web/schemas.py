@@ -693,6 +693,9 @@ class McpInfo(BaseModel):
     http_url_tailnet: str = ""  # https://<magicdns>:8443/mcp when Tailscale is up
     http_url_local: str = ""  # http://localhost:<port>/mcp
     tailscale_running: bool = False
+    protocol_version: str = ""  # MCP revision this server speaks by default
+    supported_protocol_versions: list[str] = []  # revisions a client may negotiate
+    stateless: bool = True  # no sessions: /mcp never issues an Mcp-Session-Id
 
 
 class McpUpdate(BaseModel):

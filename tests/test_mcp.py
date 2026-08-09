@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
@@ -33,7 +35,9 @@ def mcp_env(context):
         yield app, context
 
 
-def _server(app, principal, *, audit_store=None) -> tuple[McpServer, TailcamClient]:
+def _server(
+    app, principal, *, audit_store=None, client_name=None
+) -> tuple[McpServer, TailcamClient]:
     client = TailcamClient.for_app(app)
     audit = AuditLog(audit_store) if audit_store is not None else None
     server = McpServer(
@@ -42,6 +46,7 @@ def _server(app, principal, *, audit_store=None) -> tuple[McpServer, TailcamClie
         config=app.state.ctx.config.mcp,
         transport="streamable_http",
         audit=audit,
+        client_name=client_name,
     )
     return server, client
 
@@ -62,7 +67,18 @@ async def test_initialize_reports_protocol_and_server(mcp_env):
     assert result["protocolVersion"] == "2025-06-18"
     assert result["serverInfo"]["name"] == "tailcam"
     assert "Tailscale" in result["instructions"]
-    assert server.client_name == "pytest"
+
+
+async def test_initialize_negotiates_older_revision(mcp_env):
+    app, _ = mcp_env
+    server, client = _server(app, ADMIN)
+    try:
+        old = await _call(server, "initialize", protocolVersion="2025-03-26")
+        unknown = await _call(server, "initialize", protocolVersion="1999-01-01")
+    finally:
+        await client.aclose()
+    assert old["result"]["protocolVersion"] == "2025-03-26"  # echoed when supported
+    assert unknown["result"]["protocolVersion"] == "2025-06-18"  # else our latest
 
 
 async def test_tools_list_filters_by_role(mcp_env):
@@ -462,6 +478,140 @@ async def test_http_get_not_allowed(mcp_env):
     assert resp.status_code == 405
 
 
+# -- stateless transport ---------------------------------------------------
+def _http(app):
+    """An httpx client whose calls reach /mcp as a verified loopback caller."""
+    transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 123))
+    return httpx.AsyncClient(
+        transport=transport,
+        base_url="http://node.ts.net",
+        headers={"tailscale-user-login": "alice@example.com"},
+    )
+
+
+_INIT = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+
+
+async def test_http_never_issues_a_session_id(mcp_env):
+    # The defining property: no session is created, so nothing is handed back
+    # for the client to echo (and no DELETE is needed to tear one down).
+    app, _ = mcp_env
+    async with _http(app) as c:
+        init = await c.post("/mcp", json=_INIT)
+        delete = await c.delete("/mcp")
+    assert init.status_code == 200
+    assert "mcp-session-id" not in {k.lower() for k in init.headers}
+    assert delete.status_code == 405 and delete.headers["allow"] == "POST"
+
+
+async def test_http_ignores_a_client_supplied_session_id(mcp_env):
+    # Clients written against a stateful server send a session id they got
+    # elsewhere. We have no session table, so it is ignored — never a 404 that
+    # would push the client into a re-initialize loop.
+    app, _ = mcp_env
+    async with _http(app) as c:
+        resp = await c.post(
+            "/mcp",
+            headers={"mcp-session-id": "not-a-real-session"},
+            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+        )
+    assert resp.status_code == 200
+    assert resp.json()["result"]["tools"]
+
+
+async def test_http_tool_call_without_prior_initialize(mcp_env):
+    # Each request is self-contained: no handshake replay, and a brand-new
+    # connection can go straight to work.
+    app, _ = mcp_env
+    async with _http(app) as c:
+        resp = await c.post(
+            "/mcp",
+            headers={"mcp-protocol-version": "2025-06-18"},
+            json={"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                  "params": {"name": "get_system_status", "arguments": {}}},
+        )
+    body = resp.json()["result"]
+    assert body["isError"] is False
+    assert body["structuredContent"]["system"]["version"]
+
+
+async def test_http_protocol_version_header_negotiation(mcp_env):
+    # With no session, the header is how a request states its revision.
+    app, _ = mcp_env
+    ping = {"jsonrpc": "2.0", "id": 1, "method": "ping"}
+    async with _http(app) as c:
+        supported = await c.post("/mcp", headers={"mcp-protocol-version": "2025-03-26"}, json=ping)
+        bogus = await c.post("/mcp", headers={"mcp-protocol-version": "2030-01-01"}, json=ping)
+        absent = await c.post("/mcp", json=ping)
+    assert supported.status_code == 200
+    assert supported.headers["mcp-protocol-version"] == "2025-03-26"
+    assert bogus.status_code == 400
+    assert "unsupported" in bogus.json()["error"]["message"]
+    # No header => the spec's backwards-compatible assumption, not a rejection.
+    assert absent.status_code == 200
+    assert absent.headers["mcp-protocol-version"] == "2025-03-26"
+
+
+async def test_http_initialize_response_echoes_negotiated_version(mcp_env):
+    # initialize arrives before any negotiation, so its response advertises the
+    # revision the client should put in the header from then on.
+    app, _ = mcp_env
+    async with _http(app) as c:
+        resp = await c.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                  "params": {"protocolVersion": "2025-06-18"}},
+        )
+    assert resp.json()["result"]["protocolVersion"] == "2025-06-18"
+    assert resp.headers["mcp-protocol-version"] == "2025-06-18"
+
+
+async def test_http_audits_client_name_without_a_session(mcp_env):
+    # The handshake that named the client happened in some *other* request, so
+    # the per-request User-Agent is what the audit trail can honestly record.
+    app, ctx = mcp_env
+    cam_id = ctx.manager.list()[0].descriptor.id
+    async with _http(app) as c:
+        resp = await c.post(
+            "/mcp",
+            headers={"user-agent": "acme-agent/2.0", "mcp-protocol-version": "2025-06-18"},
+            json={"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                  "params": {"name": "capture_snapshot", "arguments": {"camera_id": cam_id}}},
+        )
+    assert resp.json()["result"]["isError"] is False
+    record = next(r for r in AuditLog(ctx.store).list() if r.action == "mcp.capture_snapshot")
+    meta = json.loads(record.metadata_json)
+    assert meta["mcp_client"] == "acme-agent/2.0"
+    assert meta["mcp_protocol"] == "2025-06-18"
+
+
+async def test_server_core_keeps_no_state_across_messages(mcp_env):
+    # The core must not learn anything from one message that changes the next:
+    # over HTTP the "next message" is often a different process entirely.
+    app, _ = mcp_env
+    server, client = _server(app, ADMIN, client_name="configured")
+    try:
+        before = dict(vars(server))
+        await _call(server, "initialize", clientInfo={"name": "sneaky"},
+                    protocolVersion="2024-11-05")
+        after = dict(vars(server))
+    finally:
+        await client.aclose()
+    assert before == after
+    assert server.client_name == "configured"  # transport-supplied, not handshake-learned
+
+
+async def test_stdio_remembers_client_name_at_the_transport(mcp_env):
+    # stdio is one real connection, so the name its peer announced is legitimately
+    # connection-scoped — but it lives in the transport, not in the core.
+    from tailcam.mcp.protocol import client_name_from
+
+    init = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"clientInfo": {"name": "codex"}}}
+    assert client_name_from(init) == "codex"
+    assert client_name_from({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}) is None
+
+
 # -- cli / config / stdio --------------------------------------------------
 def test_cli_mcp_command_registered():
     from tailcam.cli import app as cli_app
@@ -497,6 +647,9 @@ def test_api_mcp_info_and_toggle(client):
     assert info["tools_count"] >= 40
     assert info["http_url_local"].endswith("/mcp")
     assert info["tailcam_url"].startswith("http://127.0.0.1:")
+    assert info["stateless"] is True  # the MCP page advertises no-session HTTP
+    assert info["protocol_version"] == "2025-06-18"
+    assert info["protocol_version"] in info["supported_protocol_versions"]
 
     on = client.post("/api/mcp", json={"http_enabled": True}).json()
     assert on["http_enabled"] is True and on["http_live"] is True
