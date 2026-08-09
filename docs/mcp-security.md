@@ -25,12 +25,13 @@ by the node itself.
 
 ### Remote Streamable HTTP (`/mcp`)
 
-Remote HTTP MCP is **fail-closed**:
+Remote HTTP MCP is **stateless** (no `Mcp-Session-Id`, nothing kept between
+requests) and **fail-closed**:
 
-- The caller is parsed with TailCam's principal parser. Tailscale Serve identity
-  headers are trusted **only on loopback** (Serve → `127.0.0.1`); the server runs
-  uvicorn with `proxy_headers=False` so a forwarded address can't spoof that
-  anchor.
+- The caller is parsed with TailCam's principal parser **on every request**.
+  Tailscale Serve identity headers are trusted **only on loopback** (Serve →
+  `127.0.0.1`); the server runs uvicorn with `proxy_headers=False` so a forwarded
+  address can't spoof that anchor.
 - Unverified callers are rejected with HTTP 401 before any tool runs.
 - Read tools require a verified local or Tailscale principal.
 - Admin tools require the TailCam `admin` role.
@@ -39,6 +40,13 @@ Remote HTTP MCP is **fail-closed**:
 
 The endpoint is mounted only when both `[mcp] enabled` and `[mcp] http_enabled`
 are true, and is reached over Tailscale Serve — never the public internet.
+
+Statelessness is a security property here, not just an operational one. There is
+no session token to steal, replay, or fixate, and no server-side session whose
+identity could drift from the caller's: authorization is re-derived from the live
+Tailscale principal on every single request, so a role revoked in your tailnet
+takes effect on the caller's next call rather than whenever a session happens to
+expire. See [`mcp.md`](mcp.md#stateless-by-design) for the header contract.
 
 ## Roles
 
@@ -77,7 +85,11 @@ Every state-changing tool records an audit event (visible via `get_audit_log` an
 `tailcam://audit/recent`). Over HTTP the audit captures:
 
 - MCP transport (`stdio` or `streamable_http`)
-- MCP client name (when provided at initialize)
+- the MCP protocol revision the request declared
+- MCP client name, resolved from the request itself — the `clientInfo` of an
+  `initialize` in that same request, else its `User-Agent`. (A stateless server
+  never saw an earlier handshake, so it records only what the caller actually
+  sent with the audited action.)
 - tool name and target node/camera
 - the confirmation string's effect (recorded as metadata, never secrets)
 - the principal's actor/source/role

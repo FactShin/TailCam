@@ -649,4 +649,7 @@ export interface McpInfo {
   http_url_tailnet: string;
   http_url_local: string;
   tailscale_running: boolean;
+  protocol_version: string;
+  supported_protocol_versions: string[];
+  stateless: boolean;
 }

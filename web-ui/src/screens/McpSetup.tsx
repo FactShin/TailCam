@@ -246,6 +246,15 @@ export function McpSetup() {
             <b>Audit log</b>
             <span>every state-changing tool call is recorded with the real caller identity.</span>
           </div>
+          {info.stateless && (
+            <div>
+              <b>Stateless</b>
+              <span>
+                MCP {info.protocol_version} over Streamable HTTP with no sessions — nothing to
+                resume or expire, so restarts and reconnects never strand an agent.
+              </span>
+            </div>
+          )}
         </div>
       </div>
 

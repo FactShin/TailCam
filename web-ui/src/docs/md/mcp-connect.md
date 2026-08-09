@@ -83,9 +83,22 @@ url = "https://tailcam-host.example.ts.net:8443/mcp"
 Remote callers are gated by Tailscale identity and role — admin/fleet tools
 require the `admin` role. See [MCP security](mcp-security).
 
+The endpoint is stateless: no `Mcp-Session-Id`, nothing to keep alive, and
+nothing to reconnect after a node restart. If your client offers a session or
+"resume" setting, leave it off — and if it sends one anyway, TailCam ignores it.
+
 ## Verify it works
 
 Ask the agent to call `get_system_status` or read the `tailcam://fleet` resource.
+
+Or check the endpoint directly — one self-contained request, no handshake first:
+
+```bash
+curl -sS -X POST https://<your-node>.<tailnet>.ts.net:8443/mcp \
+  -H 'content-type: application/json' \
+  -H 'MCP-Protocol-Version: 2025-06-18' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
 
 ### Worked example — stand up local AI
 

@@ -8,8 +8,10 @@ Streamable HTTP mount (:mod:`tailcam.mcp.transport_http`).
 
 The core speaks the Model Context Protocol (revision ``2025-06-18``) over
 JSON-RPC 2.0 directly, wrapping TailCam's stable REST and v1 management APIs
-rather than bypassing them. See ``docs/mcp.md`` for client setup and
-``docs/mcp-security.md`` for the transport, identity, and audit model.
+rather than bypassing them. It is **stateless**: no sessions, no ``Mcp-Session-Id``,
+no ordering requirement between messages — every exchange stands on its own. See
+``docs/mcp.md`` for client setup and ``docs/mcp-security.md`` for the transport,
+identity, and audit model.
 """
 
 from __future__ import annotations
@@ -19,6 +21,10 @@ PROTOCOL_VERSION = "2025-06-18"
 # compatible: initialize/tools/resources/prompts with no batching reliance).
 SUPPORTED_PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 SERVER_NAME = "tailcam"
+# The server keeps no per-client state: the HTTP transport never issues an
+# ``Mcp-Session-Id`` and the core remembers nothing between messages. Surfaced on
+# ``GET /api/mcp`` so the MCP page and connect snippets can say so plainly.
+STATELESS = True
 # The local-stdio invocation agents put in their MCP client config. Single
 # source of truth so the CLI, docs, and the MCP page can't advertise different
 # commands (matches the `tailcam mcp stdio` CLI subcommand).
@@ -43,6 +49,7 @@ __all__ = [
     "PROTOCOL_VERSION",
     "RECOMMENDED_TOOLS",
     "SERVER_NAME",
+    "STATELESS",
     "STDIO_ARGS",
     "STDIO_COMMAND",
     "SUPPORTED_PROTOCOL_VERSIONS",

@@ -90,7 +90,7 @@ already running. TailCam puts them to work as a monitoring system that is genuin
     </td>
     <td width="50%">
       <img src="docs/screenshots/agents.png" alt="MCP agent access" />
-      <br /><b>MCP</b> — connect Claude Code, Codex, or any MCP agent to your cameras with copy-paste snippets. 47 tools, role-gated and audited.
+      <br /><b>MCP</b> — connect Claude Code, Codex, or any MCP agent to your cameras with copy-paste snippets. 47 tools, role-gated and audited, over a stateless endpoint.
     </td>
   </tr>
   <tr>
@@ -275,7 +275,8 @@ in the in-app **Docs → Running in Docker** page (also served at `/docs/docker`
   providers, notification channels, event automations); write your own with a single
   Python file.
 - **MCP server** — agents (Claude, Codex, …) can inspect cameras, events, and health
-  and run guarded admin workflows; see [`docs/mcp.md`](docs/mcp.md).
+  and run guarded admin workflows, over a stateless (session-free) HTTP endpoint or
+  local stdio; see [`docs/mcp.md`](docs/mcp.md).
 - **Tailscale-native** — secure access over your tailnet; fully usable on a LAN too.
 
 ## Multi-host: every camera, from any device
@@ -374,8 +375,19 @@ for you to review; synced annotations fine-tune YOLO, Florence-2, or Qwen2.5-VL
 TailCam ships an MCP server, so agents like Claude Code and Codex can inspect
 cameras, events, and node health — and run guarded admin workflows — over
 `tailcam mcp stdio` or the authenticated `/mcp` HTTP mount. The **MCP** page in
-the dashboard generates ready-to-paste connection snippets for each agent. See
-[`docs/mcp.md`](docs/mcp.md) and [`docs/mcp-security.md`](docs/mcp-security.md).
+the dashboard generates ready-to-paste connection snippets for each agent.
+
+The HTTP endpoint is **stateless**: no `Mcp-Session-Id`, nothing kept between
+requests, every POST a self-contained exchange. There is no session to resume or
+expire, so restarting a node never strands a connected agent, and an agent can
+call a tool without replaying `initialize` first. Each request states its own
+revision in the `MCP-Protocol-Version` header, and authorization is re-derived
+from the live Tailscale principal every time — so there's no session token to
+steal or replay, and a revoked role takes effect on the agent's next call. Clients
+that send a session id anyway are simply ignored, never bounced.
+
+See [`docs/mcp.md`](docs/mcp.md) and
+[`docs/mcp-security.md`](docs/mcp-security.md).
 
 ## Plugins & marketplace
 

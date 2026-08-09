@@ -26,6 +26,22 @@ Both expose the same capabilities:
   `tailcam://cameras`, `tailcam://system`.
 - **Prompts (6)** — reusable workflows (fleet triage, motion investigation, …).
 
+## Stateless
+
+The `/mcp` endpoint is **stateless**: it never issues an `Mcp-Session-Id` and
+keeps nothing between requests. Every POST is a self-contained exchange, so there
+is no session to resume or expire, an agent can call `tools/call` without
+replaying `initialize`, and a node restart never strands a connected client.
+
+Each request states its own revision in the `MCP-Protocol-Version` header
+(assumed `2025-03-26` when absent; an unsupported value gets a `400`). A session
+id sent by a client written against a stateful server is ignored rather than
+rejected, so those clients keep working unchanged. `GET` and `DELETE` on `/mcp`
+answer `405 Allow: POST` — there are no server-initiated streams and no session
+to tear down.
+
+Details and the full header contract: [MCP security](mcp-security).
+
 ## What agents can do
 
 - Inspect the whole fleet, find offline cameras, summarize health.
