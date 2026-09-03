@@ -63,6 +63,21 @@ local. The storage node's own save folder can be browsed and set from here
 The same idea exists for AI: a [detection node](ai-analysis) runs the models
 for a node that shouldn't.
 
+### When the source or the storage node disappears
+
+- The storage node reconnects a stalled pull (no bytes for 15 s) and, if the
+  source stops delivering frames for **3 minutes**, finalizes the recording so a
+  dead camera node can't leave a clip "recording" forever.
+- The source node keeps retrying a stop the storage node didn't acknowledge, and
+  if it restarts while the storage node is still recording one of its cameras it
+  adopts that session (a `409 already recording` answer) instead of starting a
+  second, local clip.
+- A `4xx` answer from the storage node is treated as an answer; only connection
+  failures and `5xx` mark it down (local fallback for 20 s).
+- Actions proxied to a peer (record, stop a timelapse) no longer forward the
+  browser's `Origin`, so they work when the dashboard was opened by IP address
+  as well as by MagicDNS name.
+
 ## The reverse proxy
 
 Cross-node streaming and media use a constrained reverse proxy at

@@ -50,15 +50,41 @@ def mjpeg_stream(
 
 @router.get("/stream/{camera_id:path}/snapshot.jpg")
 async def snapshot_jpg(
-    camera_id: str, ctx: AppContext = Depends(get_context)
+    camera_id: str,
+    zoom: float = Query(default=1.0, ge=1.0, le=8.0),
+    pan_x: float = Query(default=0.5, ge=0.0, le=1.0),
+    pan_y: float = Query(default=0.5, ge=0.0, le=1.0),
+    w: int | None = Query(default=None, ge=0, le=3840),
+    q: int | None = Query(default=None, ge=1, le=100),
+    ctx: AppContext = Depends(get_context),
 ) -> Response:
+    """One JPEG frame. Accepts the same view params as the MJPEG stream (zoom /
+    pan / max width / quality) so the snapshot-polling viewer used on iOS and
+    Safari honors zoom and the low-bandwidth tile size instead of pulling a
+    full-resolution frame per poll."""
     buffer = ctx.manager.get_buffer(camera_id)
     if buffer is None:
         raise HTTPException(status_code=404, detail="camera not found")
+    settings = ctx.manager.effective_stream_for(camera_id) or {}
+    cam_q = int(settings.get("quality", 85))
+    cam_w = int(settings.get("max_width", 0))
+    eff_q = min(q, cam_q) if q else cam_q
+    if w:
+        eff_w = min(w, cam_w) if cam_w else w
+    else:
+        eff_w = cam_w
     frame = await anyio.to_thread.run_sync(buffer.await_latest, -1, 3.0)
     if frame is None:
         raise HTTPException(status_code=503, detail="no frame available")
-    jpeg = await anyio.to_thread.run_sync(encode_jpeg, frame.image, 85)
+    transform = StreamTransform(zoom=zoom, pan_x=pan_x, pan_y=pan_y, max_width=eff_w)
+
+    def _render() -> bytes:
+        image = frame.image
+        if transform != StreamTransform():
+            image = transform.apply(image)
+        return encode_jpeg(image, eff_q)
+
+    jpeg = await anyio.to_thread.run_sync(_render)
     return Response(content=jpeg, media_type="image/jpeg")
 
 

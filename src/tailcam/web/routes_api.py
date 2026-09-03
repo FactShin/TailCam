@@ -144,8 +144,10 @@ async def refresh_cameras(
     scope: str = Query("all", pattern="^(all|local)$"),
     ctx: AppContext = Depends(get_context),
 ) -> list[CameraInfo]:
-    ctx.manager.discover()
-    ctx.manager.start_all()
+    import anyio
+
+    # Discovery opens devices (seconds on macOS/Windows): keep it off the loop.
+    await anyio.to_thread.run_sync(_rescan_local, ctx)
     if scope != "local":
         await ctx.cluster.refresh(force=True)
     return await _aggregate_cameras(ctx, scope)
@@ -154,12 +156,24 @@ async def refresh_cameras(
 @router.post("/cameras/restore-hidden", response_model=list[CameraInfo])
 async def restore_hidden(ctx: AppContext = Depends(get_context)) -> list[CameraInfo]:
     """Un-hide every deleted/forgotten camera and re-scan."""
+    import anyio
+
     if ctx.config.cameras.hidden:
         ctx.config.cameras.hidden.clear()
-        ctx.config.save()
+        await anyio.to_thread.run_sync(ctx.config.save)
+    await anyio.to_thread.run_sync(_rescan_local, ctx)
+    return await _aggregate_cameras(ctx, "all")
+
+
+def _rescan_local(ctx: AppContext) -> None:
     ctx.manager.discover()
     ctx.manager.start_all()
-    return await _aggregate_cameras(ctx, "all")
+
+
+def _restart_all_local(ctx: AppContext) -> None:
+    for cam in ctx.manager.list():
+        ctx.manager.restart(cam.descriptor.id)
+    _rescan_local(ctx)
 
 
 @router.get("/hosts", response_model=list[HostInfo])
@@ -1126,10 +1140,10 @@ def update_streaming_defaults(
 @router.post("/system/reload", response_model=list[CameraInfo])
 async def system_reload(ctx: AppContext = Depends(get_context)) -> list[CameraInfo]:
     """Re-scan devices and restart all local capture workers (no process restart)."""
-    for cam in ctx.manager.list():
-        ctx.manager.restart(cam.descriptor.id)
-    ctx.manager.discover()
-    ctx.manager.start_all()
+    import anyio
+
+    # Each restart joins a capture thread (up to 5 s): never on the event loop.
+    await anyio.to_thread.run_sync(_restart_all_local, ctx)
     await ctx.cluster.refresh(force=True)
     return await _aggregate_cameras(ctx, "all")
 

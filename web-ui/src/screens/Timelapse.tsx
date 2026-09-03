@@ -150,8 +150,9 @@ export function Timelapse() {
       });
       toast.ok("Timelapse started");
       setName("");
-    } catch {
-      toast.err("Could not start timelapse");
+    } catch (e) {
+      // The backend's 409 detail says why (e.g. already capturing on this camera).
+      toast.err(e instanceof Error && e.message ? e.message : "Could not start timelapse");
     }
   };
 
@@ -196,7 +197,8 @@ export function Timelapse() {
     setConfirm(null);
     try {
       await del.mutateAsync({ prefix: t.proxy_prefix, id: t.id });
-      if (play?.id === t.id) setPlay(null);
+      // Ids are per-node: match the host too.
+      if (play && play.id === t.id && play.host === t.host) setPlay(null);
       toast.ok("Deleted");
     } catch {
       toast.err("Delete failed");
@@ -367,7 +369,7 @@ export function Timelapse() {
             const capturing = t.state === "capturing";
             const elapsed = (t.end_ts ?? Date.now() / 1000) - t.start_ts;
             return (
-              <div key={t.id} className={`tl-live-card ${capturing ? "is-rec" : ""}`}>
+              <div key={`${t.host}/${t.id}`} className={`tl-live-card ${capturing ? "is-rec" : ""}`}>
                 <div className="tl-live-media">
                   {cam && capturing ? (
                     <LiveViewer cam={cam} view={PREVIEW_VIEW} showOsd={false} big fit="contain" />
@@ -429,7 +431,7 @@ export function Timelapse() {
             const b = STATE_BADGE[t.state];
             const playable = t.state === "complete" && t.has_video;
             return (
-              <div key={t.id} className="tl-card">
+              <div key={`${t.host}/${t.id}`} className="tl-card">
                 <div
                   className="media-thumb tl-thumb"
                   onClick={() => playable && setPlay(t)}

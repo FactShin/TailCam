@@ -25,16 +25,21 @@ LAUNCHD_LABEL = "com.tailcam"
 LEGACY_SYSTEMD_LABEL = "anycam.service"
 LEGACY_LAUNCHD_LABEL = "com.anycam"
 
+# No After=/Wants=network-online.target: that target only exists in the
+# *system* manager. In a --user manager it is an unknown unit, so the
+# dependency was silently ignored (and logged as a warning). TailCam binds
+# 0.0.0.0/loopback and retries Tailscale itself, so it needs no network gate.
 _SYSTEMD_UNIT = """[Unit]
 Description=TailCam webcam server
-After=network-online.target
-Wants=network-online.target
 
 [Service]
 Type=simple
 ExecStart={exec_start}
 Restart=on-failure
 RestartSec=3
+# Stopping finalizes every active recording (encoder flush); give it room so
+# a restart never SIGKILLs ffmpeg mid-file.
+TimeoutStopSec=180
 # glibc creates a malloc arena per thread; TailCam runs a thread per camera,
 # stream, and job, which on a 1 GB Pi quietly ate 100+ MB. Two arenas is plenty.
 Environment=MALLOC_ARENA_MAX=2
@@ -63,13 +68,31 @@ _LAUNCHD_PLIST = """<?xml version="1.0" encoding="UTF-8"?>
     <true/>
     <key>KeepAlive</key>
     <true/>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
 </dict>
 </plist>
 """
 
 
 def _exec_start() -> str:
-    return f"{sys.executable} -m tailcam run"
+    # Quoted: systemd splits ExecStart on whitespace, so an unquoted home
+    # path with a space ("/home/my user/...") never starts.
+    return f'"{sys.executable}" -m tailcam run'
+
+
+def _run_checked(cmd: list[str]) -> tuple[bool, str]:
+    """Run a service-manager command; (ok, stderr-or-empty)."""
+    proc = run_hidden(cmd, check=False, capture_output=True, text=True)
+    rc = getattr(proc, "returncode", 0)
+    err = (getattr(proc, "stderr", None) or "").strip()
+    if rc != 0:
+        log.warning("%s failed (rc=%s): %s", " ".join(cmd), rc, err)
+        return False, err or f"exit code {rc}"
+    return True, ""
 
 
 def _systemd_unit_path(label: str = SYSTEMD_LABEL) -> Path:
@@ -112,11 +135,21 @@ def _install_systemd() -> str:
     path = _systemd_unit_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_SYSTEMD_UNIT.format(exec_start=_exec_start()))
-    run_hidden(["systemctl", "--user", "daemon-reload"], check=False)
-    run_hidden(["systemctl", "--user", "enable", SYSTEMD_LABEL], check=False)
     # `restart`, not `enable --now`: --now is a no-op when the service is
     # already active, which left upgrades running the OLD code until reboot.
-    run_hidden(["systemctl", "--user", "restart", SYSTEMD_LABEL], check=False)
+    for step in (
+        ["systemctl", "--user", "daemon-reload"],
+        ["systemctl", "--user", "enable", SYSTEMD_LABEL],
+        ["systemctl", "--user", "restart", SYSTEMD_LABEL],
+    ):
+        ok, err = _run_checked(step)
+        if not ok:
+            return (
+                f"FAILED: `{' '.join(step)}` — {err}\n"
+                f"Unit written to {path}. Is the user systemd instance running "
+                "(loginctl enable-linger, or log in via a session)? Check: "
+                f"systemctl --user status {SYSTEMD_LABEL}"
+            )
     return f"Installed systemd user service at {path} (restarted)"
 
 
@@ -143,8 +176,13 @@ def _install_launchd() -> str:
     path = _launchd_plist_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_LAUNCHD_PLIST.format(label=LAUNCHD_LABEL, python=sys.executable))
-    run_hidden(["launchctl", "unload", str(path)], check=False)
-    run_hidden(["launchctl", "load", str(path)], check=False)
+    run_hidden(["launchctl", "unload", str(path)], check=False)  # may not be loaded
+    ok, err = _run_checked(["launchctl", "load", str(path)])
+    if not ok:
+        return (
+            f"FAILED: `launchctl load {path}` — {err}\n"
+            f"Check the plist with: plutil -lint {path}"
+        )
     return f"Installed launchd agent at {path}"
 
 
@@ -195,11 +233,16 @@ def _install_windows() -> str:
     exe = _ps_quote(str(_windows_pythonw()))
     script = (
         f"$a = New-ScheduledTaskAction -Execute {exe} -Argument '-m tailcam run'; "
-        "$t = New-ScheduledTaskTrigger -AtLogOn; "
+        # Scoped to THIS user: a bare -AtLogOn fires for every account that
+        # logs on, and a Principal keeps the task running as (and visible to)
+        # the installing user's interactive session rather than a service.
+        "$u = \"$env:USERDOMAIN\\$env:USERNAME\"; "
+        "$t = New-ScheduledTaskTrigger -AtLogOn -User $u; "
+        "$p = New-ScheduledTaskPrincipal -UserId $u -LogonType Interactive; "
         "$s = New-ScheduledTaskSettingsSet -StartWhenAvailable "
         "-AllowStartIfOnBatteries -DontStopIfGoingOnBatteries; "
         f"Register-ScheduledTask -TaskName '{SCHTASK_NAME}' -Action $a -Trigger $t "
-        "-Settings $s -Force | Out-Null"
+        "-Principal $p -Settings $s -Force | Out-Null"
     )
     # Stop any running instance first so upgrades actually swap in the new
     # code (re-registering does not restart an already-running task).

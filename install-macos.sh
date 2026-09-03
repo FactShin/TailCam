@@ -64,8 +64,15 @@ ensure_python() {
 }
 
 install_tailcam() {
-    local spec="git+https://github.com/${REPO}.git@${REF}"
-    local backup="${VENV_DIR}.bak"
+    local spec backup="${VENV_DIR}.bak"
+    # `git` on a fresh Mac is a stub that pops the Xcode Command Line Tools
+    # dialog (and fails under a piped install). Only use git+https when a real
+    # git is present; otherwise pip installs from GitHub's zip archive.
+    if have git && git --version >/dev/null 2>&1; then
+        spec="git+https://github.com/${REPO}.git@${REF}"
+    else
+        spec="https://github.com/${REPO}/archive/${REF}.zip"
+    fi
     # Stop a running agent so the upgrade actually takes effect.
     launchctl unload "$HOME/Library/LaunchAgents/com.tailcam.plist" 2>/dev/null || true
     # Non-destructive: set the working venv aside and only remove it once the
@@ -118,7 +125,8 @@ setup_service() {
     "$TAILCAM_BIN" config --port "$PORT" >/dev/null 2>&1 || true
     [ "$DO_SERVICE" -eq 0 ] && { warn "Skipping service (--no-service)."; return 0; }
     log "Registering launchd agent"
-    "$TAILCAM_BIN" install-service || warn "Service registration failed."
+    "$TAILCAM_BIN" install-service \
+        || warn "Service registration FAILED (see above). TailCam is installed but not running as a service; fix the cause, then run: tailcam install-service"
     warn "First run may prompt for camera access — approve it in System Settings › Privacy."
 }
 
@@ -138,8 +146,15 @@ setup_desktop_app() {
 # (Tailscale.app) is honored when present. Every step degrades to a printed
 # command rather than failing the install.
 TS_APP_BIN="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+TS_SYSTEM_DAEMON="/Library/LaunchDaemons/com.tailscale.tailscaled.plist"
+ts_app_running() { pgrep -qx Tailscale 2>/dev/null || pgrep -qf "Tailscale.app/Contents/MacOS/Tailscale" 2>/dev/null; }
 ts_cli() {
-    if have tailscale; then tailscale "$@"; elif [ -x "$TS_APP_BIN" ]; then "$TS_APP_BIN" "$@"; else return 127; fi
+    # When the App Store/standalone app is running it owns the connection,
+    # so talk to it (the brew CLI would report its own, unrelated daemon).
+    if [ -x "$TS_APP_BIN" ] && ts_app_running; then "$TS_APP_BIN" "$@"
+    elif have tailscale; then tailscale "$@"
+    elif [ -x "$TS_APP_BIN" ]; then "$TS_APP_BIN" "$@"
+    else return 127; fi
 }
 ts_backend_state() {
     local json
@@ -153,9 +168,10 @@ install_tailscale() {
     if have brew; then
         log "Installing Tailscale (brew install tailscale)"
         if brew install tailscale; then
-            # The Homebrew CLI needs its daemon registered once (asks for sudo).
-            if [ -t 0 ]; then
-                sudo tailscaled install-system-daemon || warn "Could not register tailscaled; run: sudo tailscaled install-system-daemon"
+            # The Homebrew CLI needs its daemon registered once (asks for sudo;
+            # sudo prompts on /dev/tty, so this works under `curl | bash` too).
+            if [ -c /dev/tty ]; then
+                sudo tailscaled install-system-daemon </dev/tty || warn "Could not register tailscaled; run: sudo tailscaled install-system-daemon"
             else
                 warn "Run once to start the Tailscale daemon:  sudo tailscaled install-system-daemon"
             fi
@@ -167,26 +183,69 @@ install_tailscale() {
     return 1
 }
 
+ts_explain_state() {
+    case "$1" in
+        "")
+            if have tailscale && [ ! -f "$TS_SYSTEM_DAEMON" ]; then
+                warn "The Homebrew Tailscale CLI is installed but its daemon isn't registered, so there's nothing to log in to. Run:"
+                echo "    sudo tailscaled install-system-daemon && sudo tailscale up && tailcam tailscale serve"
+            elif [ -x "$TS_APP_BIN" ]; then
+                warn "Tailscale.app isn't running. Open it from Applications, sign in, then run: tailcam tailscale serve"
+            else
+                warn "The Tailscale daemon isn't running. Start it (sudo launchctl load -w $TS_SYSTEM_DAEMON), then:"
+                echo "    sudo tailscale up && tailcam tailscale serve"
+            fi ;;
+        Stopped)
+            warn "Tailscale is installed but stopped (logged in, not connected). Bring it up, then serve:"
+            echo "    tailscale up && tailcam tailscale serve" ;;
+        NeedsLogin)
+            warn "Tailscale still needs a browser login. Run when convenient: tailscale up && tailcam tailscale serve" ;;
+        *)
+            warn "Tailscale is in state '$1'. TailCam works locally; once it's connected run: tailcam tailscale serve" ;;
+    esac
+}
+
 wait_for_tailscale_login() {
-    local state waited=0
+    local state waited=0 up_rc=0
     state="$(ts_backend_state)"
     if [ "$state" = "Running" ]; then log "Tailscale is connected."; return 0; fi
+    if [ -x "$TS_APP_BIN" ] && ts_app_running; then
+        # The GUI app handles login itself; the CLI can't drive it.
+        warn "Tailscale.app is running but not signed in. Sign in from the menu-bar icon, then run: tailcam tailscale serve"
+        return 1
+    fi
     if [ -x "$TS_APP_BIN" ] && ! have tailscale; then
-        warn "Tailscale.app is installed but not signed in. Open it from the menu bar, sign in, then run: tailcam tailscale serve"
+        warn "Tailscale.app is installed but not running. Open it, sign in, then run: tailcam tailscale serve"
+        return 1
+    fi
+    if [ -z "$state" ]; then
+        # Daemon not running: `tailscale up` would only fail, and polling for
+        # 10 minutes can't fix that. Say what to do instead.
+        ts_explain_state ""
         return 1
     fi
     echo
     log "Tailscale needs to sign in. A login link will appear below — open it on ANY device"
     echo "    and approve this Mac. The installer waits up to ${TS_LOGIN_TIMEOUT}s."
     echo
-    if [ -t 0 ]; then
-        sudo tailscale up --timeout "${TS_LOGIN_TIMEOUT}s" || true
+    if [ -c /dev/tty ]; then
+        # sudo prompts on /dev/tty, so this works under `curl | bash` too.
+        sudo tailscale up --timeout "${TS_LOGIN_TIMEOUT}s" </dev/tty || up_rc=$?
     else
-        tailscale up --timeout "${TS_LOGIN_TIMEOUT}s" 2>&1 || sudo -n tailscale up --timeout "${TS_LOGIN_TIMEOUT}s" 2>&1 || true
+        tailscale up --timeout "${TS_LOGIN_TIMEOUT}s" 2>&1 || sudo -n tailscale up --timeout "${TS_LOGIN_TIMEOUT}s" 2>&1 || up_rc=$?
+    fi
+    state="$(ts_backend_state)"
+    if [ "$state" = "Running" ]; then log "Tailscale is connected."; return 0; fi
+    # Only poll when `up` failed AND the daemon is alive waiting for a browser
+    # login; anything else (daemon gone, Stopped) won't change by waiting.
+    if [ "$up_rc" -eq 0 ] || [ "$state" != "NeedsLogin" ]; then
+        ts_explain_state "$state"
+        return 1
     fi
     while [ "$waited" -lt "$TS_LOGIN_TIMEOUT" ]; do
         state="$(ts_backend_state)"
         if [ "$state" = "Running" ]; then echo; log "Tailscale is connected."; return 0; fi
+        if [ "$state" != "NeedsLogin" ]; then echo; ts_explain_state "$state"; return 1; fi
         sleep 3; waited=$((waited + 3))
         [ $((waited % 30)) -eq 0 ] && echo "    …still waiting for the Tailscale login ($((TS_LOGIN_TIMEOUT - waited))s left)"
     done

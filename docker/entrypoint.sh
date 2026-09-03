@@ -15,13 +15,28 @@ set -euo pipefail
 
 log() { echo "[tailcam] $*"; }
 
+# Kernel networking needs three things; missing any one means tailscaled would
+# fail to create its interface, so fall back to userspace networking instead.
+#  1. the node exists (a bound /dev can carry it even without --device),
+#  2. the device cgroup lets us open it (the node can be visible yet denied),
+#  3. CAP_NET_ADMIN (bit 12 of CapEff) to configure the interface.
+tun_usable() {
+  [ -c /dev/net/tun ] || return 1
+  ( exec 3<>/dev/net/tun ) 2>/dev/null || return 1
+  local cap
+  cap="$(awk '/^CapEff:/ {print $2}' /proc/self/status 2>/dev/null || true)"
+  [ -n "$cap" ] || return 0  # can't tell; let tailscaled try
+  [ $(( 0x$cap >> 12 & 1 )) -eq 1 ]
+}
+
 start_tailscale() {
   mkdir -p /var/lib/tailscale /var/run/tailscale
 
   local tun_args=""
-  if [ ! -c /dev/net/tun ]; then
-    log "/dev/net/tun not available — using userspace networking."
-    log "For kernel networking, run with --device=/dev/net/tun --cap-add=NET_ADMIN."
+  if ! tun_usable; then
+    log "/dev/net/tun not usable — using userspace networking."
+    log "For kernel networking, run with --device=/dev/net/tun --cap-add=NET_ADMIN"
+    log "(or, with /dev bound in: --device-cgroup-rule 'c 10:200 rwm' --cap-add=NET_ADMIN)."
     tun_args="--tun=userspace-networking"
   fi
 

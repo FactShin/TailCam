@@ -95,13 +95,32 @@ export function Dashboard() {
     );
   }
 
-  // Group cameras by host, ordered local-first using the hosts list.
-  const orderedHosts: HostInfo[] = hosts.length
-    ? hosts
-    : cameras.length
-      ? [{ host: cameras[0].host, node_key: "local", kind: "local", online: true, version: null, camera_count: cameras.length, proxy_prefix: "" }]
-      : [];
+  // Group cameras by host, ordered local-first using the hosts list. The
+  // cameras and hosts queries poll independently, so a host that only the
+  // cameras list knows about yet (hosts lagging, or not loaded) still gets a
+  // section — otherwise its tiles would silently vanish.
   const byHost = (h: string) => cameras.filter((c) => c.host === h);
+  const known = new Set(hosts.map((h) => h.host));
+  const extra: HostInfo[] = [];
+  for (const c of cameras) {
+    if (known.has(c.host)) continue;
+    known.add(c.host);
+    const local = c.proxy_prefix === "";
+    extra.push({
+      host: c.host,
+      node_key: local ? "local" : c.proxy_prefix.replace(/^\/proxy\//, ""),
+      kind: local ? "local" : "peer",
+      online: true,
+      version: null,
+      camera_count: byHost(c.host).length,
+      proxy_prefix: c.proxy_prefix,
+    });
+  }
+  const orderedHosts: HostInfo[] = [
+    ...hosts,
+    ...extra.filter((h) => h.kind === "local"),
+    ...extra.filter((h) => h.kind !== "local"),
+  ];
   const multiHost = orderedHosts.length > 1;
 
   return (

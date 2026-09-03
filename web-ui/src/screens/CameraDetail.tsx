@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { useCameras, useDeleteCamera, useDetectionInfo, usePatchCamera, useRecording, useRestartCamera, useSnapshot } from "../api/hooks";
+import { useCameras, useDeleteCamera, useDetectionInfo, useHosts, usePatchCamera, useRecording, useRestartCamera, useSnapshot } from "../api/hooks";
 import { LiveViewer } from "../components/LiveViewer";
 import { useToast } from "../components/toast";
 import { Button, ConfirmDialog, ControlSlider, ScopeBadge, Segmented, Spinner, Toggle } from "../components/ui";
@@ -29,9 +29,13 @@ import {
   IconZoom,
 } from "../icons";
 import { fmtDur } from "../lib/format";
+import { versionAtLeast } from "../lib/version";
 import type { CameraInfo, CameraSettingsUpdate, ViewParams } from "../types";
 import { VIEW_DEFAULT } from "../types";
 import { BottomSheet } from "../components/ui";
+
+// First release whose PATCH /api/cameras/{id} accepts per-camera `stream` overrides.
+const STREAM_SETTINGS_MIN_VERSION = "1.8.0";
 
 function loadView(key: string): ViewParams {
   // Only zoom/pan are per-screen now. Older builds also stored fps/quality/w
@@ -68,6 +72,13 @@ export function CameraDetail() {
   const toast = useToast();
   const camerasQ = useCameras();
   const cam = (camerasQ.data ?? []).find((c) => c.host === host && c.id === id);
+  // Per-camera stream settings (PATCH ... {stream}) need TailCam ≥ 1.8.0 on the
+  // node that owns the camera; an older peer silently ignores them.
+  const hostInfo = (useHosts().data ?? []).find((h) => h.host === host);
+  const legacyNodeVersion =
+    hostInfo?.kind === "peer" && !versionAtLeast(hostInfo.version, STREAM_SETTINGS_MIN_VERSION)
+      ? hostInfo.version || "an older version"
+      : null;
 
   const prefix = cam?.proxy_prefix ?? "";
   const patch = usePatchCamera(prefix, id);
@@ -227,6 +238,7 @@ export function CameraDetail() {
       setView={setView}
       onPatch={onPatch}
       patching={patch.isPending}
+      legacyNodeVersion={legacyNodeVersion}
       onRestart={doRestart}
       restarting={restartCam.isPending}
       onRequestDelete={() => setConfirmDelete(true)}
@@ -316,6 +328,7 @@ function ControlsPanel({
   setView,
   onPatch,
   patching,
+  legacyNodeVersion,
   onRestart,
   restarting,
   onRequestDelete,
@@ -325,6 +338,8 @@ function ControlsPanel({
   setView: (v: ViewParams) => void;
   onPatch: (u: CameraSettingsUpdate, msg?: string) => void;
   patching: boolean;
+  // Set when the owning peer is too old for per-camera stream settings.
+  legacyNodeVersion: string | null;
   onRestart: () => void;
   restarting: boolean;
   onRequestDelete: () => void;
@@ -398,30 +413,38 @@ function ControlsPanel({
           <span className="ctl-row-label"><IconResolution size={14} /> Resolution</span>
           <Segmented ariaLabel="Resolution" value={resVal} options={RES} onChange={(v) => setRes(v as string)} />
         </div>
-        <ControlSlider label="Stream frame rate" icon={<IconFps size={14} />} value={stream.fps} min={1} max={60} unit=" fps"
-          onChange={(v) => setStream((s) => ({ ...s, fps: v }))}
-          onCommit={() => commitStream("fps")} />
-        <ControlSlider label="Stream quality" icon={<IconSliders size={14} />} value={stream.quality} min={1} max={100} unit="%"
-          onChange={(v) => setStream((s) => ({ ...s, quality: v }))}
-          onCommit={() => commitStream("quality")} />
-        <div className="ctl-row">
-          <span className="ctl-row-label"><IconResolution size={14} /> Stream max width</span>
-          <Segmented ariaLabel="Stream max width" value={cam.stream.max_width}
-            options={[{ value: 0, label: "Native" }, { value: 640, label: "640" }, { value: 960, label: "960" }, { value: 1280, label: "1280" }]}
-            onChange={(v) => onPatch({ stream: { max_width: v as number } }, `Stream width → ${v || "native"}`)} />
-        </div>
-        <div className="ctl-row ctl-row-split">
-          <span className="ctl-note" style={{ margin: 0 }}>
-            {hasStreamOverride
-              ? "Overriding the global streaming defaults for this camera."
-              : "Using the global streaming defaults (Settings → Streaming)."}
-          </span>
-          {hasStreamOverride && (
-            <button className="ctl-reset" onClick={() => onPatch({ stream: { fps: null, quality: null, max_width: null } }, "Using global defaults")}>
-              Use global defaults
-            </button>
-          )}
-        </div>
+        {legacyNodeVersion ? (
+          <p className="ctl-note">
+            This node runs TailCam {legacyNodeVersion}; update it to manage stream settings here.
+          </p>
+        ) : (
+          <>
+            <ControlSlider label="Stream frame rate" icon={<IconFps size={14} />} value={stream.fps} min={1} max={60} unit=" fps"
+              onChange={(v) => setStream((s) => ({ ...s, fps: v }))}
+              onCommit={() => commitStream("fps")} />
+            <ControlSlider label="Stream quality" icon={<IconSliders size={14} />} value={stream.quality} min={1} max={100} unit="%"
+              onChange={(v) => setStream((s) => ({ ...s, quality: v }))}
+              onCommit={() => commitStream("quality")} />
+            <div className="ctl-row">
+              <span className="ctl-row-label"><IconResolution size={14} /> Stream max width</span>
+              <Segmented ariaLabel="Stream max width" value={cam.stream.max_width}
+                options={[{ value: 0, label: "Native" }, { value: 640, label: "640" }, { value: 960, label: "960" }, { value: 1280, label: "1280" }]}
+                onChange={(v) => onPatch({ stream: { max_width: v as number } }, `Stream width → ${v || "native"}`)} />
+            </div>
+            <div className="ctl-row ctl-row-split">
+              <span className="ctl-note" style={{ margin: 0 }}>
+                {hasStreamOverride
+                  ? "Overriding the global streaming defaults for this camera."
+                  : "Using the global streaming defaults (Settings → Streaming)."}
+              </span>
+              {hasStreamOverride && (
+                <button className="ctl-reset" onClick={() => onPatch({ stream: { fps: null, quality: null, max_width: null } }, "Using global defaults")}>
+                  Use global defaults
+                </button>
+              )}
+            </div>
+          </>
+        )}
         <div className="ctl-row">
           <span className="ctl-row-label"><IconRotate size={14} /> Rotation</span>
           <Segmented ariaLabel="Rotation" value={cam.transform.rotation}

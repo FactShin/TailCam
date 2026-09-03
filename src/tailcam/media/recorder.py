@@ -5,6 +5,7 @@ the fallback ladder when it's unavailable."""
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from datetime import datetime
@@ -52,6 +53,7 @@ class _RecordingSession:
         self._first_image = None
         self.frames_written = 0
         self.codec = ""
+        self.error = ""  # why the session ended early (disk full, encoder died)
 
     def start(self) -> None:
         self._thread.start()
@@ -61,31 +63,53 @@ class _RecordingSession:
         self._thread.join(timeout=10.0)
 
     def _run(self) -> None:
+        # The encoder is told "one frame = 1/fps s", so the clip only plays at
+        # real speed if we hand it exactly fps frames per wall-clock second:
+        # drop extras when the camera is faster, repeat the last frame when it
+        # is slower (a Pi camera negotiated down to 10 fps, a 5 fps remote
+        # pull). Before this, slow sources produced clips that played 1.5-3x
+        # fast.
         interval = 1.0 / self.fps
         next_due = time.monotonic()
         consumer = FrameConsumer(self.buffer, self._reacquire)
+        last = None
         try:
             while not self._stop.is_set():
-                frame = consumer.next_frame(timeout=1.0)
-                if frame is None:
-                    if consumer.ended:  # camera removed — end the recording
-                        break
+                frame = consumer.next_frame(timeout=min(1.0, interval))
+                if frame is not None:
+                    last = frame.image
+                elif consumer.ended:  # camera removed — end the recording
+                    break
+                if last is None:
                     continue
                 now = time.monotonic()
                 if now < next_due:
                     continue
-                next_due = now + interval
                 if self._writer is None and not self._open_failed:
-                    self._open_writer(frame.image)
-                if self._writer is not None:
-                    if self._writer.write(self._fit(frame.image)):
+                    self._open_writer(last)
+                    if self._writer is None:
+                        self.error = "could not open a video writer (disk full?)"
+                        break
+                # One write per elapsed slot (repeat the frame to fill gaps),
+                # capped so a stall can't turn into a burst.
+                slots = min(5, int((now - next_due) / interval) + 1)
+                for _ in range(slots):
+                    if self._writer is not None and self._writer.write(self._fit(last)):
                         self.frames_written += 1
-                    if self._first_image is None:
-                        self._first_image = frame.image.copy()
+                next_due += slots * interval
+                if now - next_due > 2.0:  # fell far behind (suspend?) — resync
+                    next_due = now
+                if self._first_image is None:
+                    self._first_image = last.copy()
+                if self._writer is not None and getattr(self._writer, "failed", False):
+                    self.error = "encoder stopped (disk full?)"
+                    log.error("recording %s: %s", self.camera_id, self.error)
+                    break
         finally:
             if self._writer is not None:
                 if not self._writer.close():
                     log.error("recording %s: encoder reported failure", self.camera_id)
+                    self.error = self.error or "encoder failed to finalize the clip"
                     self.frames_written = 0
 
     def _fit(self, image):
@@ -108,11 +132,13 @@ class _RecordingSession:
     def _open_writer(self, image) -> None:
         h, w = image.shape[:2]
         stamp = datetime.fromtimestamp(self.start_ts).strftime("%Y%m%d-%H%M%S")
-        safe_id = (
+        raw_id = (
             f"{self.source_host.split('.')[0]}_{self.media_camera_id}"
             if self.source_host
             else self.media_camera_id
-        ).replace("/", "_").replace("|", "_")
+        )
+        # Filename-safe on every OS (a remote id could carry ':' or '\\').
+        safe_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", raw_id).strip("._") or "camera"
         self.path = paths.media_dir() / f"{safe_id}_{stamp}.mp4"
         sink = open_video_sink(self.path, float(self.fps), (w, h))
         if sink is None:
@@ -134,6 +160,16 @@ class RecordingService:
     def is_recording(self, camera_id: str) -> bool:
         with self._lock:
             return camera_id in self._sessions
+
+    def session_keys(self) -> list[str]:
+        with self._lock:
+            return list(self._sessions)
+
+    def session_error(self, camera_id: str) -> str:
+        """Why a still-registered session already stopped writing ("" if fine)."""
+        with self._lock:
+            session = self._sessions.get(camera_id)
+        return session.error if session else ""
 
     def start(
         self,
@@ -195,5 +231,15 @@ class RecordingService:
         return record
 
     def stop_all(self) -> None:
-        for camera_id in list(self._sessions):
-            self.stop(camera_id)
+        """Finalize every session in parallel: each stop joins its thread and
+        waits for its encoder, and a serial shutdown of several recordings
+        blew past systemd's stop timeout (SIGKILL mid-finalize)."""
+        keys = self.session_keys()
+        threads = [
+            threading.Thread(target=self.stop, args=(k,), name=f"rec-stop-{k}", daemon=True)
+            for k in keys
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=150.0)

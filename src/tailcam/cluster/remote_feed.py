@@ -26,6 +26,10 @@ log = get_logger(__name__)
 
 _IDLE_TIMEOUT = 30.0
 _RECONNECT_MAX = 30.0
+# A source that stops sending bytes without closing the socket (relay drop,
+# network partition) must not hang the puller forever: after this long
+# without data we reconnect.
+_READ_TIMEOUT = 15.0
 _SOI = b"\xff\xd8"
 _EOI = b"\xff\xd9"
 _MAX_PART = 16 * 1024 * 1024  # a JPEG frame larger than this is garbage
@@ -79,6 +83,12 @@ class RemoteFeed:
         self._thread = threading.Thread(target=self._run, name=f"remote-feed-{key}", daemon=True)
         self.last_error = ""
         self.frames = 0
+        self.last_frame_at = 0.0  # monotonic; 0 = never
+        self.started_at = time.monotonic()
+
+    def frame_age(self) -> float:
+        """Seconds since the last decoded frame (since start if none yet)."""
+        return time.monotonic() - (self.last_frame_at or self.started_at)
 
     def start(self) -> None:
         self._thread.start()
@@ -101,8 +111,10 @@ class RemoteFeed:
             return self._client_factory()
         import httpx
 
-        # read=None: MJPEG is open-ended; connect/write stay bounded.
-        return httpx.Client(timeout=httpx.Timeout(5.0, read=None), follow_redirects=False)
+        # MJPEG is open-ended, but a stalled socket must still time out.
+        return httpx.Client(
+            timeout=httpx.Timeout(5.0, read=_READ_TIMEOUT), follow_redirects=False
+        )
 
     def _run(self) -> None:
         import cv2
@@ -124,6 +136,7 @@ class RemoteFeed:
                             continue
                         self.buffer.publish(image)
                         self.frames += 1
+                        self.last_frame_at = time.monotonic()
                         if self._idle():
                             log.info("remote feed %s idle; closing", self.key)
                             self._stop.set()
@@ -183,6 +196,21 @@ class RemoteFeedRegistry:
                 feed.start()
                 log.info("remote feed %s started from %s", key, base)
             return feed.buffer
+
+    def feed_for(self, key: str) -> RemoteFeed | None:
+        with self._lock:
+            return self._feeds.get(key)
+
+    def stale_keys(self, max_age: float) -> list[str]:
+        """Feeds that haven't produced a frame for ``max_age`` seconds."""
+        with self._lock:
+            return [k for k, f in self._feeds.items() if f.frame_age() > max_age]
+
+    def stop_feed(self, key: str) -> None:
+        with self._lock:
+            feed = self._feeds.pop(key, None)
+        if feed is not None:
+            feed.stop()
 
     def status(self) -> list[dict]:
         with self._lock:

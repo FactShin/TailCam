@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { sampleThumbUrl } from "../api/client";
@@ -102,6 +102,21 @@ function CollectionPanel({ onlineCams, datasets }: { onlineCams: number; dataset
     }
   };
 
+  // Interval is controlled: seeded from the server, re-synced when it changes
+  // (unless the field is being edited), and only POSTed when it actually
+  // changed — an uncontrolled field kept the value from first mount.
+  const [intervalStr, setIntervalStr] = useState("");
+  const editingInterval = useRef(false);
+  useEffect(() => {
+    if (!editingInterval.current && t) setIntervalStr(String(t.collect_interval_seconds));
+  }, [t?.collect_interval_seconds]);
+  const commitInterval = () => {
+    editingInterval.current = false;
+    const v = Math.max(2, Number(intervalStr) || 30);
+    setIntervalStr(String(v));
+    if (v !== t?.collect_interval_seconds) set({ interval_seconds: v });
+  };
+
   return (
     <div className="panel">
       <div className="panel-title">
@@ -139,8 +154,11 @@ function CollectionPanel({ onlineCams, datasets }: { onlineCams: number; dataset
             type="number"
             min={2}
             step={5}
-            defaultValue={t?.collect_interval_seconds ?? 30}
-            onBlur={(e) => set({ interval_seconds: Math.max(2, Number(e.target.value) || 30) })}
+            value={intervalStr}
+            onFocus={() => { editingInterval.current = true; }}
+            onChange={(e) => setIntervalStr(e.target.value)}
+            onBlur={commitInterval}
+            onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
           />
         </label>
         <label className="tl-field tl-field-action" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
@@ -485,7 +503,19 @@ function RunsPanel({ datasets }: { datasets: DatasetInfo[] }) {
                   <Button variant="ghost" size="sm" icon={<IconStop size={13} />} onClick={() => stop.mutate(r.id)}>Stop</Button>
                 )}
                 {r.status === "complete" && r.model_id && (
-                  <Button variant="outline" size="sm" onClick={() => { activate.mutate(r.model_id as number); toast.ok("Model activated"); }}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={activate.isPending}
+                    onClick={async () => {
+                      try {
+                        await activate.mutateAsync(r.model_id as number);
+                        toast.ok("Model activated");
+                      } catch (e) {
+                        toast.err(e instanceof Error ? e.message : "Could not activate model");
+                      }
+                    }}
+                  >
                     Use model
                   </Button>
                 )}

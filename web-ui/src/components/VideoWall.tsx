@@ -34,8 +34,11 @@ export function VideoWall({ onClose }: { onClose: () => void }) {
     return () => document.removeEventListener("keydown", onKey);
   }, [focus, cams.length, onClose]);
 
-  // Hide the header chrome after a few seconds of mouse idle.
+  // Hide the header chrome after a few seconds of idle; any pointer activity
+  // brings it back. Touch-only devices have no "idle mouse" — there'd be no
+  // way to reach the close button — so the chrome stays put there.
   useEffect(() => {
+    if (window.matchMedia("(hover: none)").matches) return;
     let t: ReturnType<typeof setTimeout>;
     const poke = () => {
       setChromeHidden(false);
@@ -44,7 +47,14 @@ export function VideoWall({ onClose }: { onClose: () => void }) {
     };
     poke();
     window.addEventListener("mousemove", poke);
-    return () => { clearTimeout(t); window.removeEventListener("mousemove", poke); };
+    window.addEventListener("pointerdown", poke);
+    window.addEventListener("touchstart", poke, { passive: true });
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("mousemove", poke);
+      window.removeEventListener("pointerdown", poke);
+      window.removeEventListener("touchstart", poke);
+    };
   }, []);
 
   const openCamera = (cam: CameraInfo) => {

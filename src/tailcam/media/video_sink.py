@@ -57,7 +57,11 @@ class FfmpegPipeSink:
             "-crf", "23", "-pix_fmt", "yuv420p",
             "-threads", str(hostinfo.encode_threads()),
             "-vf", f"scale={ow}:{oh}",
-            "-movflags", "+faststart",
+            # No +faststart for live recordings: it rewrites the whole file
+            # after the trailer, which on a Pi SD card takes longer than any
+            # sane close timeout for a long clip — the encoder got killed
+            # mid-rewrite and the clip was lost. Streaming playback of an mp4
+            # with the moov at the end still works over HTTP range requests.
             str(path),
         ]
         kwargs: dict[str, Any] = {}
@@ -69,6 +73,11 @@ class FfmpegPipeSink:
         )
         self._failed = False
         self.frames = 0
+
+    @property
+    def failed(self) -> bool:
+        """The encoder died (disk full, killed) — the session should end."""
+        return self._failed or self._proc.poll() is not None
 
     def write(self, image: np.ndarray) -> bool:
         if self._failed or self._proc.stdin is None:
@@ -93,24 +102,40 @@ class FfmpegPipeSink:
                 self._proc.stdin.close()
         except OSError:
             pass
+        err = b""
         try:
-            self._proc.wait(timeout=60)
+            # communicate() drains stderr while waiting so a chatty encoder
+            # can't deadlock on a full pipe.
+            _, err = self._proc.communicate(timeout=120)
         except subprocess.TimeoutExpired:
             self._proc.kill()
+            try:
+                _, err = self._proc.communicate(timeout=10)
+            except subprocess.TimeoutExpired:  # pragma: no cover - defensive
+                pass
             log.error("ffmpeg did not finish %s in time; killed", self.path.name)
+            self._discard_partial()
             return False
         if self._proc.returncode != 0:
-            err = b""
-            try:
-                err = self._proc.stderr.read() if self._proc.stderr else b""
-            except OSError:
-                pass
             log.error(
                 "ffmpeg exited %s for %s: %s",
-                self._proc.returncode, self.path.name, err.decode("utf-8", "ignore")[-400:],
+                self._proc.returncode, self.path.name,
+                (err or b"").decode("utf-8", "ignore")[-400:],
             )
+            self._discard_partial()
             return False
-        return not self._failed and self.frames > 0
+        ok = not self._failed and self.frames > 0
+        if not ok:
+            self._discard_partial()
+        return ok
+
+    def _discard_partial(self) -> None:
+        """A clip the encoder didn't finish has no moov atom and can't play;
+        leaving it on disk would only hide space from retention."""
+        try:
+            self.path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 class OpenCVSink:
@@ -138,6 +163,10 @@ class OpenCVSink:
     def opened(self) -> bool:
         return self._writer is not None
 
+    @property
+    def failed(self) -> bool:
+        return False
+
     def write(self, image: np.ndarray) -> bool:
         if self._writer is None:
             return False
@@ -158,11 +187,35 @@ class OpenCVSink:
         return self.frames > 0
 
 
+# Refuse to start a recording with less than this much free space: a clip
+# that dies on ENOSPC is worth nothing, and the disk is better left to the
+# retention pruner.
+MIN_FREE_BYTES = 200 * 1024 * 1024
+
+
+def free_bytes(path: Path) -> int | None:
+    import shutil
+
+    probe = path if path.is_dir() else path.parent
+    while not probe.exists() and probe.parent != probe:
+        probe = probe.parent
+    try:
+        return shutil.disk_usage(probe).free
+    except OSError:
+        return None
+
+
 def open_video_sink(path: Path, fps: float, size: tuple[int, int]) -> VideoSink | None:
     """Best available mp4 writer for ``size`` frames at ``fps``; None if none opens."""
     from tailcam.timelapse.ffmpeg import ffmpeg_path
 
     path.parent.mkdir(parents=True, exist_ok=True)
+    free = free_bytes(path)
+    if free is not None and free < MIN_FREE_BYTES:
+        log.error(
+            "not recording %s: only %.0f MB free on %s", path.name, free / 1e6, path.parent
+        )
+        return None
     exe = ffmpeg_path()
     if exe:
         try:

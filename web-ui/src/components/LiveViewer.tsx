@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { snapshotUrl, streamUrl } from "../api/client";
-import { useDetections, usePageVisible } from "../api/hooks";
+import { useCameras, useDetections, usePageVisible } from "../api/hooks";
 import { IconZoom } from "../icons";
 import { fmtDur, osdStamp } from "../lib/format";
 import type { CameraInfo, ViewParams } from "../types";
 import { Spinner } from "./ui";
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
+// Append a cache-buster whether or not the URL already carries a query string.
+const withBust = (url: string, n: number) => `${url}${url.includes("?") ? "&" : "?"}_=${n}`;
 
 // The on-screen rect of a frame displayed in a container under object-fit
 // cover/contain — so normalized detection boxes land on the right pixels even
@@ -86,6 +88,25 @@ export function LiveViewer({
 
   const debouncedView = useDebounced(view, 260);
 
+  // A stream that froze while the server was away (restart, tailnet blip) never
+  // errors on its own — re-key the <img> when the API comes back after an
+  // error, and when the tab becomes visible again.
+  const camerasQ = useCameras();
+  const apiWasDown = useRef(false);
+  useEffect(() => {
+    if (camerasQ.isError) {
+      apiWasDown.current = true;
+    } else if (camerasQ.isSuccess && apiWasDown.current) {
+      apiWasDown.current = false;
+      setNonce(Date.now());
+    }
+  }, [camerasQ.isError, camerasQ.isSuccess]);
+  const wasVisible = useRef(pageVisible);
+  useEffect(() => {
+    if (pageVisible && !wasVisible.current) setNonce(Date.now());
+    wasVisible.current = pageVisible;
+  }, [pageVisible]);
+
   // Pause the stream when offscreen (low-bandwidth) unless this is the big view.
   useEffect(() => {
     const el = wrapRef.current;
@@ -119,9 +140,12 @@ export function LiveViewer({
   const boxes = detectOn ? (detection.data?.boxes ?? []) : [];
 
   // Snapshot-polling mode: WebKit can't render MJPEG, and any browser that
-  // errors on the stream repeatedly is switched over automatically.
+  // errors on the stream repeatedly is switched over automatically. The
+  // fallback is sticky for the life of this viewer — a renderer that failed
+  // MJPEG twice will fail it again, so never flip back.
   const [mjpegErrors, setMjpegErrors] = useState(0);
-  const usePolling = IS_WEBKIT || mjpegErrors >= MJPEG_ERRORS_BEFORE_FALLBACK;
+  const fellBack = useRef(false);
+  const usePolling = IS_WEBKIT || fellBack.current || mjpegErrors >= MJPEG_ERRORS_BEFORE_FALLBACK;
 
   const [pollTick, setPollTick] = useState(0);
   useEffect(() => {
@@ -135,10 +159,11 @@ export function LiveViewer({
   let src: string | undefined;
   if (shouldStream) {
     if (usePolling) {
-      src = `${snapshotUrl(cam.proxy_prefix, cam.id)}?_=${pollTick}`;
+      // Same zoom/pan/w/q as the stream, so pinch-zoom works on WebKit too.
+      src = withBust(snapshotUrl(cam.proxy_prefix, cam.id, debouncedView), pollTick);
     } else {
       const base = streamUrl(cam.proxy_prefix, cam.id, debouncedView);
-      src = nonce ? `${base}&_=${nonce}` : base;
+      src = nonce ? withBust(base, nonce) : base;
     }
   }
 
@@ -170,7 +195,13 @@ export function LiveViewer({
     if (cam.status === "offline") return;
     // Count MJPEG errors → after a couple, this browser can't render the stream
     // (e.g. Safari), so switch to snapshot polling instead of looping forever.
-    if (!usePolling) setMjpegErrors((n) => n + 1);
+    if (!usePolling) {
+      setMjpegErrors((n) => {
+        const next = n + 1;
+        if (next >= MJPEG_ERRORS_BEFORE_FALLBACK) fellBack.current = true;
+        return next;
+      });
+    }
     setReconnecting(true);
     if (retryTimer.current) clearTimeout(retryTimer.current);
     retryTimer.current = setTimeout(() => {
@@ -182,8 +213,7 @@ export function LiveViewer({
   const onLoad = useCallback(() => {
     setReconnecting(false);
     setBackoff(2);
-    if (usePolling) setMjpegErrors(0);  // polling works; stop counting
-  }, [usePolling]);
+  }, []);
 
   useEffect(() => () => { if (retryTimer.current) clearTimeout(retryTimer.current); }, []);
 
@@ -288,6 +318,7 @@ export function LiveViewer({
     >
       {src ? (
         <img
+          key={nonce}
           className="viewer-canvas"
           style={{ objectFit: fit, width: "100%", height: "100%" }}
           src={src}
@@ -301,7 +332,12 @@ export function LiveViewer({
       )}
 
       {detectOn && boxes.length > 0 && (() => {
-        const r = displayedRect(size.w, size.h, cam.width, cam.height, fit);
+        // A 90°/270° rotation is applied server-side, so the delivered frame
+        // has the sensor's width/height swapped.
+        const rotated = Math.abs(cam.transform?.rotation ?? 0) % 180 === 90;
+        const r = rotated
+          ? displayedRect(size.w, size.h, cam.height, cam.width, fit)
+          : displayedRect(size.w, size.h, cam.width, cam.height, fit);
         return (
           <div className="det-layer">
             {boxes.map((b, i) => (

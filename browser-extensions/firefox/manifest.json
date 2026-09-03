@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TailCam Companion",
-  "version": "1.8.2",
+  "version": "1.8.3",
   "description": "Companion for your self-hosted TailCam node: live camera glances, snapshot thumbnails, motion-event badges and notifications, right from the toolbar.",
   "browser_specific_settings": {
     "gecko": {

@@ -294,6 +294,7 @@ export function useMedia(params: { camera_id?: string; media_type?: string; limi
   return useQuery({
     queryKey: ["media", params],
     queryFn: () => api.getMedia(params),
+    refetchInterval: 10_000,
   });
 }
 

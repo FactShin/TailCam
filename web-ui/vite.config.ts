@@ -43,11 +43,35 @@ export default defineConfig({
       workbox: {
         // The app shell is cacheable; live video/API are network-only.
         navigateFallback: "/index.html",
-        navigateFallbackDenylist: [/^\/api/, /^\/stream/, /^\/media/, /^\/proxy/],
+        navigateFallbackDenylist: [
+          /^\/api/,
+          /^\/stream/,
+          /^\/media/,
+          /^\/proxy/,
+          /^\/timelapse/,
+          /^\/events/,
+          /^\/datasets/,
+          /^\/openapi\.json/,
+          /^\/api-docs/,
+          /^\/api-redoc/,
+          /^\/mcp/,
+        ],
         runtimeCaching: [
           {
             urlPattern: ({ url }) =>
-              ["/api", "/stream", "/media", "/proxy"].some((p) => url.pathname.startsWith(p)),
+              [
+                "/api",
+                "/stream",
+                "/media",
+                "/proxy",
+                "/timelapse",
+                "/events",
+                "/datasets",
+                "/openapi.json",
+                "/api-docs",
+                "/api-redoc",
+                "/mcp",
+              ].some((p) => url.pathname.startsWith(p)),
             handler: "NetworkOnly",
           },
         ],

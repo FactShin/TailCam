@@ -28,6 +28,12 @@ _HOP_BY_HOP = {
     "content-length",
     "content-encoding",
     "host",
+    # The browser's Origin/Referer describe *this* node; forwarded to the peer
+    # they trip its CSRF guard whenever the dashboard was opened by IP (the
+    # peer only trusts an IP-literal origin equal to its own Host). This node
+    # already enforced the cross-origin check on the way in.
+    "origin",
+    "referer",
 }
 
 

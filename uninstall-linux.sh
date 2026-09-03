@@ -19,6 +19,23 @@ BIN=""
 [ -z "$BIN" ] && command -v anycam >/dev/null 2>&1 && BIN="$(command -v anycam)"
 
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
+USER_NAME="${USER:-$(id -un)}"
+LINGER_MARKER="${HOME}/.local/share/tailcam/.linger-enabled-by-installer"
+UVC_CONF=/etc/modprobe.d/tailcam-uvcvideo.conf
+
+# Ask on the terminal even under `curl … | bash` (stdin is the pipe there).
+ask() {
+    local prompt="$1" reply=""
+    printf '%s' "$prompt"
+    if [ -t 0 ]; then
+        read -r reply
+    elif [ -c /dev/tty ]; then
+        read -r reply </dev/tty || reply=""
+    else
+        echo "(no terminal — keeping)"
+    fi
+    printf '%s' "$reply"
+}
 
 log "Removing TailCam"
 if [ -n "$BIN" ]; then
@@ -36,10 +53,30 @@ for v in "$VENV_DIR" "$LEGACY_VENV_DIR"; do
     [ -d "$v" ] && { rm -rf "$v"; log "Removed virtualenv $v"; }
 done
 
+# Undo the install-time system tweaks (best effort; both need sudo).
+if [ -f "$UVC_CONF" ]; then
+    if sudo -n rm -f "$UVC_CONF" 2>/dev/null || { [ -c /dev/tty ] && sudo rm -f "$UVC_CONF" </dev/tty; }; then
+        log "Removed $UVC_CONF (uvcvideo bandwidth quirk; takes effect after a reboot)"
+    else
+        log "Could not remove $UVC_CONF — run: sudo rm -f $UVC_CONF"
+    fi
+fi
+if [ -f "$LINGER_MARKER" ] && command -v loginctl >/dev/null 2>&1; then
+    # Only when the installer turned lingering on; never touch a setting the
+    # user (or another service) relies on.
+    if sudo -n loginctl disable-linger "$USER_NAME" 2>/dev/null \
+       || loginctl disable-linger "$USER_NAME" 2>/dev/null \
+       || { [ -c /dev/tty ] && sudo loginctl disable-linger "$USER_NAME" </dev/tty; }; then
+        log "Disabled lingering for $USER_NAME (enabled by the installer)"
+    else
+        log "Could not disable lingering — run: sudo loginctl disable-linger $USER_NAME"
+    fi
+    rm -f "$LINGER_MARKER"
+fi
+
 for d in ${DATA_DIRS[@]+"${DATA_DIRS[@]}"}; do
     [ -d "$d" ] || continue
-    printf 'Delete stored media and database at %s? [y/N] ' "$d"
-    read -r reply
+    reply="$(ask "Delete stored media and database at $d? [y/N] ")"
     case "$reply" in [yY]*) rm -rf "$d"; log "Deleted ${d}" ;; *) log "Kept ${d}" ;; esac
 done
 log "TailCam uninstalled."

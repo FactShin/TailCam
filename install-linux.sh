@@ -28,6 +28,23 @@ warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
 err()  { printf '\033[1;31mxx\033[0m %s\n' "$*" >&2; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# Can we run sudo? Passwordless first; otherwise let sudo prompt on the
+# controlling terminal. Under `curl … | bash` stdin is the pipe, but sudo
+# prompts on /dev/tty, so a piped install can still ask for the password when
+# a terminal is attached. Only a truly headless run (no tty) skips sudo steps.
+SUDO_CHECKED=""
+can_sudo() {
+    [ -n "$SUDO_CHECKED" ] && return "$SUDO_CHECKED"
+    if sudo -n true 2>/dev/null; then
+        SUDO_CHECKED=0
+    elif [ -c /dev/tty ] && sudo -v </dev/tty; then
+        SUDO_CHECKED=0
+    else
+        SUDO_CHECKED=1
+    fi
+    return "$SUDO_CHECKED"
+}
+
 DO_DESKTOP=0
 
 while [ $# -gt 0 ]; do
@@ -61,10 +78,13 @@ ensure_system_deps() {
         debian|ubuntu|raspbian) ;;
         *) warn "Non-Debian distro '${DISTRO:-?}'. If TailCam fails to import, install: libopenblas0 libgl1 libglib2.0-0"; return 0 ;;
     esac
-    local required="python3-venv python3-pip libgl1 libglib2.0-0 libopenblas0"
+    # git: pip installs TailCam from git+https; Pi OS Lite / Ubuntu Server
+    # ship without it (install_tailcam falls back to the zip archive if it's
+    # still missing afterwards).
+    local required="python3-venv python3-pip git libgl1 libglib2.0-0 libopenblas0"
     local optional="ffmpeg v4l-utils"
-    if ! sudo -n true 2>/dev/null && [ ! -t 0 ]; then
-        warn "Required system libraries need sudo, which can't prompt in a piped install."
+    if ! can_sudo; then
+        warn "Required system libraries need sudo, which isn't available in this session."
         echo "    Run this once, then re-run:  sudo apt-get update && sudo apt-get install -y ${required} ${optional}"
         return 0
     fi
@@ -90,7 +110,7 @@ tune_raspberry_pi() {
     if grep -qs 'quirks' "$conf" 2>/dev/null; then
         return 0
     fi
-    if ! sudo -n true 2>/dev/null && [ ! -t 0 ]; then
+    if ! can_sudo; then
         warn "Raspberry Pi: the uvcvideo bandwidth fix needs sudo. Run once, then reboot:"
         echo "    echo 'options uvcvideo quirks=0x80' | sudo tee $conf"
         return 0
@@ -98,12 +118,16 @@ tune_raspberry_pi() {
     log "Raspberry Pi: enabling the uvcvideo USB-bandwidth fix ($conf)"
     if echo 'options uvcvideo quirks=0x80' | sudo tee "$conf" >/dev/null 2>&1; then
         # Reload now if nothing is streaming; otherwise it applies at next boot.
-        if ! fuser /dev/video* >/dev/null 2>&1; then
+        # (Called after install_tailcam stopped the service, so the cameras
+        # are normally free here.) fuser lives in psmisc, which minimal
+        # images lack — without it just try the reload; modprobe -r refuses
+        # a module that's in use, so failure is harmless.
+        if have fuser && fuser /dev/video* >/dev/null 2>&1; then
+            warn "A camera is in use; the uvcvideo bandwidth fix applies after the next reboot."
+        else
             sudo modprobe -r uvcvideo 2>/dev/null && sudo modprobe uvcvideo 2>/dev/null \
                 && log "uvcvideo reloaded with quirks=0x80" \
                 || warn "uvcvideo will use the bandwidth fix after the next reboot."
-        else
-            warn "A camera is in use; the uvcvideo bandwidth fix applies after the next reboot."
         fi
     else
         warn "Could not write $conf (run: echo 'options uvcvideo quirks=0x80' | sudo tee $conf)."
@@ -112,11 +136,17 @@ tune_raspberry_pi() {
 
 # --- Python 3.10+ -----------------------------------------------------------
 PYTHON=""
+# Prefer the distro's default `python3` (it is what python3-venv/python3-gi
+# were installed for); only then try versioned names. A candidate must be
+# 3.10+ AND have a working venv module (Debian splits it into python3-venv).
+python_ok() {
+    command -v "$1" >/dev/null 2>&1 && \
+        "$1" -c 'import sys, venv, ensurepip; sys.exit(0 if sys.version_info[:2] >= (3,10) else 1)' 2>/dev/null
+}
 find_python() {
     local c
-    for c in python3.13 python3.12 python3.11 python3.10 python3; do
-        if command -v "$c" >/dev/null 2>&1 && \
-           "$c" -c 'import sys; sys.exit(0 if sys.version_info[:2] >= (3,10) else 1)' 2>/dev/null; then
+    for c in python3 python3.13 python3.12 python3.11 python3.10; do
+        if python_ok "$c"; then
             PYTHON="$(command -v "$c")"; return 0
         fi
     done
@@ -129,8 +159,19 @@ ensure_python() {
 }
 
 install_tailcam() {
-    local spec="git+https://github.com/${REPO}.git@${REF}"
-    local backup="${VENV_DIR}.bak"
+    local spec backup="${VENV_DIR}.bak"
+    local venv_opts=""
+    if have git; then
+        spec="git+https://github.com/${REPO}.git@${REF}"
+    else
+        # No git (minimal images, apt step skipped): pip can install straight
+        # from GitHub's zip archive of the ref.
+        spec="https://github.com/${REPO}/archive/${REF}.zip"
+    fi
+    # The desktop app's GTK/AppIndicator/WebKit bindings come from apt
+    # (python3-gi & co.) and can't be pip-installed, so the venv must see the
+    # system site-packages for `tailcam app` to work.
+    [ "$DO_DESKTOP" -eq 1 ] && venv_opts="--system-site-packages"
     # Stop a running service so the upgrade actually takes effect (an active
     # process would keep serving the old code from the deleted venv).
     systemctl --user stop tailcam.service 2>/dev/null || true
@@ -141,7 +182,8 @@ install_tailcam() {
     rm -rf "$backup"
     [ -d "$VENV_DIR" ] && mv "$VENV_DIR" "$backup"
     log "Creating virtualenv at ${VENV_DIR}"
-    if ! ( "$PYTHON" -m venv "$VENV_DIR" \
+    # shellcheck disable=SC2086  # venv_opts is intentionally word-split
+    if ! ( "$PYTHON" -m venv $venv_opts "$VENV_DIR" \
            && "${VENV_DIR}/bin/pip" install --upgrade pip >/dev/null \
            && { log "Installing TailCam ($spec)"; "${VENV_DIR}/bin/pip" install "$spec"; } ); then
         rm -rf "$VENV_DIR"
@@ -186,13 +228,23 @@ setup_service() {
     "$TAILCAM_BIN" config --port "$PORT" >/dev/null 2>&1 || true
     [ "$DO_SERVICE" -eq 0 ] && { warn "Skipping service (--no-service)."; return 0; }
     log "Registering systemd --user service"
-    "$TAILCAM_BIN" install-service || warn "Service registration failed."
+    # install-service exits non-zero (and prints FAILED: …) when systemctl
+    # refuses; surface it instead of moving on as if the service were live.
+    "$TAILCAM_BIN" install-service \
+        || warn "Service registration FAILED (see above). TailCam is installed but not running as a service; fix the cause, then run: tailcam install-service"
     # Lingering lets the user service start at boot without an interactive login
-    # (important for a headless Pi).
+    # (important for a headless Pi). Remember when *we* turned it on so the
+    # uninstaller can turn it back off.
     if have loginctl; then
-        sudo loginctl enable-linger "$USER_NAME" 2>/dev/null \
-            || loginctl enable-linger "$USER_NAME" 2>/dev/null \
-            || warn "Could not enable lingering; run: sudo loginctl enable-linger $USER_NAME (so it starts at boot)."
+        local linger_marker="${HOME}/.local/share/tailcam/.linger-enabled-by-installer"
+        if loginctl show-user "$USER_NAME" -p Linger 2>/dev/null | grep -q 'Linger=yes'; then
+            :  # already on (by the user or a previous install)
+        elif { can_sudo && sudo loginctl enable-linger "$USER_NAME" 2>/dev/null; } \
+             || loginctl enable-linger "$USER_NAME" 2>/dev/null; then
+            mkdir -p "$(dirname "$linger_marker")" && : > "$linger_marker"
+        else
+            warn "Could not enable lingering; run: sudo loginctl enable-linger $USER_NAME (so it starts at boot)."
+        fi
     fi
 }
 
@@ -212,8 +264,6 @@ ts_backend_state() {
         printf '%s' "$json" | sed -n 's/.*"BackendState": *"\([A-Za-z]*\)".*/\1/p' | head -n1
     fi
 }
-
-can_sudo() { sudo -n true 2>/dev/null || [ -t 0 ]; }
 
 install_tailscale() {
     [ "$DO_TAILSCALE_INSTALL" -eq 1 ] || { warn "Tailscale not found (--no-tailscale-install). Install it with:  curl -fsSL https://tailscale.com/install.sh | sh"; return 1; }
@@ -250,7 +300,20 @@ wait_for_tailscale_login() {
     echo "    (phone, laptop) and approve this machine. The installer waits up to ${TS_LOGIN_TIMEOUT}s."
     echo
     # --timeout makes `up` give up instead of blocking forever on a headless box.
-    sudo tailscale up --timeout "${TS_LOGIN_TIMEOUT}s" || true
+    local up_rc=0
+    sudo tailscale up --timeout "${TS_LOGIN_TIMEOUT}s" || up_rc=$?
+    state="$(ts_backend_state)"
+    if [ "$state" = "Running" ]; then
+        log "Tailscale is connected."
+        return 0
+    fi
+    # Only keep polling when `up` actually failed AND the daemon is alive and
+    # waiting on a browser login. An empty/Stopped state means tailscaled
+    # isn't running (or gave up) — polling for 10 minutes can't fix that.
+    if [ "$up_rc" -eq 0 ] || [ "$state" != "NeedsLogin" ]; then
+        ts_explain_state "$state"
+        return 1
+    fi
     while [ "$waited" -lt "$TS_LOGIN_TIMEOUT" ]; do
         state="$(ts_backend_state)"
         if [ "$state" = "Running" ]; then
@@ -258,12 +321,34 @@ wait_for_tailscale_login() {
             log "Tailscale is connected."
             return 0
         fi
+        if [ "$state" != "NeedsLogin" ]; then
+            echo
+            ts_explain_state "$state"
+            return 1
+        fi
         sleep 3; waited=$((waited + 3))
         [ $((waited % 30)) -eq 0 ] && echo "    …still waiting for the Tailscale login ($((TS_LOGIN_TIMEOUT - waited))s left)"
     done
     warn "Timed out waiting for the Tailscale login. TailCam works locally; when you've logged in run:"
     echo "    sudo tailscale up && tailcam tailscale serve"
     return 1
+}
+
+ts_explain_state() {
+    case "$1" in
+        "")
+            warn "The Tailscale daemon (tailscaled) isn't running, so there's nothing to log in to. Start it, then log in:"
+            echo "    sudo systemctl enable --now tailscaled && sudo tailscale up && tailcam tailscale serve" ;;
+        Stopped)
+            warn "Tailscale is installed but stopped (logged in, not connected). Bring it up, then serve:"
+            echo "    sudo tailscale up && tailcam tailscale serve" ;;
+        NeedsLogin)
+            warn "Tailscale still needs a browser login. Run when convenient:"
+            echo "    sudo tailscale up && tailcam tailscale serve" ;;
+        *)
+            warn "Tailscale is in state '$1'. TailCam works locally; once it's connected run:"
+            echo "    tailcam tailscale serve" ;;
+    esac
 }
 
 ensure_tailscale() {
@@ -291,9 +376,9 @@ setup_desktop_app() {
     case "$DISTRO" in
         debian|ubuntu|raspbian)
             local gui_deps="python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-ayatanaappindicator3-0.1"
-            # WebKit GI bindings renamed on Ubuntu 24.04 (webkit2-4.1 vs webkit2gtk-4.1).
-            sudo apt-get install -y gir1.2-webkit2-4.1 2>/dev/null || sudo apt-get install -y gir1.2-webkit2gtk-4.1 || warn "WebKitGTK GI bindings unavailable — the dashboard will open in the browser."
-            if sudo -n true 2>/dev/null || [ -t 0 ]; then
+            if can_sudo; then
+                # WebKit GI bindings renamed on Ubuntu 24.04 (webkit2-4.1 vs webkit2gtk-4.1).
+                sudo apt-get install -y gir1.2-webkit2-4.1 2>/dev/null || sudo apt-get install -y gir1.2-webkit2gtk-4.1 || warn "WebKitGTK GI bindings unavailable — the dashboard will open in the browser."
                 sudo apt-get install -y $gui_deps || warn "GUI libraries failed to install — run 'tailcam doctor' for hints."
             else
                 warn "GUI libraries need sudo. Run: sudo apt-get install -y $gui_deps"
@@ -326,9 +411,11 @@ ensure_ai_hint() {
 
 log "Installing TailCam on Linux (${DISTRO:-unknown}, ref=${REF}, port=${PORT})"
 ensure_system_deps
-tune_raspberry_pi
 ensure_python
 install_tailcam
+# After install_tailcam (which stops the service) and before setup_service
+# (which restarts it): the uvcvideo reload only works while no camera is open.
+tune_raspberry_pi
 remove_legacy_anycam
 link_cli
 setup_service

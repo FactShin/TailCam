@@ -159,9 +159,13 @@ function HomeKitCard({ hk }: { hk: HomeKitStatus }) {
             <Button
               variant="ghost"
               disabled={reset.isPending}
-              onClick={() => {
-                reset.mutate();
-                toast.ok("Pairing reset");
+              onClick={async () => {
+                try {
+                  await reset.mutateAsync();
+                  toast.ok("Pairing reset");
+                } catch {
+                  toast.err("Could not reset pairing");
+                }
               }}
             >
               {reset.isPending ? "Resetting…" : "Reset pairing"}
