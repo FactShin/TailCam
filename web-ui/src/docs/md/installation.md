@@ -96,3 +96,27 @@ old config, media, and database. You can also run it manually:
 ```bash
 tailcam migrate
 ```
+
+## Tailscale is installed and signed in for you
+
+Since 1.8 every installer makes sure Tailscale is ready before it finishes:
+
+1. **Missing?** It is installed — the official script on Linux
+   (`curl -fsSL https://tailscale.com/install.sh | sh`), `brew install tailscale`
+   on macOS (or the App Store app if present), `winget install Tailscale.Tailscale`
+   on Windows.
+2. **Not signed in?** The installer runs `tailscale up`, which prints a login
+   link. Open it on any device — your phone is fine — and approve the machine.
+   The installer waits up to `TAILCAM_TAILSCALE_LOGIN_TIMEOUT` seconds
+   (default 600) for the node to join the tailnet.
+3. **Connected?** `tailscale serve` is enabled and the HTTPS tailnet URL is
+   printed.
+
+Nothing here can fail the install: if sudo can't prompt (piped install on a
+headless box) or the login times out, the exact commands to finish later are
+printed and TailCam keeps working on `http://localhost:8088/`.
+
+Flags: `--no-tailscale-install` / `-NoTailscaleInstall` skips only the automatic
+install (serve still happens if Tailscale is present); `--no-tailscale` /
+`-NoTailscale` skips everything Tailscale-related. `-NonInteractive` on Windows
+(and the detached self-updater) never waits for a login.

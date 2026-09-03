@@ -348,6 +348,30 @@ old config, media, and database. You can also run it manually:
 \`\`\`bash
 tailcam migrate
 \`\`\`
+
+## Tailscale is installed and signed in for you
+
+Since 1.8 every installer makes sure Tailscale is ready before it finishes:
+
+1. **Missing?** It is installed — the official script on Linux
+   (\`curl -fsSL https://tailscale.com/install.sh | sh\`), \`brew install tailscale\`
+   on macOS (or the App Store app if present), \`winget install Tailscale.Tailscale\`
+   on Windows.
+2. **Not signed in?** The installer runs \`tailscale up\`, which prints a login
+   link. Open it on any device — your phone is fine — and approve the machine.
+   The installer waits up to \`TAILCAM_TAILSCALE_LOGIN_TIMEOUT\` seconds
+   (default 600) for the node to join the tailnet.
+3. **Connected?** \`tailscale serve\` is enabled and the HTTPS tailnet URL is
+   printed.
+
+Nothing here can fail the install: if sudo can't prompt (piped install on a
+headless box) or the login times out, the exact commands to finish later are
+printed and TailCam keeps working on \`http://localhost:8088/\`.
+
+Flags: \`--no-tailscale-install\` / \`-NoTailscaleInstall\` skips only the automatic
+install (serve still happens if Tailscale is present); \`--no-tailscale\` /
+\`-NoTailscale\` skips everything Tailscale-related. \`-NonInteractive\` on Windows
+(and the detached self-updater) never waits for a login.
 `,Vb="# Running in Docker\n\nTailCam ships a container image so you can run it fully isolated — no Python\nenvironment to manage on the host. The image bundles TailCam, the web dashboard,\n[Tailscale](tailscale), and the OpenCV/ffmpeg runtime libraries.\n\n## One-line install\n\nThe fastest path on a Linux host with Docker. It pulls the prebuilt image and\nstarts a container with persistent volumes:\n\n```bash\n# local-only (open http://localhost:8088/)\ncurl -fsSL https://raw.githubusercontent.com/factshin/tailcam/main/install-docker.sh | bash\n\n# join your tailnet and serve over Tailscale\ncurl -fsSL https://raw.githubusercontent.com/factshin/tailcam/main/install-docker.sh | bash -s -- --authkey tskey-auth-xxxx\n```\n\nFlags: `--authkey KEY`, `--hostname NAME`, `--port N`, `--device /dev/videoN`\n(repeatable), `--image REF`, `--name NAME`, `--no-tailscale`. The script\nauto-detects `/dev/video0`, replaces any existing container, and keeps your data\nin named volumes.\n\n## Prebuilt image\n\nImages are published to the GitHub Container Registry:\n\n```bash\ndocker pull ghcr.io/factshin/tailcam:latest\n```\n\nTags: `latest` (newest `main`), `X.Y.Z` / `X.Y` (releases), and `sha-<short>`.\nImages are multi-arch — `linux/amd64` and `linux/arm64` (Raspberry Pi).\n\n## Quick start (Docker Compose)\n\nFrom a checkout of the repo:\n\n```bash\n# local-only (reach it on the host at http://localhost:8088/)\ndocker compose up -d\n\n# or join your tailnet and serve over Tailscale\nTS_AUTHKEY=tskey-auth-xxxx docker compose up -d\n```\n\n`docker-compose.yml` builds the image, persists data in named volumes, and (on\nLinux) passes through `/dev/video0`.\n\n## Two ways to run\n\n### Over Tailscale (recommended)\n\nProvide a [Tailscale auth key](https://tailscale.com/kb/1085/auth-keys/) as\n`TS_AUTHKEY`. The container starts `tailscaled`, joins your tailnet as\n`TS_HOSTNAME` (default `tailcam`), and TailCam serves itself over Tailscale —\nexactly like a native install. Reach it at:\n\n```\nhttps://tailcam.<your-tailnet>.ts.net:8443/\n```\n\nThis is the isolated, full-access path: requests arrive with Tailscale identity,\nso admin features and the [MCP](mcp-overview) endpoint work.\n\n### Local-only\n\nOmit `TS_AUTHKEY` and the container runs without Tailscale. Publish the port and\nopen it on the host:\n\n```bash\ndocker run -d --name tailcam -p 8088:8088 \\\n  -v tailcam-data:/data -v tailcam-config:/config \\\n  --device /dev/video0:/dev/video0 \\\n  ghcr.io/factshin/tailcam:latest\n```\n\nView and camera control work over the published port. Verified-admin features\n(node/fleet management, MCP over HTTP) require Tailscale identity, so use the\nTailscale path for those.\n\n## Cameras\n\nPass each webcam through with `--device` (Compose: the `devices:` list):\n\n```bash\n--device /dev/video0:/dev/video0\n```\n\n> **Linux hosts only.** Docker Desktop on macOS and Windows runs containers in a\n> Linux VM that cannot see host USB cameras. On those platforms, run TailCam\n> natively (see [Installation](installation)) or point the container at a network\n> camera. You can always test with the synthetic camera: set\n> `TAILCAM_SYNTHETIC=1`.\n\n## Tailscale networking modes\n\n- **Kernel networking (preferred):** run with `--device=/dev/net/tun` and\n  `--cap-add=NET_ADMIN` (both are in `docker-compose.yml`). Faster.\n- **Userspace networking (fallback):** if `/dev/net/tun` isn't available the\n  entrypoint automatically uses `--tun=userspace-networking`. No special\n  capabilities needed; Serve still works.\n\n## Persistence\n\nThree volumes keep state across restarts and upgrades:\n\n| Mount | Holds |\n| --- | --- |\n| `/data` | SQLite database + recordings/snapshots/timelapse (`TAILCAM_DATA_DIR`). |\n| `/config` | `config.toml` (`TAILCAM_CONFIG_DIR`). |\n| `/var/lib/tailscale` | Tailscale node identity — persist it so you don't re-auth. |\n\n## Environment variables\n\n| Variable | Default | Meaning |\n| --- | --- | --- |\n| `TS_AUTHKEY` | — | Tailscale auth key. Set it to serve over Tailscale; omit for local-only. |\n| `TS_HOSTNAME` | `tailcam` | Tailnet node name. |\n| `TS_EXTRA_ARGS` | — | Extra `tailscale up` args (e.g. `--advertise-tags=tag:tailcam`). |\n| `TAILCAM_DATA_DIR` | `/data` | Data directory (set in the image). |\n| `TAILCAM_CONFIG_DIR` | `/config` | Config directory (set in the image). |\n| `TAILCAM_SYNTHETIC` | — | `1` to use a synthetic camera (no hardware). |\n\nThe container always binds `0.0.0.0` internally so the published port works;\nTailscale Serve still proxies to loopback, preserving tailnet identity.\n\n## Building the image\n\n```bash\ndocker build -t tailcam .\n```\n\nIt's a multi-stage build: a Node stage compiles the dashboard, then a slim Python\nstage installs TailCam with Tailscale and the media libraries.\n\n## Updating\n\n```bash\ndocker compose pull   # or: docker compose build --pull\ndocker compose up -d\n```\n\nYour volumes persist, so config, media, and Tailscale identity carry over.\n\n## Troubleshooting\n\n- **No cameras in the container.** Confirm `--device /dev/video0` is passed and the\n  host is Linux. Check `docker logs tailcam` and the [Troubleshooting](troubleshooting)\n  page. Test with `TAILCAM_SYNTHETIC=1`.\n- **Tailscale won't connect.** Make sure `TS_AUTHKEY` is valid and unexpired.\n  Without `/dev/net/tun` + `NET_ADMIN` it uses userspace networking — check\n  `docker logs tailcam` for the mode and any `tailscale up` errors.\n- **Lost my node identity after recreate.** Persist `/var/lib/tailscale` (the\n  Compose file does this with the `tailcam-tsstate` volume).\n- **Can't reach admin features over the published port.** That's by design — admin\n  and MCP require Tailscale identity. Use the tailnet URL. See [Security](security).\n",Yb=`# Quick start
 
 This walks you from a fresh install to a live camera you can view from another
@@ -1426,6 +1450,10 @@ tailcam tailscale status                    # show tailscale state
 \`\`\`
 
 To run without serving (local only): \`tailcam run --no-tailscale\`.
+
+The installers handle first-time setup: they install Tailscale when it's
+missing, run \`tailscale up\` and wait for you to approve the login link, then
+enable serve — see [Installation](installation).
 
 ## Access URL behavior
 

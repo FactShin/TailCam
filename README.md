@@ -158,7 +158,17 @@ curl -fsSL .../install-linux.sh -o install-linux.sh && bash install-linux.sh --p
 irm .../install.ps1 -OutFile install.ps1 ; .\install.ps1 -Port 9000 -NoTailscale
 ```
 
-Linux/macOS flags: `--port`, `--ref <tag>`, `--no-service`, `--no-tailscale`.
+Linux/macOS flags: `--port`, `--ref <tag>`, `--no-service`, `--no-tailscale`,
+`--no-tailscale-install`. Windows: `-Port`, `-Ref`, `-NoService`, `-NoTailscale`,
+`-NoTailscaleInstall`.
+
+**Tailscale is set up for you.** If Tailscale isn't installed, the installer installs
+it (official script on Linux, Homebrew on macOS, winget on Windows). If it isn't
+signed in, the installer runs `tailscale up`, prints the login link — open it on any
+device — and waits (up to `TAILCAM_TAILSCALE_LOGIN_TIMEOUT` seconds, default 600)
+until the machine joins your tailnet, then enables `tailscale serve`. Pass
+`--no-tailscale-install` to keep the old "warn only" behaviour; nothing here ever
+fails the install — TailCam always works locally.
 Windows: `-Port`, `-Ref`, `-NoService`, `-NoTailscale`.
 
 To uninstall: run `uninstall-linux.sh` / `uninstall-macos.sh` / `uninstall.ps1`, or

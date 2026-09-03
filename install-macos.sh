@@ -13,6 +13,8 @@ REF="${TAILCAM_REF:-main}"
 PORT="${TAILCAM_PORT:-8088}"
 DO_SERVICE=1
 DO_TAILSCALE=1
+DO_TAILSCALE_INSTALL=1
+TS_LOGIN_TIMEOUT="${TAILCAM_TAILSCALE_LOGIN_TIMEOUT:-600}"
 VENV_DIR="${HOME}/.local/share/tailcam/venv"
 LEGACY_VENV_DIR="${HOME}/.local/share/anycam/venv"
 
@@ -27,8 +29,9 @@ while [ $# -gt 0 ]; do
         --ref) REF="$2"; shift ;;
         --no-service) DO_SERVICE=0 ;;
         --no-tailscale) DO_TAILSCALE=0 ;;
+        --no-tailscale-install) DO_TAILSCALE_INSTALL=0 ;;
         -h|--help)
-            echo "Usage: install-macos.sh [--port N] [--ref REF] [--no-service] [--no-tailscale]"
+            echo "Usage: install-macos.sh [--port N] [--ref REF] [--no-service] [--no-tailscale] [--no-tailscale-install]"
             exit 0 ;;
         *) warn "Unknown option: $1" ;;
     esac
@@ -130,12 +133,73 @@ setup_desktop_app() {
     fi
 }
 
+# Tailscale makes TailCam reachable from anywhere: make sure it's installed and
+# logged in before finishing. Prefers the CLI from Homebrew; the App Store app
+# (Tailscale.app) is honored when present. Every step degrades to a printed
+# command rather than failing the install.
+TS_APP_BIN="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+ts_cli() {
+    if have tailscale; then tailscale "$@"; elif [ -x "$TS_APP_BIN" ]; then "$TS_APP_BIN" "$@"; else return 127; fi
+}
+ts_backend_state() {
+    local json
+    json="$(ts_cli status --json 2>/dev/null || true)"
+    [ -n "$json" ] || { echo ""; return 0; }
+    printf '%s' "$json" | "$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("BackendState",""))' 2>/dev/null || echo ""
+}
+
+install_tailscale() {
+    [ "$DO_TAILSCALE_INSTALL" -eq 1 ] || { warn "Tailscale not found (--no-tailscale-install). Install from the App Store or:  brew install tailscale"; return 1; }
+    if have brew; then
+        log "Installing Tailscale (brew install tailscale)"
+        if brew install tailscale; then
+            # The Homebrew CLI needs its daemon registered once (asks for sudo).
+            if [ -t 0 ]; then
+                sudo tailscaled install-system-daemon || warn "Could not register tailscaled; run: sudo tailscaled install-system-daemon"
+            else
+                warn "Run once to start the Tailscale daemon:  sudo tailscaled install-system-daemon"
+            fi
+            return 0
+        fi
+        warn "brew install tailscale failed."
+    fi
+    warn "Tailscale not found. Install it from the App Store (Tailscale) or https://tailscale.com/download/mac, sign in, then run: tailcam tailscale serve"
+    return 1
+}
+
+wait_for_tailscale_login() {
+    local state waited=0
+    state="$(ts_backend_state)"
+    if [ "$state" = "Running" ]; then log "Tailscale is connected."; return 0; fi
+    if [ -x "$TS_APP_BIN" ] && ! have tailscale; then
+        warn "Tailscale.app is installed but not signed in. Open it from the menu bar, sign in, then run: tailcam tailscale serve"
+        return 1
+    fi
+    echo
+    log "Tailscale needs to sign in. A login link will appear below — open it on ANY device"
+    echo "    and approve this Mac. The installer waits up to ${TS_LOGIN_TIMEOUT}s."
+    echo
+    if [ -t 0 ]; then
+        sudo tailscale up --timeout "${TS_LOGIN_TIMEOUT}s" || true
+    else
+        tailscale up --timeout "${TS_LOGIN_TIMEOUT}s" 2>&1 || sudo -n tailscale up --timeout "${TS_LOGIN_TIMEOUT}s" 2>&1 || true
+    fi
+    while [ "$waited" -lt "$TS_LOGIN_TIMEOUT" ]; do
+        state="$(ts_backend_state)"
+        if [ "$state" = "Running" ]; then echo; log "Tailscale is connected."; return 0; fi
+        sleep 3; waited=$((waited + 3))
+        [ $((waited % 30)) -eq 0 ] && echo "    …still waiting for the Tailscale login ($((TS_LOGIN_TIMEOUT - waited))s left)"
+    done
+    warn "Timed out waiting for the Tailscale login. TailCam works locally; once signed in run: tailcam tailscale serve"
+    return 1
+}
+
 ensure_tailscale() {
     [ "$DO_TAILSCALE" -eq 0 ] && return 0
-    if ! have tailscale && [ ! -x "/Applications/Tailscale.app/Contents/MacOS/Tailscale" ]; then
-        warn "Tailscale not found. Install from the App Store or:  brew install tailscale"
-        return 0
+    if ! have tailscale && [ ! -x "$TS_APP_BIN" ]; then
+        install_tailscale || return 0
     fi
+    wait_for_tailscale_login || return 0
     log "Exposing TailCam over Tailscale"
     # `tailcam tailscale serve` checks that Tailscale is running and messages if not.
     "$TAILCAM_BIN" tailscale serve || warn "Run 'tailscale up' then 'tailcam tailscale serve'; the UI is available locally meanwhile."

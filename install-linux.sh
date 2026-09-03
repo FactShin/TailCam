@@ -13,6 +13,9 @@ REF="${TAILCAM_REF:-main}"
 PORT="${TAILCAM_PORT:-8088}"
 DO_SERVICE=1
 DO_TAILSCALE=1
+DO_TAILSCALE_INSTALL=1
+# How long to wait for the browser login after `tailscale up` (seconds).
+TS_LOGIN_TIMEOUT="${TAILCAM_TAILSCALE_LOGIN_TIMEOUT:-600}"
 VENV_DIR="${HOME}/.local/share/tailcam/venv"
 LEGACY_VENV_DIR="${HOME}/.local/share/anycam/venv"
 # $USER isn't exported in some non-login/provisioning shells; derive it
@@ -32,9 +35,12 @@ while [ $# -gt 0 ]; do
         --ref) REF="$2"; shift ;;
         --no-service) DO_SERVICE=0 ;;
         --no-tailscale) DO_TAILSCALE=0 ;;
+        --no-tailscale-install) DO_TAILSCALE_INSTALL=0 ;;
         --desktop) DO_DESKTOP=1 ;;
         -h|--help)
-            echo "Usage: install-linux.sh [--port N] [--ref REF] [--no-service] [--no-tailscale] [--desktop]"
+            echo "Usage: install-linux.sh [--port N] [--ref REF] [--no-service] [--no-tailscale] [--no-tailscale-install] [--desktop]"
+            echo "  --no-tailscale          skip everything Tailscale-related"
+            echo "  --no-tailscale-install  don't auto-install Tailscale when it's missing (still serve if present)"
             exit 0 ;;
         *) warn "Unknown option: $1" ;;
     esac
@@ -151,16 +157,82 @@ setup_service() {
     fi
 }
 
+# Tailscale is what makes TailCam reachable from anywhere, so the installer
+# makes sure it's present and logged in before finishing: install it (official
+# script), run `tailscale up` (prints a login URL and waits), then keep polling
+# until the tailnet says we're connected. Every step degrades to a printed
+# command instead of failing the install — the UI always works locally.
+ts_backend_state() {
+    # "Running" | "NeedsLogin" | "Stopped" | "" (not installed / daemon down)
+    local json
+    json="$(tailscale status --json 2>/dev/null || true)"
+    [ -n "$json" ] || { echo ""; return 0; }
+    if [ -n "$PYTHON" ]; then
+        printf '%s' "$json" | "$PYTHON" -c 'import json,sys; print(json.load(sys.stdin).get("BackendState",""))' 2>/dev/null || echo ""
+    else
+        printf '%s' "$json" | sed -n 's/.*"BackendState": *"\([A-Za-z]*\)".*/\1/p' | head -n1
+    fi
+}
+
+can_sudo() { sudo -n true 2>/dev/null || [ -t 0 ]; }
+
+install_tailscale() {
+    [ "$DO_TAILSCALE_INSTALL" -eq 1 ] || { warn "Tailscale not found (--no-tailscale-install). Install it with:  curl -fsSL https://tailscale.com/install.sh | sh"; return 1; }
+    if ! can_sudo; then
+        warn "Tailscale is not installed and installing it needs sudo, which can't prompt in a piped install."
+        echo "    Run this, then re-run the installer:  curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up"
+        return 1
+    fi
+    log "Installing Tailscale (official installer)"
+    if curl -fsSL https://tailscale.com/install.sh | sh; then
+        hash -r 2>/dev/null || true
+        have tailscale && return 0
+    fi
+    warn "Tailscale installation failed. Install it manually:  curl -fsSL https://tailscale.com/install.sh | sh"
+    return 1
+}
+
+wait_for_tailscale_login() {
+    # Runs `tailscale up`, which prints the login URL and blocks until the
+    # browser login completes; then confirms the backend is Running.
+    local state waited=0
+    state="$(ts_backend_state)"
+    if [ "$state" = "Running" ]; then
+        log "Tailscale is connected."
+        return 0
+    fi
+    if ! can_sudo; then
+        warn "Tailscale is installed but not logged in, and 'tailscale up' needs sudo."
+        echo "    Run:  sudo tailscale up     (then: tailcam tailscale serve)"
+        return 1
+    fi
+    echo
+    log "Tailscale needs to sign in. A login link will appear below — open it on ANY device"
+    echo "    (phone, laptop) and approve this machine. The installer waits up to ${TS_LOGIN_TIMEOUT}s."
+    echo
+    # --timeout makes `up` give up instead of blocking forever on a headless box.
+    sudo tailscale up --timeout "${TS_LOGIN_TIMEOUT}s" || true
+    while [ "$waited" -lt "$TS_LOGIN_TIMEOUT" ]; do
+        state="$(ts_backend_state)"
+        if [ "$state" = "Running" ]; then
+            echo
+            log "Tailscale is connected."
+            return 0
+        fi
+        sleep 3; waited=$((waited + 3))
+        [ $((waited % 30)) -eq 0 ] && echo "    …still waiting for the Tailscale login ($((TS_LOGIN_TIMEOUT - waited))s left)"
+    done
+    warn "Timed out waiting for the Tailscale login. TailCam works locally; when you've logged in run:"
+    echo "    sudo tailscale up && tailcam tailscale serve"
+    return 1
+}
+
 ensure_tailscale() {
     [ "$DO_TAILSCALE" -eq 0 ] && return 0
     if ! have tailscale; then
-        warn "Tailscale not found. Install it with:  curl -fsSL https://tailscale.com/install.sh | sh"
-        return 0
+        install_tailscale || return 0
     fi
-    if ! tailscale status >/dev/null 2>&1; then
-        warn "Tailscale installed but not logged in. Run:  sudo tailscale up"
-        return 0
-    fi
+    wait_for_tailscale_login || return 0
     # `tailscale serve` needs operator rights or root; grant the current user
     # operator so it works without sudo (avoids "Access denied").
     sudo tailscale set --operator="$USER_NAME" 2>/dev/null \
