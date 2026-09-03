@@ -3,6 +3,7 @@ import sys
 from types import SimpleNamespace
 
 import httpx
+import pytest
 from typer.testing import CliRunner
 
 from tailcam import update as upd
@@ -96,6 +97,9 @@ def test_cli_update_up_to_date(monkeypatch, isolated_env):
     assert "Up to date" in result.stdout
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Windows updates hand off to the installer"
+)
 def test_cli_update_installs_and_restarts(monkeypatch, isolated_env):
     monkeypatch.setattr(upd, "latest_version", lambda **kw: "99.0.0")
     actions: list[str] = []
@@ -112,6 +116,9 @@ def test_cli_update_installs_and_restarts(monkeypatch, isolated_env):
     assert "Updated to 99.0.0" in result.stdout
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Windows updates hand off to the installer"
+)
 def test_cli_update_reports_version_mismatch(monkeypatch, isolated_env):
     # pip "succeeded" but the on-disk version didn't change (cached wheel,
     # wrong interpreter…): never claim "Updated to X".
@@ -129,6 +136,9 @@ def test_cli_update_reports_version_mismatch(monkeypatch, isolated_env):
     assert "1.0.0" in result.stdout and "99.0.0" in result.stdout
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Windows updates hand off to the installer"
+)
 def test_cli_update_reinstalls_unit_when_service_installed(monkeypatch, isolated_env):
     monkeypatch.setattr(upd, "latest_version", lambda **kw: "99.0.0")
     monkeypatch.setattr(upd, "run_pip_upgrade", lambda: True)
