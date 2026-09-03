@@ -174,3 +174,37 @@ TailCam requests MJPEG from V4L2 webcams (raw YUYV saturates USB 2.0). If a
 camera still reports low fps, lower its stream settings (Settings → Streaming),
 route object detection to another node (AI Studio), and consider a storage node
 for recordings so the Pi only captures and serves.
+
+## One of two USB cameras on a Raspberry Pi says "can't open device"
+
+The other camera is fine, the "broken" one works alone, and the log shows
+`VIDIOC_STREAMON: No space left on device` — that is USB bandwidth, not a bad
+camera. Logitech C920-class webcams tell the kernel they need far more bandwidth
+than MJPEG really uses, and the kernel reserves what they claim, so the second
+stream is refused.
+
+TailCam 1.8.2+ handles this in three layers:
+
+1. It negotiates **MJPEG at the wanted size before the stream starts** (older
+   versions streamed raw YUYV first and only then switched, which is exactly
+   when the refusal happened).
+2. If the size is still refused it **steps down to 640×480** rather than leaving
+   the camera offline; the camera page then says "running at 640x480: 1280x720
+   refused".
+3. The Linux installer writes `/etc/modprobe.d/tailcam-uvcvideo.conf` with
+   `options uvcvideo quirks=0x80` on Raspberry Pi hosts (`tailcam doctor`
+   reports whether it is active). That makes the kernel reserve what the
+   negotiated format actually uses. It takes effect after a reboot; to apply it
+   by hand:
+
+```
+echo 'options uvcvideo quirks=0x80' | sudo tee /etc/modprobe.d/tailcam-uvcvideo.conf
+sudo reboot
+```
+
+Also worth doing: put the two cameras on **different USB controllers** (on a
+Pi 5, one in a blue USB 3 port and one in a black USB 2 port), and set a lower
+stream width under Settings → Streaming. The camera page's error line tells you
+which case you're in: unplugged, permission (add yourself to the `video`
+group), in use by another program, or "opens but refuses to stream" (bandwidth).
+

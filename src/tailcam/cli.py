@@ -231,6 +231,18 @@ def doctor() -> None:
         f"{prof.model or 'generic'} · {prof.total_ram_gb} GB RAM · {prof.cpu_count} CPU · "
         + ("low-power profile" if prof.low_power else "standard profile"),
     )
+    if prof.is_raspberry_pi:
+        from tailcam.camera.source import uvc_bandwidth_quirk_active
+
+        if uvc_bandwidth_quirk_active():
+            ok("USB webcam bandwidth fix", "uvcvideo quirks=0x80 active")
+        else:
+            bad(
+                "USB webcam bandwidth fix",
+                "not set — a second USB camera may refuse to stream. Run: "
+                "echo 'options uvcvideo quirks=0x80' | sudo tee "
+                "/etc/modprobe.d/tailcam-uvcvideo.conf && sudo reboot",
+            )
     if config.storage.node:
         ok("Storage node", f"recordings/timelapses go to {config.storage.node}")
     if config.detection.node:
