@@ -47,9 +47,14 @@ _PIN_BLOCKLIST = {
 
 # ffmpeg template. {ffmpeg} and {source} are filled here; the remaining
 # {placeholders} are filled by HAP-python per negotiated stream.
+# The x264 preset matters enormously on a Raspberry Pi 5 (no hardware H.264
+# encoder): "ultrafast" keeps a 720p HomeKit stream under one core; the default
+# "medium" pegged the CPU and tanked every other camera. Threads are capped so
+# two Home-app viewers can't starve capture.
 _STREAM_TEMPLATE = (
-    "{ffmpeg} -f mjpeg -i {source} -an -threads 0 -vcodec libx264 -pix_fmt yuv420p "
-    "-r {fps} -f rawvideo -tune zerolatency -vf scale={width}:{height} "
+    "{ffmpeg} -f mjpeg -i {source} -an -threads {threads} -vcodec libx264 "
+    "-preset {preset} -tune zerolatency -pix_fmt yuv420p "
+    "-r {fps} -f rawvideo -vf scale={width}:{height} "
     "-b:v {v_max_bitrate}k -bufsize {v_max_bitrate}k -payload_type 99 -ssrc {v_ssrc} "
     "-f rtp -srtp_out_suite AES_CM_128_HMAC_SHA1_80 -srtp_out_params {v_srtp_key} "
     "srtp://{address}:{v_port}?rtcpport={v_port}&localrtcpport={v_port}&pkt_size=1378"
@@ -74,7 +79,14 @@ def generate_pin() -> str:
 
 
 def build_stream_cmd(source_url: str, ffmpeg: str = "ffmpeg") -> str:
-    return _STREAM_TEMPLATE.replace("{ffmpeg}", ffmpeg).replace("{source}", source_url)
+    from tailcam import hostinfo
+
+    return (
+        _STREAM_TEMPLATE.replace("{ffmpeg}", ffmpeg)
+        .replace("{source}", source_url)
+        .replace("{preset}", hostinfo.x264_preset())
+        .replace("{threads}", str(hostinfo.encode_threads()))
+    )
 
 
 @lru_cache(maxsize=4)
@@ -234,8 +246,15 @@ class HomeKitBridge:
         bridge = Bridge(driver, self._cfg.bridge_name)
         base = local_base_url(self._ctx)
         cams = selected_cameras(self._ctx, self._cfg.cameras)
+        from tailcam import hostinfo
+
+        # HomeKit clients render at most 30 fps but 10-15 is plenty for a
+        # security tile; pulling fewer, smaller JPEGs keeps the MJPEG source
+        # and the transcode cheap. The camera's own stream settings still cap it.
+        source_fps = 10 if hostinfo.is_low_power() else 15
+        source_w = 960 if hostinfo.is_low_power() else 1280
         for cam in cams:
-            source = mjpeg_url(base, cam.id) + "?fps=15"
+            source = mjpeg_url(base, cam.id) + f"?fps={source_fps}&w={source_w}"
             snap = snapshot_url(base, cam.id)
             bridge.add_accessory(_make_camera(driver, cam.name, source, snap, self._cfg.ffmpeg))
         driver.add_accessory(bridge)

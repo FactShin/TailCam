@@ -59,6 +59,7 @@ def create_app(config: AppConfig | None = None, context: AppContext | None = Non
         routes_fleet_v1,
         routes_node_v1,
         routes_proxy,
+        routes_remote,
         routes_stream,
     )
 
@@ -67,6 +68,7 @@ def create_app(config: AppConfig | None = None, context: AppContext | None = Non
     app.include_router(routes_fleet_v1.router)
     app.include_router(routes_proxy.router)
     app.include_router(routes_active.router)
+    app.include_router(routes_remote.router)
     app.include_router(routes_api.router)
 
     # Streamable HTTP MCP endpoint. Always mounted (before the SPA catch-all so

@@ -77,7 +77,7 @@ class NodeHealthService:
         camera_degraded = sum(1 for status in camera_statuses if status == CameraStatus.DEGRADED)
         camera_offline = sum(1 for status in camera_statuses if status == CameraStatus.OFFLINE)
         camera_recording = sum(
-            1 for cam in cameras if ctx.recorder.is_recording(cam.descriptor.id)
+            1 for cam in cameras if ctx.capture.is_recording(cam.descriptor.id)
         )
 
         if camera_offline:

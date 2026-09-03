@@ -22,11 +22,47 @@ class PropertiesModel(BaseModel):
     saturation: float | None = None
 
 
+class StreamSettingsModel(BaseModel):
+    """Device-wide stream settings for a camera (what every viewer gets)."""
+
+    fps: int = Field(default=15, ge=1, le=60)
+    quality: int = Field(default=80, ge=1, le=100)
+    max_width: int = Field(default=1280, ge=0, le=3840)  # 0 = native
+
+
+class StreamOverrides(BaseModel):
+    """Per-camera overrides; ``null`` for a field means "use the global default"."""
+
+    fps: int | None = Field(default=None, ge=1, le=60)
+    quality: int | None = Field(default=None, ge=1, le=100)
+    max_width: int | None = Field(default=None, ge=0, le=3840)
+
+
 class CameraSettingsUpdate(BaseModel):
     name: str | None = None
     properties: PropertiesModel | None = None
     transform: TransformModel | None = None
     motion_enabled: bool | None = None
+    # Explicit ``null`` for a stream field clears that override (inherit global).
+    stream: StreamOverrides | None = None
+    # Explicit ``null`` = follow the global object-detection switch.
+    detection_enabled: bool | None = None
+    clear_detection_override: bool = False
+
+
+class StreamingDefaults(BaseModel):
+    """Global stream defaults ([stream] in config.toml) — every camera without
+    its own override uses these."""
+
+    fps: int = Field(ge=1, le=60)
+    quality: int = Field(ge=1, le=100)
+    max_width: int = Field(ge=0, le=3840)
+
+
+class StreamingDefaultsUpdate(BaseModel):
+    fps: int | None = Field(default=None, ge=1, le=60)
+    quality: int | None = Field(default=None, ge=1, le=100)
+    max_width: int | None = Field(default=None, ge=0, le=3840)
 
 
 class CameraInfo(BaseModel):
@@ -41,6 +77,12 @@ class CameraInfo(BaseModel):
     motion_enabled: bool
     properties: dict
     transform: TransformModel
+    # Effective device-wide stream settings + which fields are camera overrides.
+    stream: StreamSettingsModel = Field(default_factory=StreamSettingsModel)
+    stream_overrides: StreamOverrides = Field(default_factory=StreamOverrides)
+    # Object detection for this camera (effective) and whether it's an override.
+    detection_enabled: bool = False
+    detection_override: bool | None = None
     # Why the camera is offline/degraded (e.g. "failed to open device"), if known.
     last_error: str | None = None
     # Multi-host: which node owns this camera, and the prefix to reach its
@@ -71,6 +113,9 @@ class MediaInfo(BaseModel):
     # the node you're viewing ("" = local).
     host: str = ""
     proxy_prefix: str = ""
+    # The node whose camera produced this, when a storage node recorded it on
+    # that node's behalf ("" = the owning node's own camera).
+    source_host: str = ""
 
 
 class MotionEventInfo(BaseModel):
@@ -283,6 +328,18 @@ class IntegrationsInfo(BaseModel):
 # -- storage / recording / retention --
 
 
+class StorageNodeInfo(BaseModel):
+    """A fleet node as a candidate storage target (this device or a peer)."""
+
+    node_key: str  # "local" or the peer key
+    host: str
+    online: bool = True
+    media_dir: str = ""
+    disk_total: int = 0
+    disk_free: int = 0
+    version: str | None = None
+
+
 class StorageInfo(BaseModel):
     media_dir: str  # resolved absolute path media is written to
     custom_dir: str = ""  # configured custom path ("" = app default)
@@ -293,6 +350,13 @@ class StorageInfo(BaseModel):
     disk_used: int = 0
     media_bytes: int = 0
     media_count: int = 0
+    timelapse_bytes: int = 0
+    # Storage node: where THIS node's cameras are recorded ("" = here).
+    node: str = ""
+    node_online: bool = True
+    node_error: str = ""
+    nodes: list[StorageNodeInfo] = Field(default_factory=list)
+    low_power_host: bool = False
     # recording (motion auto-save)
     auto_record: bool = False
     record_tail_seconds: float = 5.0
@@ -304,6 +368,7 @@ class StorageInfo(BaseModel):
 
 class StorageUpdate(BaseModel):
     media_dir: str | None = None  # custom save dir; "" reverts to default
+    node: str | None = Field(default=None, max_length=300)  # storage node; "" = here
     auto_record: bool | None = None
     record_tail_seconds: float | None = None
     retention_enabled: bool | None = None
@@ -350,6 +415,46 @@ class TimelapseStartRequest(BaseModel):
     analysis_cadence_seconds: float | None = Field(default=None, ge=1, le=3600)
 
 
+class FsEntry(BaseModel):
+    name: str
+    path: str
+    writable: bool = True
+
+
+class FsBrowseInfo(BaseModel):
+    """A directory listing for the save-location picker (folders only)."""
+
+    path: str  # resolved absolute path being listed ("" = roots/mounts)
+    parent: str | None = None
+    exists: bool = True
+    writable: bool = False
+    disk_total: int = 0
+    disk_free: int = 0
+    entries: list[FsEntry] = Field(default_factory=list)
+    roots: list[FsEntry] = Field(default_factory=list)  # drives / mounts / home
+    error: str = ""
+
+
+class RemoteRecordingStart(BaseModel):
+    """Body a source node sends when it asks this storage node to record one of
+    its cameras."""
+
+    trigger: str = Field(default="manual", pattern="^(manual|motion)$")
+    fps: int = Field(default=15, ge=1, le=60)
+    camera_name: str = ""
+    source_host: str = ""
+
+
+class RemoteRecordingStatus(BaseModel):
+    recording: bool
+
+
+class RemoteTimelapseStart(TimelapseStartRequest):
+    camera_name: str = ""
+    source_host: str = ""
+    source_fps: int | None = Field(default=None, ge=1, le=60)
+
+
 class TimelapseInfo(BaseModel):
     id: int
     camera_id: str
@@ -385,6 +490,8 @@ class TimelapseInfo(BaseModel):
     analysis_latest_state: str = ""
     host: str = ""
     proxy_prefix: str = ""
+    # The node whose camera is captured ("" = the owning node's own camera).
+    source_host: str = ""
 
 
 class TimelapseAnalysisEventInfo(BaseModel):
@@ -509,6 +616,12 @@ class DetectionInfo(BaseModel):
     confidence: float = 0.45
     classes: list[str] = []
     overlay_default: bool = True
+    # Where detection runs: "" = this device, else a peer key / host / URL.
+    node: str = ""
+    node_reachable: bool = True
+    node_error: str = ""
+    # Whether this host is low-power (Pi / <2 GB): the UI explains the default.
+    low_power_host: bool = False
 
 
 class DetectionUpdate(BaseModel):
@@ -516,6 +629,19 @@ class DetectionUpdate(BaseModel):
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     classes: list[str] | None = None
     overlay_default: bool | None = None
+    node: str | None = Field(default=None, max_length=300)
+
+
+class ImageAnalysisResult(BaseModel):
+    """Result of ``POST /api/detect-image`` — detection boxes and/or a label
+    for one uploaded JPEG (used by peers that route detection here)."""
+
+    detector_active: bool
+    model_name: str | None = None
+    boxes: list[DetectionBox] = []
+    label: str | None = None
+    description: str | None = None
+    confidence: float | None = None
 
 
 class ModelInfo(BaseModel):
@@ -712,6 +838,11 @@ class SystemInfo(BaseModel):
     local_url: str
     media_bytes: int
     hidden_count: int = 0  # cameras the user has deleted/forgotten
+    # Host profile (Settings shows it; low-power hosts get lighter defaults).
+    host_model: str = ""
+    ram_gb: float = 0.0
+    cpu_count: int = 0
+    low_power: bool = False
 
 
 class UpdateInfo(BaseModel):

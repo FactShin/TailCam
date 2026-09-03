@@ -34,8 +34,16 @@ import { VIEW_DEFAULT } from "../types";
 import { BottomSheet } from "../components/ui";
 
 function loadView(key: string): ViewParams {
+  // Only zoom/pan are per-screen now. Older builds also stored fps/quality/w
+  // here; those must NOT be replayed — they'd silently cap the stream below the
+  // camera's device-wide settings.
   try {
-    return { ...VIEW_DEFAULT, ...JSON.parse(localStorage.getItem("tailcam.view." + key) || "{}") };
+    const stored = JSON.parse(localStorage.getItem("tailcam.view." + key) || "{}");
+    return {
+      zoom: typeof stored.zoom === "number" ? stored.zoom : VIEW_DEFAULT.zoom,
+      panX: typeof stored.panX === "number" ? stored.panX : VIEW_DEFAULT.panX,
+      panY: typeof stored.panY === "number" ? stored.panY : VIEW_DEFAULT.panY,
+    };
   } catch {
     return { ...VIEW_DEFAULT };
   }
@@ -78,9 +86,14 @@ export function CameraDetail() {
   // detection is available — unless the user has toggled it themselves.
   const detTouched = useRef(false);
   const detInfo = useDetectionInfo().data;
+  const camDetection = cam?.detection_enabled ?? false;
   useEffect(() => {
+    if (!camDetection) {
+      setDetect(false); // switched off for this camera → no overlay, no polling
+      return;
+    }
     if (!detTouched.current && detInfo?.enabled && detInfo.overlay_default) setDetect(true);
-  }, [detInfo?.enabled, detInfo?.overlay_default]);
+  }, [detInfo?.enabled, detInfo?.overlay_default, camDetection]);
   const stageRef = useRef<HTMLDivElement>(null);
   const wide = useWideLayout();
 
@@ -336,6 +349,19 @@ function ControlsPanel({
       }),
     [cam.properties.brightness, cam.properties.contrast],
   );
+  // Device-wide stream settings (saved on the camera's node — every viewer,
+  // every device). Sliders edit locally and commit on release.
+  const [stream, setStream] = useState({ fps: cam.stream.fps, quality: cam.stream.quality });
+  useEffect(
+    () => setStream({ fps: cam.stream.fps, quality: cam.stream.quality }),
+    [cam.stream.fps, cam.stream.quality],
+  );
+  const hasStreamOverride =
+    cam.stream_overrides.fps != null || cam.stream_overrides.quality != null || cam.stream_overrides.max_width != null;
+  const commitStream = (key: "fps" | "quality") => {
+    if (stream[key] === cam.stream[key]) return;
+    onPatch({ stream: { [key]: stream[key] } }, key === "fps" ? `Stream → ${stream.fps} fps` : `Quality → ${stream.quality}%`);
+  };
 
   const setRes = (v: string) => {
     const [w, h] = v.split("x").map(Number);
@@ -346,12 +372,10 @@ function ControlsPanel({
     <div className="controls">
       <section className="ctl-sec ctl-local">
         <header className="ctl-head">
-          <div className="ctl-head-l"><IconPhone size={16} /><span>My view</span></div>
+          <div className="ctl-head-l"><IconPhone size={16} /><span>This view</span></div>
           <ScopeBadge scope="local" />
         </header>
-        <p className="ctl-note">Only changes this tab's stream — others are unaffected.</p>
-        <ControlSlider label="Frame rate" icon={<IconFps size={14} />} value={view.fps} min={1} max={60} unit=" fps"
-          onChange={(v) => setView({ ...view, fps: v })} />
+        <p className="ctl-note">Zoom and pan are a viewing gesture for this screen only. Frame rate, quality, and size are camera settings below.</p>
         <ControlSlider label="Zoom" icon={<IconZoom size={14} />} value={view.zoom} min={1} max={8} step={0.1} format={(v) => v.toFixed(1) + "×"}
           onChange={(v) => setView({ ...view, zoom: v, panX: v <= 1 ? 0.5 : view.panX, panY: v <= 1 ? 0.5 : view.panY })} />
         <div className="ctl-pan">
@@ -360,15 +384,7 @@ function ControlsPanel({
           <ControlSlider label="Pan Y" value={view.panY} min={0} max={1} step={0.01} disabled={view.zoom <= 1} format={(v) => Math.round(v * 100) + "%"}
             onChange={(v) => setView({ ...view, panY: v })} />
         </div>
-        <ControlSlider label="Quality" icon={<IconSliders size={14} />} value={view.quality} min={1} max={100} unit="%"
-          onChange={(v) => setView({ ...view, quality: v })} />
-        <div className="ctl-row">
-          <span className="ctl-row-label"><IconResolution size={14} /> Max width</span>
-          <Segmented ariaLabel="Max width" value={view.w}
-            options={[{ value: 0, label: "Native" }, { value: 480, label: "480" }, { value: 854, label: "854" }, { value: 1280, label: "1280" }]}
-            onChange={(v) => setView({ ...view, w: v as number })} />
-        </div>
-        <button className="ctl-reset" onClick={() => setView({ ...VIEW_DEFAULT })}>Reset my view</button>
+        <button className="ctl-reset" onClick={() => setView({ ...VIEW_DEFAULT })}>Reset zoom</button>
       </section>
 
       <section className="ctl-sec ctl-global">
@@ -376,11 +392,35 @@ function ControlsPanel({
           <div className="ctl-head-l"><IconGlobe size={16} /><span>Camera settings</span></div>
           <ScopeBadge scope="global" />
         </header>
-        <p className="ctl-note">Saved on the device — changes what <strong>everyone</strong> sees.</p>
+        <p className="ctl-note">Saved on the camera's device — one setting for <strong>everyone</strong>, on every screen.</p>
 
         <div className="ctl-row">
           <span className="ctl-row-label"><IconResolution size={14} /> Resolution</span>
           <Segmented ariaLabel="Resolution" value={resVal} options={RES} onChange={(v) => setRes(v as string)} />
+        </div>
+        <ControlSlider label="Stream frame rate" icon={<IconFps size={14} />} value={stream.fps} min={1} max={60} unit=" fps"
+          onChange={(v) => setStream((s) => ({ ...s, fps: v }))}
+          onCommit={() => commitStream("fps")} />
+        <ControlSlider label="Stream quality" icon={<IconSliders size={14} />} value={stream.quality} min={1} max={100} unit="%"
+          onChange={(v) => setStream((s) => ({ ...s, quality: v }))}
+          onCommit={() => commitStream("quality")} />
+        <div className="ctl-row">
+          <span className="ctl-row-label"><IconResolution size={14} /> Stream max width</span>
+          <Segmented ariaLabel="Stream max width" value={cam.stream.max_width}
+            options={[{ value: 0, label: "Native" }, { value: 640, label: "640" }, { value: 960, label: "960" }, { value: 1280, label: "1280" }]}
+            onChange={(v) => onPatch({ stream: { max_width: v as number } }, `Stream width → ${v || "native"}`)} />
+        </div>
+        <div className="ctl-row ctl-row-split">
+          <span className="ctl-note" style={{ margin: 0 }}>
+            {hasStreamOverride
+              ? "Overriding the global streaming defaults for this camera."
+              : "Using the global streaming defaults (Settings → Streaming)."}
+          </span>
+          {hasStreamOverride && (
+            <button className="ctl-reset" onClick={() => onPatch({ stream: { fps: null, quality: null, max_width: null } }, "Using global defaults")}>
+              Use global defaults
+            </button>
+          )}
         </div>
         <div className="ctl-row">
           <span className="ctl-row-label"><IconRotate size={14} /> Rotation</span>
@@ -404,6 +444,16 @@ function ControlsPanel({
           <span className="ctl-row-label"><IconMotion size={14} /> Motion detection</span>
           <Toggle checked={cam.motion_enabled} label="Motion detection" onChange={(v) => onPatch({ motion_enabled: v }, v ? "Motion detection on" : "Motion detection off")} />
         </div>
+        <div className="ctl-row">
+          <span className="ctl-row-label"><IconBrain size={14} /> Object detection</span>
+          <Toggle checked={cam.detection_enabled} label="Object detection" onChange={(v) => onPatch({ detection_enabled: v }, v ? "Object detection on for this camera" : "Object detection off for this camera")} />
+        </div>
+        {cam.detection_override !== null && (
+          <div className="ctl-row ctl-row-split">
+            <span className="ctl-note" style={{ margin: 0 }}>Overriding the global object-detection switch (AI Studio).</span>
+            <button className="ctl-reset" onClick={() => onPatch({ clear_detection_override: true }, "Following the global setting")}>Follow global</button>
+          </div>
+        )}
         <div className="ctl-rename">
           <span className="ctl-row-label">Camera name</span>
           <div className="rename-row">

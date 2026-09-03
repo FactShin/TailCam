@@ -1,4 +1,7 @@
-"""Per-camera recording sessions writing to disk via cv2.VideoWriter."""
+"""Per-camera recording sessions writing browser-playable H.264 mp4 files.
+
+Frames are piped to ffmpeg (bundled or system) — see ``media.video_sink`` for
+the fallback ladder when it's unavailable."""
 
 from __future__ import annotations
 
@@ -8,13 +11,12 @@ from datetime import datetime
 from functools import partial
 from pathlib import Path
 
-import cv2
-
 from tailcam import paths
 from tailcam.camera.frame import FrameConsumer
 from tailcam.camera.manager import CameraManager
 from tailcam.logging_setup import get_logger
 from tailcam.media.snapshot import _write_thumbnail
+from tailcam.media.video_sink import VideoSink, open_video_sink
 from tailcam.persistence.models import MediaRecord
 from tailcam.persistence.store import Store
 
@@ -22,8 +24,19 @@ log = get_logger(__name__)
 
 
 class _RecordingSession:
-    def __init__(self, camera_id: str, buffer, fps: int, trigger: str, reacquire=None) -> None:
-        self.camera_id = camera_id
+    def __init__(
+        self,
+        camera_id: str,
+        buffer,
+        fps: int,
+        trigger: str,
+        reacquire=None,
+        media_camera_id: str | None = None,
+        source_host: str = "",
+    ) -> None:
+        self.camera_id = camera_id  # session key (composite for remote captures)
+        self.media_camera_id = media_camera_id or camera_id  # what the record says
+        self.source_host = source_host
         self.buffer = buffer
         self._reacquire = reacquire  # follow the camera across a Restart
         self.fps = max(1, fps)
@@ -31,12 +44,14 @@ class _RecordingSession:
         self.start_ts = time.time()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
-        self._writer: cv2.VideoWriter | None = None
+        self._writer: VideoSink | None = None
         self._writer_size: tuple[int, int] | None = None  # (w, h) locked at open
         self._resize_warned = False
+        self._open_failed = False
         self.path: Path | None = None
         self._first_image = None
         self.frames_written = 0
+        self.codec = ""
 
     def start(self) -> None:
         self._thread.start()
@@ -60,16 +75,18 @@ class _RecordingSession:
                 if now < next_due:
                     continue
                 next_due = now + interval
-                if self._writer is None:
+                if self._writer is None and not self._open_failed:
                     self._open_writer(frame.image)
                 if self._writer is not None:
-                    self._writer.write(self._fit(frame.image))
-                    self.frames_written += 1
+                    if self._writer.write(self._fit(frame.image)):
+                        self.frames_written += 1
                     if self._first_image is None:
                         self._first_image = frame.image.copy()
         finally:
             if self._writer is not None:
-                self._writer.release()
+                if not self._writer.close():
+                    log.error("recording %s: encoder reported failure", self.camera_id)
+                    self.frames_written = 0
 
     def _fit(self, image):
         """A VideoWriter is fixed to its first frame's size; a mid-recording
@@ -83,21 +100,27 @@ class _RecordingSession:
                     self.camera_id, w, h, self._writer_size,
                 )
                 self._resize_warned = True
+            import cv2
+
             return cv2.resize(image, self._writer_size)
         return image
 
     def _open_writer(self, image) -> None:
         h, w = image.shape[:2]
         stamp = datetime.fromtimestamp(self.start_ts).strftime("%Y%m%d-%H%M%S")
-        safe_id = self.camera_id.replace("/", "_")
+        safe_id = (
+            f"{self.source_host.split('.')[0]}_{self.media_camera_id}"
+            if self.source_host
+            else self.media_camera_id
+        ).replace("/", "_").replace("|", "_")
         self.path = paths.media_dir() / f"{safe_id}_{stamp}.mp4"
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
-        self._writer = cv2.VideoWriter(str(self.path), fourcc, float(self.fps), (w, h))
-        if not self._writer.isOpened():
-            log.error("Failed to open VideoWriter for %s", self.path)
-            self._writer = None
+        sink = open_video_sink(self.path, float(self.fps), (w, h))
+        if sink is None:
+            log.error("Failed to open a video writer for %s", self.path)
+            self._open_failed = True
             return
+        self._writer = sink
+        self.codec = sink.codec
         self._writer_size = (w, h)
 
 
@@ -112,16 +135,33 @@ class RecordingService:
         with self._lock:
             return camera_id in self._sessions
 
-    def start(self, camera_id: str, fps: int = 15, trigger: str = "manual") -> bool:
+    def start(
+        self,
+        camera_id: str,
+        fps: int = 15,
+        trigger: str = "manual",
+        buffer=None,
+        reacquire=None,
+        media_camera_id: str | None = None,
+        source_host: str = "",
+    ) -> bool:
+        """Start recording ``camera_id`` (a local camera). A storage node
+        recording a peer's camera passes the pulled ``buffer`` + ``reacquire``
+        under a composite session key, plus the real camera id and owner
+        (``source_host``) for the media record."""
         with self._lock:
             if camera_id in self._sessions:
                 return False
-            buffer = self._manager.get_buffer(camera_id)
+            if buffer is None:
+                buffer = self._manager.get_buffer(camera_id)
+                reacquire = partial(self._manager.get_buffer, camera_id)
             if buffer is None:
                 return False
             session = _RecordingSession(
                 camera_id, buffer, fps, trigger,
-                reacquire=partial(self._manager.get_buffer, camera_id),
+                reacquire=reacquire,
+                media_camera_id=media_camera_id,
+                source_host=source_host,
             )
             session.start()
             self._sessions[camera_id] = session
@@ -142,13 +182,14 @@ class RecordingService:
         )
         record = MediaRecord(
             id=None,
-            camera_id=camera_id,
+            camera_id=session.media_camera_id,
             media_type="recording",
             path=str(session.path),
             thumbnail=str(thumb) if thumb else None,
             created_ts=session.start_ts,
             trigger=session.trigger,
             size_bytes=session.path.stat().st_size,
+            source_host=session.source_host,
         )
         record.id = self._store.add_media(record)
         return record

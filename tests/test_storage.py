@@ -103,7 +103,7 @@ def test_prune_skips_when_media_dir_missing(context, tmp_path, monkeypatch):
 
 
 def test_recording_resizes_mismatched_frames(tmp_path, monkeypatch):
-    # A VideoWriter is locked to the first frame's size; a later differently-
+    # A video sink is locked to the first frame's size; a later differently-
     # sized frame must be resized (not silently dropped) so the clip stays
     # continuous through a mid-recording rotation/reconnect.
     import numpy as np
@@ -112,29 +112,22 @@ def test_recording_resizes_mismatched_frames(tmp_path, monkeypatch):
 
     written = []
 
-    class _Writer:
-        def isOpened(self):
-            return True
+    class _Sink:
+        codec = "h264"
 
         def write(self, img):
             written.append(img.shape[:2])
+            return True
 
-        def release(self):
-            pass
+        def close(self):
+            return True
 
-    monkeypatch.setattr(rec.cv2, "VideoWriter", lambda *a, **k: _Writer())
-    monkeypatch.setattr(rec.cv2, "VideoWriter_fourcc", lambda *a: 0)
-    resized = {}
-
-    def fake_resize(img, size):
-        resized["to"] = size
-        return np.zeros((size[1], size[0], 3), np.uint8)
-
-    monkeypatch.setattr(rec.cv2, "resize", fake_resize)
+    monkeypatch.setattr(rec, "open_video_sink", lambda *a, **k: _Sink())
+    monkeypatch.setattr(rec.paths, "media_dir", lambda: tmp_path)
 
     session = rec._RecordingSession("cam", buffer=None, fps=15, trigger="manual")
     session._open_writer(np.zeros((480, 640, 3), np.uint8))  # locks 640x480
     session._writer.write(session._fit(np.zeros((480, 640, 3), np.uint8)))  # same size
     session._writer.write(session._fit(np.zeros((640, 480, 3), np.uint8)))  # rotated -> resize
     assert written[0] == (480, 640)
-    assert resized["to"] == (640, 480)  # (w, h) target = the locked size
+    assert written[1] == (480, 640)  # resized back to the locked (w, h)

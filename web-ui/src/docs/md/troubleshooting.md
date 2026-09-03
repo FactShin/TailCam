@@ -157,3 +157,20 @@ path and renamed it, but pip's Windows launcher `.exe`s embed the absolute
 interpreter path — so `tailcam.exe` pointed at a folder that no longer
 existed. Re-run the installer: it now builds the venv at its final path (and
 keeps the previous install as an automatic rollback if anything fails).
+
+## Timelapse or recording "doesn't save" / can't be stopped
+
+- Open the **Timelapse** screen: since 1.8 it lists captures from every node, so
+  a capture running on another node (or on your storage node) is visible with
+  its host and can be stopped from anywhere.
+- Recordings and timelapses are H.264 MP4s; if a clip shows a black player,
+  check that ffmpeg is present (`GET /api/postprocess` → ffmpeg `available`).
+- With a storage node set, check Settings → Recording & storage: if the node is
+  unreachable, captures fall back to this device and the panel says so.
+
+## Two USB cameras on a Raspberry Pi drop to a few fps
+
+TailCam requests MJPEG from V4L2 webcams (raw YUYV saturates USB 2.0). If a
+camera still reports low fps, lower its stream settings (Settings → Streaming),
+route object detection to another node (AI Studio), and consider a storage node
+for recordings so the Pi only captures and serves.

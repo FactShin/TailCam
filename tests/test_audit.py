@@ -75,6 +75,6 @@ def test_audit_schema_advances_store_version(store) -> None:
         )
     }
 
-    assert row["version"] == 10
+    assert row["version"] >= 11  # v11 added source_host (storage node)
     assert "audit_events" in tables
     assert "al_review_items" in tables

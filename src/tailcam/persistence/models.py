@@ -24,6 +24,9 @@ class MediaRecord:
     created_ts: float
     trigger: str  # "manual" | "motion"
     size_bytes: int
+    # Fleet: the node whose camera produced this ("" = this node). Set when a
+    # storage node records a peer's camera on its behalf.
+    source_host: str = ""
 
 
 @dataclass
@@ -79,6 +82,8 @@ class TimelapseRecord:
     smooth_quality: str = "high"
     analysis_enabled: bool = False
     analysis_cadence_seconds: float = 60.0
+    # Fleet: the node whose camera is being captured ("" = this node).
+    source_host: str = ""
 
 
 @dataclass

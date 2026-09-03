@@ -5,8 +5,9 @@
 Every TailCam node ships with a **built-in object detector**: live bounding
 boxes with labels — `person`, `cup`, `bottle`, `cat`, `dog`, and the rest of
 the 80 [COCO](https://cocodataset.org) classes — drawn straight onto the camera
-view, with motion events labeled automatically. It's **on by default** and
-fully local:
+view, with motion events labeled automatically. It's **on by default** (except
+on [low-power hosts](configuration#low-power-hosts), where it stays off until
+you turn it on or route it elsewhere) and fully local:
 
 - The first time it's needed, the model **downloads itself** (a few MB —
   YOLO11n when the training extra/torch is installed, otherwise YOLOv4-tiny on
@@ -20,9 +21,24 @@ fully local:
   granular control — e.g. `classes = ["person", "dog"]` to only report those,
   or `model = "yolo11s.pt"` for a bigger Ultralytics model.
 
+### Per camera, and on which machine
+
+- **Per camera**: each camera page has an *Object detection* toggle. Off means
+  no model runs for that camera and viewers stop polling for boxes — the
+  cheapest way to free a Raspberry Pi's CPU for the cameras that matter.
+- **Detection node**: in *AI Studio → Object detection → Run detection on*,
+  pick another TailCam node. This node then sends one downscaled JPEG per
+  detection request (about 50 KB, at most once per second per camera) to that
+  node's `POST /api/detect-image`, which answers with boxes or a motion label
+  from *its* pipeline (trained model → Ollama → built-in). The sending node
+  never downloads or loads a model. Config key: `[detection] node`.
+- **Shared results**: boxes are cached per camera for one second, so five open
+  viewers cost one inference, not five.
+
 Everything below — Ollama and trained models — is optional and *adds* to this:
 richer descriptions, custom labels, your own classes. Priority when several are
-available: **your trained/BYO model → Ollama → built-in detector**.
+available: **your trained/BYO model → Ollama → detection node → built-in
+detector**.
 
 TailCam can label motion events with a **local** vision model via
 [Ollama](https://ollama.com). Nothing is sent to a cloud service — the model runs

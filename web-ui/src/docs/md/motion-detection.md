@@ -58,3 +58,14 @@ and filter events on the **Events** screen, or via `GET /api/events`.
 For agent-driven investigation, the [MCP](mcp-overview) tool
 `investigate_motion_event` pulls an event's detail, nearby events, camera state,
 and media links together.
+
+## Cost and persistence
+
+- The motion toggle is **saved per camera** and restored when TailCam restarts.
+- Motion is analyzed on a **320 px wide copy** of each sampled frame (boxes are
+  scaled back to full-frame pixels), which is roughly 1/16 of the work of a
+  1280 px frame with the same result. `min_area` is still expressed in
+  full-frame pixels.
+- Motion clips go wherever recordings go — including a [storage
+  node](fleet#storage-node) — and are labeled by whichever analyzer is active,
+  including a [detection node](ai-analysis).

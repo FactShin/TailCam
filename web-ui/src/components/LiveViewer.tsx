@@ -126,11 +126,11 @@ export function LiveViewer({
   const [pollTick, setPollTick] = useState(0);
   useEffect(() => {
     if (!usePolling || !shouldStream) return;
-    const fps = Math.max(0.5, Math.min(debouncedView.fps, SNAPSHOT_POLL_MAX_FPS));
+    const fps = Math.max(0.5, Math.min(debouncedView.fps ?? cam.stream?.fps ?? 15, SNAPSHOT_POLL_MAX_FPS));
     const t = setInterval(() => setPollTick(Date.now()), 1000 / fps);
     setPollTick(Date.now());
     return () => clearInterval(t);
-  }, [usePolling, shouldStream, debouncedView.fps]);
+  }, [usePolling, shouldStream, debouncedView.fps, cam.stream?.fps]);
 
   let src: string | undefined;
   if (shouldStream) {
@@ -362,7 +362,7 @@ export function LiveViewer({
       )}
 
       {showUrl && src && (
-        <div className="viewer-url mono" title="The MJPEG <img> src — these params are per-tab only">
+        <div className="viewer-url mono" title="The MJPEG <img> src — fps/quality/width come from the camera's device-wide settings">
           GET {src}
         </div>
       )}

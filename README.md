@@ -158,7 +158,17 @@ curl -fsSL .../install-linux.sh -o install-linux.sh && bash install-linux.sh --p
 irm .../install.ps1 -OutFile install.ps1 ; .\install.ps1 -Port 9000 -NoTailscale
 ```
 
-Linux/macOS flags: `--port`, `--ref <tag>`, `--no-service`, `--no-tailscale`.
+Linux/macOS flags: `--port`, `--ref <tag>`, `--no-service`, `--no-tailscale`,
+`--no-tailscale-install`. Windows: `-Port`, `-Ref`, `-NoService`, `-NoTailscale`,
+`-NoTailscaleInstall`.
+
+**Tailscale is set up for you.** If Tailscale isn't installed, the installer installs
+it (official script on Linux, Homebrew on macOS, winget on Windows). If it isn't
+signed in, the installer runs `tailscale up`, prints the login link — open it on any
+device — and waits (up to `TAILCAM_TAILSCALE_LOGIN_TIMEOUT` seconds, default 600)
+until the machine joins your tailnet, then enables `tailscale serve`. Pass
+`--no-tailscale-install` to keep the old "warn only" behaviour; nothing here ever
+fails the install — TailCam always works locally.
 Windows: `-Port`, `-Ref`, `-NoService`, `-NoTailscale`.
 
 To uninstall: run `uninstall-linux.sh` / `uninstall-macos.sh` / `uninstall.ps1`, or
@@ -251,20 +261,27 @@ in the in-app **Docs → Running in Docker** page (also served at `/docs/docker`
   (`tailcam app`) on all three platforms.
 - **Browser extension (optional)** — *TailCam Companion* for Chrome, Edge, Firefox,
   and Safari; see [below](#browser-extension-optional).
-- **Multi-host aggregation** — see every camera across all your tailnet devices from
-  any one of them.
+- **Multi-host aggregation** — see every camera, recording, event, and timelapse across
+  all your tailnet devices from any one of them.
+- **Storage node & detection node** — record, timelapse, and run object detection for a
+  small node's cameras **on a bigger machine** on your tailnet (the box with the disk,
+  the box with the GPU); the Pi just captures and streams.
 - **Multi-camera** — auto-detects connected webcams; name them and view them in a grid.
-- **Resolution, zoom & pan** — set capture resolution; per-viewer digital zoom + pan;
-  rotate/flip; brightness/contrast/FPS controls.
-- **Snapshots & recording** — capture stills and record clips to disk, with a gallery.
+- **Resolution, zoom & pan** — set capture resolution; pinch/zoom + pan; rotate/flip;
+  brightness/contrast controls; **device-wide stream settings** (fps, quality, size)
+  that are the same on every screen.
+- **Snapshots & recording** — capture stills and record browser-playable H.264 clips
+  to disk (or a NAS folder picked with the built-in folder browser), with a gallery.
 - **Motion detection** — detect motion, log events, and save a clip per event (on by
-  default).
+  default); remembered across restarts.
 - **Object detection** — built-in live bounding boxes + labels (80 COCO classes), zero
-  setup, auto-downloading local model; upgrades itself to Ultralytics YOLO11 when
-  torch is installed.
-- **Timelapse + smoothing** — capture a timelapse (great for 3D prints), then "Smooth"
-  it into flowing motion with a bundled **ffmpeg** engine or an optional GPU **RIFE**
-  model (`rife-ncnn-vulkan`), with automatic fallback.
+  setup, auto-downloading local model; per-camera on/off; upgrades itself to
+  Ultralytics YOLO11 when torch is installed.
+- **Timelapse + smoothing** — capture a timelapse (great for 3D prints) on any node,
+  then "Smooth" it into flowing motion with a bundled **ffmpeg** engine or an optional
+  GPU **RIFE** model (`rife-ncnn-vulkan`), with automatic fallback.
+- **Raspberry Pi friendly** — a low-power profile (lighter streams, MJPEG capture,
+  shared JPEG encoding, ultrafast x264) keeps a 1 GB Pi 5 streaming two cameras.
 - **Train your own model** — collect and label footage from your own cameras and
   fine-tune a private model on your Mac/Windows GPU (optional `tailcam[training]`
   extra) — classification or object detection, with in-dashboard box drawing.
@@ -305,13 +322,32 @@ How it works:
   `TAILCAM_HOST=garage-pi`.
 - `GET /api/hosts` lists every node (local + peers) and their camera counts.
 
-Notes & current limits:
+### Storage node: record on the machine with the disk
 
-- Remote cameras are fully viewable **and** controllable (resolution, zoom/pan, snapshot, record).
+Every node can send its own cameras' **recordings, motion clips, and timelapses** to a
+different node. Pick it in **Settings → Recording & storage** (each node's free space is
+shown) or set `[storage] node = "nas-box"`. The storage node pulls the camera's MJPEG
+stream over the tailnet and runs the recorder/timelapse worker itself, so the files land
+on its disk and a Raspberry Pi never encodes video. If the storage node is down when a
+capture starts, the capture runs locally and the settings panel says so. The storage
+node's save folder can be browsed and set from any dashboard.
+
+### Detection node: run the models where the CPU is
+
+In **AI Studio → Object detection → Run detection on**, pick another node. Frames from
+this node's cameras are sent (downscaled, about 50 KB, at most once a second per camera)
+to that node's `POST /api/detect-image`, which answers with boxes and motion labels from
+*its* pipeline. The sending node never loads a model. Ollama already works the same way
+via its `base_url`.
+
+Notes:
+
+- Remote cameras are fully viewable **and** controllable (resolution, stream settings,
+  zoom/pan, snapshot, record, timelapse).
+- The **gallery, events, and timelapse list are fleet-wide** — anything captured on any
+  node shows up (and can be stopped or deleted) from any dashboard.
 - This treats every TailCam node on your tailnet as trusted — the intended model for a personal
   tailnet (there is no separate auth; Tailscale is the security boundary).
-- For now, the **gallery and motion-event feed are per-host** (snapshots/recordings live on the
-  node that captured them). Cross-host media aggregation is planned next.
 - Linux, macOS, **and Windows** nodes all participate in the same tailnet dashboard.
 
 ## Local AI
@@ -320,11 +356,13 @@ Notes & current limits:
 
 Open any camera and TailCam draws **live bounding boxes with labels** — person,
 cup, bottle, cat, dog, and the rest of the 80 COCO classes — using a built-in
-detector that's **on by default** and runs entirely on your hardware. The model
-(a few MB of YOLO) downloads itself the first time it's needed; nothing to
-install or configure. Motion events are labeled from the same detector, so the
-Events page gets PERSON / DOG / CUP chips out of the box. Tune it (confidence,
-class filter, engine, bigger models) in **AI Studio → Object detection** or the
+detector that's **on by default** (off by default on a low-power host such as a
+Raspberry Pi — route it to a bigger node instead) and runs entirely on your
+hardware. The model (a few MB of YOLO) downloads itself the first time it's
+needed; nothing to install or configure. Motion events are labeled from the same
+detector, so the Events page gets PERSON / DOG / CUP chips out of the box. Turn it
+on or off **per camera**, and tune it (confidence, class filter, engine, bigger
+models, which node runs it) in **AI Studio → Object detection** or the
 `[detection]` config section.
 
 ### AI motion analysis — local, optional

@@ -8,6 +8,26 @@ export interface Transform {
   flip_v: boolean;
 }
 
+// Device-wide stream settings — what every viewer of a camera gets.
+export interface StreamSettings {
+  fps: number;
+  quality: number;
+  max_width: number; // 0 = native
+}
+
+// Per-camera overrides; null = inherit the global default.
+export interface StreamOverrides {
+  fps: number | null;
+  quality: number | null;
+  max_width: number | null;
+}
+
+export interface StreamingDefaults {
+  fps: number;
+  quality: number;
+  max_width: number;
+}
+
 export interface CameraInfo {
   id: string;
   name: string;
@@ -20,6 +40,11 @@ export interface CameraInfo {
   motion_enabled: boolean;
   properties: Record<string, number | null>;
   transform: Transform;
+  stream: StreamSettings;
+  stream_overrides: StreamOverrides;
+  // Object detection for this camera (effective) and the raw override (null = global).
+  detection_enabled: boolean;
+  detection_override: boolean | null;
   // Why the camera is offline/degraded, if the server knows (e.g. permissions).
   last_error: string | null;
   // Multi-host: which node owns this camera, and the prefix to reach its
@@ -30,6 +55,7 @@ export interface CameraInfo {
 
 export interface HostInfo {
   host: string;
+  node_key: string; // "local" for this node, else the peer key used in /proxy/<key>
   kind: "local" | "peer";
   online: boolean;
   version: string | null;
@@ -49,6 +75,10 @@ export interface CameraSettingsUpdate {
   };
   transform?: Transform;
   motion_enabled?: boolean;
+  // Explicit null on a field clears that camera override (inherit global).
+  stream?: Partial<StreamOverrides>;
+  detection_enabled?: boolean;
+  clear_detection_override?: boolean;
 }
 
 export interface MediaInfo {
@@ -61,6 +91,8 @@ export interface MediaInfo {
   has_thumbnail: boolean;
   host: string;
   proxy_prefix: string;
+  // Node whose camera produced this when a storage node recorded it ("" = own camera).
+  source_host: string;
 }
 
 export interface MotionEventInfo {
@@ -148,6 +180,34 @@ export interface PluginsInfo {
 
 // -- storage / recording / retention --
 
+export interface StorageNodeInfo {
+  node_key: string; // "local" or the peer key
+  host: string;
+  online: boolean;
+  media_dir: string;
+  disk_total: number;
+  disk_free: number;
+  version: string | null;
+}
+
+export interface FsEntry {
+  name: string;
+  path: string;
+  writable: boolean;
+}
+
+export interface FsBrowseInfo {
+  path: string;
+  parent: string | null;
+  exists: boolean;
+  writable: boolean;
+  disk_total: number;
+  disk_free: number;
+  entries: FsEntry[];
+  roots: FsEntry[];
+  error: string;
+}
+
 export interface StorageInfo {
   media_dir: string;
   custom_dir: string;
@@ -158,6 +218,13 @@ export interface StorageInfo {
   disk_used: number;
   media_bytes: number;
   media_count: number;
+  timelapse_bytes: number;
+  // Storage node: where THIS node's cameras are recorded ("" = here).
+  node: string;
+  node_online: boolean;
+  node_error: string;
+  nodes: StorageNodeInfo[];
+  low_power_host: boolean;
   auto_record: boolean;
   record_tail_seconds: number;
   retention_enabled: boolean;
@@ -167,6 +234,7 @@ export interface StorageInfo {
 
 export interface StorageUpdate {
   media_dir?: string;
+  node?: string;
   auto_record?: boolean;
   record_tail_seconds?: number;
   retention_enabled?: boolean;
@@ -348,13 +416,18 @@ export interface DetectionInfo {
   enabled: boolean;
   engine: string;
   model: string;
-  status: "off" | "idle" | "downloading" | "ready" | "error";
+  status: "off" | "idle" | "downloading" | "ready" | "error" | "remote";
   percent: number;
   detail: string;
   error: string;
   confidence: number;
   classes: string[];
   overlay_default: boolean;
+  // Where detection runs: "" = this device, else a peer key / host / URL.
+  node: string;
+  node_reachable: boolean;
+  node_error: string;
+  low_power_host: boolean;
 }
 
 export interface DetectionUpdate {
@@ -362,6 +435,7 @@ export interface DetectionUpdate {
   confidence?: number;
   classes?: string[];
   overlay_default?: boolean;
+  node?: string;
 }
 
 export interface ModelInfo {
@@ -514,6 +588,8 @@ export interface TimelapseInfo {
   analysis_latest_state: string;
   host: string;
   proxy_prefix: string;
+  // Node whose camera is captured when a storage node runs the job ("" = own camera).
+  source_host: string;
 }
 
 export interface TimelapseStartParams {
@@ -580,25 +656,29 @@ export interface SystemInfo {
   local_url: string;
   media_bytes: number;
   hidden_count: number;
+  host_model: string;
+  ram_gb: number;
+  cpu_count: number;
+  low_power: boolean;
 }
 
-// Per-tab view params for the MJPEG stream (local to each browser).
+// How one viewer looks at a stream. Zoom/pan are a viewing gesture (per tab);
+// fps/quality/w are optional *caps* used by low-bandwidth tiles — the camera's
+// device-wide stream settings apply whenever they're absent, and the server
+// never lets a viewer exceed those settings.
 export interface ViewParams {
-  fps: number;
   zoom: number;
   panX: number;
   panY: number;
-  quality: number;
-  w: number;
+  fps?: number;
+  quality?: number;
+  w?: number;
 }
 
 export const VIEW_DEFAULT: ViewParams = {
-  fps: 15,
   zoom: 1,
   panX: 0.5,
   panY: 0.5,
-  quality: 75,
-  w: 0,
 };
 
 /** One plugin in the curated marketplace registry. */

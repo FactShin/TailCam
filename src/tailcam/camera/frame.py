@@ -40,6 +40,9 @@ class FrameBuffer:
         self._cond = threading.Condition()
         self._frame: Frame | None = None
         self._closed = False
+        # When a consumer last waited on this buffer (monotonic; 0 = never).
+        # Lets a pulled remote feed notice nobody is reading and shut down.
+        self.last_wait_at = 0.0
 
     def publish(self, image: np.ndarray) -> Frame:
         with self._cond:
@@ -59,6 +62,7 @@ class FrameBuffer:
         Returns the newest frame, or ``None`` on timeout or after close.
         """
         deadline = time.monotonic() + timeout
+        self.last_wait_at = deadline - timeout
         with self._cond:
             while not self._closed:
                 if self._frame is not None and self._frame.seq != last_seq:

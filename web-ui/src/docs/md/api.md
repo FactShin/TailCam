@@ -9,7 +9,7 @@ dashboard you're reading this in is built entirely on these endpoints.
 
 | Method | Path | Returns |
 | --- | --- | --- |
-| GET | `/api/system` | Version, host, Tailscale state, URLs, media bytes, hidden count. |
+| GET | `/api/system` | Version, host, Tailscale state, URLs, media bytes, hidden count, host profile (`host_model`, `ram_gb`, `low_power`). |
 | POST | `/api/system/reload` | Re-scan devices and restart local workers. |
 | GET | `/api/update` | Update availability. |
 | GET | `/api/hosts` | Local node + peers (with `node_key`). |
@@ -20,15 +20,27 @@ dashboard you're reading this in is built entirely on these endpoints.
 | --- | --- | --- |
 | GET | `/api/cameras?scope=all\|local` | List cameras. |
 | GET | `/api/cameras/{id}` | One camera. |
-| PATCH | `/api/cameras/{id}` | Update name/properties/transform/motion. |
+| PATCH | `/api/cameras/{id}` | Update name/properties/transform/motion/`stream` overrides/`detection_enabled`. |
 | POST | `/api/cameras/{id}/restart` | Recover a stuck feed. |
 | DELETE | `/api/cameras/{id}` | Hide from discovery. |
 | POST | `/api/cameras/refresh` | Discover + restart all. |
 | POST | `/api/cameras/restore-hidden` | Un-hide and re-scan. |
 | POST | `/api/cameras/{id}/snapshot` | Capture a still. |
-| POST | `/api/cameras/{id}/recording/start` | Start recording. |
+| POST | `/api/cameras/{id}/recording/start` | Start recording (here or on the storage node). |
 | POST | `/api/cameras/{id}/recording/stop` | Stop recording. |
-| POST | `/api/cameras/{id}/detect` | Run the active detection model on a frame. |
+| POST | `/api/cameras/{id}/detect` | Boxes for the latest frame (cached ~1 s per camera; inactive when detection is off for the camera). |
+| POST | `/api/detect-image?mode=detect\|analyze` | Detect/label one uploaded JPEG with this node's pipeline (what a detection node serves). |
+
+## Streaming, storage & fleet capture
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| GET/POST | `/api/streaming` | Global stream defaults (`fps`, `quality`, `max_width`). |
+| GET | `/api/storage?scope=all\|local` | Save location, disk usage, storage node (`node`, `node_online`) and, with `all`, every node's free disk (`nodes`). |
+| POST | `/api/storage` | Set `media_dir`, `node` (storage node), auto-record, retention. |
+| GET | `/api/fs/browse?path=&show_hidden=` | Sub-folders of a path on this node (folder picker); blank path lists drives/mounts. |
+| POST | `/api/remote/{source_key}/cameras/{id}/recording/start\|stop` | Storage-node side: record a peer's camera by pulling its stream. |
+| POST | `/api/remote/{source_key}/cameras/{id}/timelapse/start` | Storage-node side: timelapse a peer's camera. |
 
 ## Streams & files
 
@@ -53,7 +65,9 @@ dashboard you're reading this in is built entirely on these endpoints.
 ## Timelapse
 
 `GET/POST /api/timelapse...` — start, stop, encode, smooth, list, delete, and
-read analysis events. See [Timelapse](timelapse).
+read analysis events. `GET /api/timelapse` merges every node (`scope=local` for
+one node); rows carry `host`, `proxy_prefix`, and `source_host`. See
+[Timelapse](timelapse).
 
 ## AI
 

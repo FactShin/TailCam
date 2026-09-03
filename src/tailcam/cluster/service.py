@@ -204,3 +204,28 @@ class ClusterService:
 
     async def remote_events(self, params: dict) -> list[dict]:
         return await self._remote_items("/api/events", params)
+
+    async def remote_timelapses(self, params: dict) -> list[dict]:
+        return await self._remote_items("/api/timelapse", params)
+
+    async def remote_json(self, path: str, params: dict | None = None) -> dict[str, dict]:
+        """Fetch one JSON object endpoint (scope=local) from every online peer,
+        keyed by peer key. Peers that fail are simply absent."""
+        peers = await self.peers()
+        if not peers:
+            return {}
+        query = {**(params or {}), "scope": "local"}
+
+        async def fetch(peer: Peer) -> tuple[str, dict | None]:
+            try:
+                r = await self.client().get(
+                    f"{peer.base_url}{path}", params=query, timeout=_FETCH_TIMEOUT
+                )
+                r.raise_for_status()
+                data = r.json()
+                return peer.key, data if isinstance(data, dict) else None
+            except (httpx.HTTPError, ValueError):
+                return peer.key, None
+
+        results = await asyncio.gather(*(fetch(p) for p in peers))
+        return {key: data for key, data in results if data is not None}

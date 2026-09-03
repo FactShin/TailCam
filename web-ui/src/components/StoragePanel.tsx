@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 
-import { useStorage, useUpdateStorage } from "../api/hooks";
-import { IconHdd } from "../icons";
+import { useStorage, useUpdateStorage, useUpdateStorageAt } from "../api/hooks";
+import { IconHdd, IconServer } from "../icons";
 import { fmtBytes } from "../lib/format";
+import { FolderPicker } from "./FolderPicker";
 import { useToast } from "./toast";
 import { Button, Toggle } from "./ui";
 
@@ -20,6 +21,10 @@ export function StoragePanel() {
   const [maxGb, setMaxGb] = useState(10);
   const [maxAge, setMaxAge] = useState(30);
   const [retDirty, setRetDirty] = useState(false);
+  // Folder picker target: this device, or the selected storage node (via proxy).
+  const [picker, setPicker] = useState<{ prefix: string; host: string; nodeKey: string } | null>(null);
+  const pickerPrefix = picker?.prefix ?? "";
+  const updateAt = useUpdateStorageAt(pickerPrefix);
 
   useEffect(() => {
     if (!data) return;
@@ -34,6 +39,39 @@ export function StoragePanel() {
   if (!data) return null;
 
   const setAutoRecord = (v: boolean) => update.mutate({ auto_record: v });
+  const storageNode = data.nodes.find((n) => n.node_key === data.node || n.host === data.node);
+  const setNode = async (key: string) => {
+    try {
+      const res = await update.mutateAsync({ node: key === "local" ? "" : key });
+      toast.ok(res.node ? `Recordings & timelapses now save on ${res.node}` : "Saving on this device");
+    } catch (e) {
+      toast.err(e instanceof Error ? e.message : "Could not set storage node");
+    }
+  };
+  const openPicker = (nodeKey: string) => {
+    const node = data.nodes.find((n) => n.node_key === nodeKey);
+    setPicker({
+      prefix: nodeKey === "local" ? "" : `/proxy/${nodeKey}`,
+      host: node?.host ?? nodeKey,
+      nodeKey,
+    });
+  };
+  const onPicked = async (path: string) => {
+    if (!picker) return;
+    try {
+      if (picker.nodeKey === "local") {
+        await update.mutateAsync({ media_dir: path });
+        setDir(path);
+        setDirDirty(false);
+      } else {
+        await updateAt.mutateAsync({ media_dir: path });
+      }
+      toast.ok(`Save location on ${picker.host}: ${path}`);
+      setPicker(null);
+    } catch (e) {
+      toast.err(e instanceof Error ? e.message : "Could not set location");
+    }
+  };
   const setRetentionEnabled = (v: boolean) => update.mutate({ retention_enabled: v });
 
   const saveLocation = async () => {
@@ -78,9 +116,59 @@ export function StoragePanel() {
         <IconHdd size={16} /> Recording &amp; storage
       </div>
       <p className="ais-intro">
-        Where recordings and snapshots are saved on disk, whether motion events save a clip, and how
-        much history to keep.
+        Where recordings, timelapses, and snapshots are saved, whether motion events save a clip,
+        and how much history to keep.
       </p>
+
+      {/* storage node */}
+      <div className="notif-row">
+        <span className="microlabel">Save this device's recordings &amp; timelapses on</span>
+        <div className="stor-nodes">
+          {data.nodes.map((n) => {
+            const selected = n.node_key === "local" ? !data.node : (n.node_key === data.node || n.host === data.node);
+            return (
+              <button
+                key={n.node_key}
+                className={`stor-node ${selected ? "is-on" : ""} ${n.online ? "" : "is-off"}`}
+                disabled={!n.online || update.isPending}
+                onClick={() => setNode(n.node_key)}
+                title={n.media_dir}
+              >
+                <IconServer size={14} />
+                <span className="stor-node-host">{n.host}{n.node_key === "local" ? " (this device)" : ""}</span>
+                <span className="stor-node-free mono">
+                  {n.online ? `${fmtBytes(n.disk_free)} free` : "offline"}
+                </span>
+                {n.online && n.node_key !== "local" && (
+                  <span
+                    className="stor-node-browse"
+                    role="button"
+                    onClick={(e) => { e.stopPropagation(); openPicker(n.node_key); }}
+                  >
+                    folder…
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        {data.node && !data.node_online && (
+          <p className="stor-note" style={{ color: "var(--warn)" }}>
+            {data.node} is unreachable ({data.node_error || "offline"}) — captures fall back to this device until it's back.
+          </p>
+        )}
+        {data.node && data.node_online && storageNode && (
+          <p className="stor-note">
+            {storageNode.host} pulls this device's camera streams over the tailnet and writes the files to{" "}
+            <span className="mono">{storageNode.media_dir}</span>. Snapshots stay local.
+          </p>
+        )}
+        {!data.node && data.low_power_host && data.nodes.some((n) => n.node_key !== "local" && n.online) && (
+          <p className="stor-note">
+            This is a low-power device — pick a node with more disk and CPU above to keep encoding off it.
+          </p>
+        )}
+      </div>
 
       {/* save location */}
       <div className="notif-row">
@@ -111,6 +199,7 @@ export function StoragePanel() {
         <Button variant="primary" disabled={update.isPending} onClick={saveLocation}>
           {update.isPending ? "Saving…" : "Set location"}
         </Button>
+        <Button variant="outline" onClick={() => openPicker("local")}>Browse…</Button>
         {!data.is_default && (
           <Button variant="ghost" disabled={update.isPending} onClick={resetLocation}>
             Reset to default
@@ -124,7 +213,7 @@ export function StoragePanel() {
           <i style={{ width: `${usedPct}%` }} />
         </div>
         <div className="stor-stats mono">
-          <span>{fmtBytes(data.media_bytes)} in recordings + snapshots · {data.media_count} files</span>
+          <span>{fmtBytes(data.media_bytes)} in recordings + snapshots · {data.media_count} files · {fmtBytes(data.timelapse_bytes)} timelapses</span>
           <span>{fmtBytes(data.disk_free)} free of {fmtBytes(data.disk_total)}</span>
         </div>
       </div>
@@ -190,6 +279,16 @@ export function StoragePanel() {
           {update.isPending ? "Saving…" : "Save"}
         </Button>
       </div>
+
+      {picker && (
+        <FolderPicker
+          prefix={picker.prefix}
+          host={picker.host}
+          initialPath={picker.nodeKey === "local" ? data.custom_dir : ""}
+          onPick={onPicked}
+          onClose={() => setPicker(null)}
+        />
+      )}
     </div>
   );
 }

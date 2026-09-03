@@ -29,7 +29,39 @@ cameras with every peer's cameras. Each remote camera carries its owning `host`
 and a `proxy_prefix` so the dashboard can stream it **through** the owning node —
 you never need a direct route to a peer's camera, just to the peer.
 
-Scope `local` shows only this node's cameras.
+Scope `local` shows only this node's cameras. The same `scope` parameter — and
+the same merge — applies to `/api/media`, `/api/events`, and `/api/timelapse`,
+so a timelapse or recording running on any node shows up (and can be stopped)
+from any dashboard.
+
+## Storage node
+
+Every node can send its own cameras' **recordings, motion clips, and
+timelapses** to a different node — the box with the big disk, or the one with
+the CPU to encode. Choose it in **Settings → Recording & storage → Save this
+device's recordings & timelapses on** (each node's free space is shown), or
+set `[storage] node`.
+
+How it works:
+
+1. When a capture starts here, this node asks the storage node
+   (`POST /api/remote/<this-node>/cameras/<id>/recording/start` or
+   `.../timelapse/start`).
+2. The storage node **pulls this camera's MJPEG stream over the tailnet** into
+   a normal frame buffer and runs its own recorder / timelapse worker against
+   it. Files, thumbnails, and database rows live on the storage node; each row
+   carries `source_host` (the camera's node) so the gallery attributes it
+   correctly while serving it through `/proxy/<storage-node>/...`.
+3. Pulled feeds close themselves after ~30 s with nobody reading.
+
+The storage node only ever pulls from **discovered tailnet peers** — never an
+arbitrary URL. If the storage node is unreachable when a capture starts, the
+capture runs locally and the storage panel says so. Snapshots always stay
+local. The storage node's own save folder can be browsed and set from here
+(the *folder…* link next to the node).
+
+The same idea exists for AI: a [detection node](ai-analysis) runs the models
+for a node that shouldn't.
 
 ## The reverse proxy
 

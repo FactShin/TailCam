@@ -237,7 +237,7 @@ _SCHEMA = [
     CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_events (created_ts DESC);
     """,
 ]
-_CURRENT_VERSION = 10
+_CURRENT_VERSION = 11
 
 # Columns added after v1 — applied to existing DBs via ALTER TABLE on migrate().
 _EVENT_COLUMNS = {
@@ -262,6 +262,13 @@ _TIMELAPSE_COLUMNS = {
     "smooth_quality": "TEXT NOT NULL DEFAULT 'high'",
     "analysis_enabled": "INTEGER NOT NULL DEFAULT 0",
     "analysis_cadence_seconds": "REAL NOT NULL DEFAULT 60",
+    # v11: fleet storage node — which node's camera this capture came from.
+    "source_host": "TEXT NOT NULL DEFAULT ''",
+}
+
+# v11: media recorded on behalf of a peer's camera (storage node).
+_MEDIA_COLUMNS = {
+    "source_host": "TEXT NOT NULL DEFAULT ''",
 }
 
 # Object-detection column added after the v7 models table (older DBs).
@@ -302,6 +309,10 @@ class Store:
             for col, col_type in _EVENT_COLUMNS.items():
                 if col not in existing:
                     conn.execute(f"ALTER TABLE motion_events ADD COLUMN {col} {col_type}")
+            media_cols = {r["name"] for r in conn.execute("PRAGMA table_info(media)")}
+            for col, col_type in _MEDIA_COLUMNS.items():
+                if col not in media_cols:
+                    conn.execute(f"ALTER TABLE media ADD COLUMN {col} {col_type}")
             # Smoothing columns added to a pre-existing (v3) timelapses table.
             tl_cols = {r["name"] for r in conn.execute("PRAGMA table_info(timelapses)")}
             for col, col_type in _TIMELAPSE_COLUMNS.items():
@@ -370,8 +381,9 @@ class Store:
             cur = conn.execute(
                 """
                 INSERT INTO media
-                    (camera_id, media_type, path, thumbnail, created_ts, trigger, size_bytes)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (camera_id, media_type, path, thumbnail, created_ts, trigger, size_bytes,
+                     source_host)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.camera_id,
@@ -381,6 +393,7 @@ class Store:
                     record.created_ts,
                     record.trigger,
                     record.size_bytes,
+                    record.source_host,
                 ),
             )
             return int(cur.lastrowid or 0)
@@ -514,9 +527,9 @@ class Store:
                      video_path, thumb_path, size_bytes, width, height,
                      smooth_engine, jpeg_quality, max_frames, auto_smooth, smooth_target_fps,
                      smooth_interpolate, smooth_deflicker, smooth_quality,
-                     analysis_enabled, analysis_cadence_seconds)
+                     analysis_enabled, analysis_cadence_seconds, source_host)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.camera_id, record.name, record.state, record.mode,
@@ -529,6 +542,7 @@ class Store:
                     int(record.smooth_interpolate),
                     int(record.smooth_deflicker), record.smooth_quality,
                     int(record.analysis_enabled), record.analysis_cadence_seconds,
+                    record.source_host,
                 ),
             )
             return int(cur.lastrowid or 0)
@@ -1043,6 +1057,7 @@ def _media_from_row(row: sqlite3.Row) -> MediaRecord:
         created_ts=row["created_ts"],
         trigger=row["trigger"],
         size_bytes=row["size_bytes"],
+        source_host=row["source_host"] if "source_host" in row.keys() else "",
     )
 
 
@@ -1093,6 +1108,7 @@ def _timelapse_from_row(row: sqlite3.Row) -> TimelapseRecord:
         smooth_quality=row["smooth_quality"],
         analysis_enabled=bool(row["analysis_enabled"]),
         analysis_cadence_seconds=row["analysis_cadence_seconds"],
+        source_host=row["source_host"] if "source_host" in row.keys() else "",
     )
 
 

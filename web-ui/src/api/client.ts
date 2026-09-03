@@ -49,8 +49,9 @@ const qs = (params: Record<string, string | number | undefined>) => {
 // ---- URL builders (used in <img>/<video>/<a>, prefixed for remote hosts) ----
 
 export function streamUrl(prefix: string, id: string, v: ViewParams): string {
+  // Absent fps/q/w → the camera's device-wide stream settings apply.
   const params: Record<string, string | number | undefined> = {
-    fps: Math.round(v.fps),
+    fps: v.fps ? Math.round(v.fps) : undefined,
     zoom: v.zoom > 1 ? v.zoom.toFixed(1) : undefined,
     pan_x: v.zoom > 1 ? v.panX.toFixed(2) : undefined,
     pan_y: v.zoom > 1 ? v.panY.toFixed(2) : undefined,
@@ -103,11 +104,36 @@ export const loadModel = (model: string) =>
 
 export const getPlugins = () => jsonFetch<import("../types").PluginsInfo>("/api/plugins");
 
+// ---- streaming defaults (global) ----
+
+export const getStreaming = () => jsonFetch<import("../types").StreamingDefaults>("/api/streaming");
+export const updateStreaming = (body: Partial<import("../types").StreamingDefaults>) =>
+  jsonFetch<import("../types").StreamingDefaults>("/api/streaming", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
 // ---- storage / recording / retention ----
 
 export const getStorage = () => jsonFetch<import("../types").StorageInfo>("/api/storage");
 export const updateStorage = (body: import("../types").StorageUpdate) =>
   jsonFetch<import("../types").StorageInfo>("/api/storage", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+// Folder picker: lists sub-folders on a node (prefix "" = this node, or a peer's
+// "/proxy/<key>" so the save location can be browsed on the storage node).
+export const browseFs = (prefix: string, path: string, showHidden = false) =>
+  jsonFetch<import("../types").FsBrowseInfo>(
+    `${prefix}/api/fs/browse?path=${encodeURIComponent(path)}${showHidden ? "&show_hidden=true" : ""}`,
+  );
+// A peer's own storage settings (through the proxy) — used to set the save
+// folder on the storage node from here.
+export const getStorageAt = (prefix: string) =>
+  jsonFetch<import("../types").StorageInfo>(`${prefix}/api/storage?scope=local`);
+export const updateStorageAt = (prefix: string, body: import("../types").StorageUpdate) =>
+  jsonFetch<import("../types").StorageInfo>(`${prefix}/api/storage`, {
     method: "POST",
     body: JSON.stringify(body),
   });

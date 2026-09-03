@@ -4,6 +4,7 @@ import { useAi, useCameras, useHosts, useSystem } from "../api/hooks";
 import { IntegrationsPanel } from "../components/IntegrationsPanel";
 import { NotificationsSettings } from "../components/NotificationsSettings";
 import { StoragePanel } from "../components/StoragePanel";
+import { StreamingPanel } from "../components/StreamingPanel";
 import { useToast } from "../components/toast";
 import { IconCheck, IconCopy, IconDevice, IconInfo, IconServer, IconWifi, IconWifiOff } from "../icons";
 import { copyToClipboard } from "../lib/clipboard";
@@ -46,6 +47,19 @@ export function Settings() {
           <div className="panel-title"><IconInfo size={16} /> System</div>
           <div className="kv"><span className="kv-k">Version</span><span className="kv-v mono">TailCam {sys.version}</span></div>
           <div className="kv"><span className="kv-k">This device</span><span className="kv-v mono">{sys.host}</span></div>
+          <div className="kv">
+            <span className="kv-k">Hardware</span>
+            <span className="kv-v mono">
+              {sys.host_model || "generic"} · {sys.ram_gb ? `${sys.ram_gb} GB` : "?"} · {sys.cpu_count} CPU
+              {sys.low_power && <span className="badge badge-warn" style={{ marginLeft: 8 }}>low-power profile</span>}
+            </span>
+          </div>
+          {sys.low_power && (
+            <span className="help-foot mono">
+              Low-power host: lighter stream defaults, object detection off until routed to a bigger node,
+              and captures can be sent to a storage node (below).
+            </span>
+          )}
           <div className="kv"><span className="kv-k">Cameras (all hosts)</span><span className="kv-v mono">{cameras.length} connected</span></div>
           <div className="kv"><span className="kv-k">Storage used (local)</span><span className="kv-v mono">{fmtBytes(sys.media_bytes)}</span></div>
         </div>
@@ -129,6 +143,8 @@ export function Settings() {
             <code className="url-code mono">{sys.local_url}</code>
           </div>
         </div>
+
+        <StreamingPanel />
 
         <StoragePanel />
 

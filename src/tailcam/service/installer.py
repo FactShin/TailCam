@@ -35,6 +35,12 @@ Type=simple
 ExecStart={exec_start}
 Restart=on-failure
 RestartSec=3
+# glibc creates a malloc arena per thread; TailCam runs a thread per camera,
+# stream, and job, which on a 1 GB Pi quietly ate 100+ MB. Two arenas is plenty.
+Environment=MALLOC_ARENA_MAX=2
+# Keep OpenCV/BLAS from spawning a thread pool per core for tiny operations.
+Environment=OMP_NUM_THREADS=2
+Environment=OPENBLAS_NUM_THREADS=1
 
 [Install]
 WantedBy=default.target

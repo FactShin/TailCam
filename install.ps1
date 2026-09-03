@@ -22,6 +22,7 @@ param(
   [string]$Ref = "main",
   [switch]$NoService,
   [switch]$NoTailscale,
+  [switch]$NoTailscaleInstall,
   [switch]$NonInteractive
 )
 
@@ -278,12 +279,74 @@ function Install-TailCam {
     return $false
   }
 
+  function Get-TailscaleExe {
+    $cmd = Get-Command tailscale -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    foreach ($p in @("$env:ProgramFiles\Tailscale\tailscale.exe",
+                     "${env:ProgramFiles(x86)}\Tailscale\tailscale.exe")) {
+      if (Test-Path $p) { return $p }
+    }
+    return $null
+  }
+  function Get-TailscaleState {
+    $exe = Get-TailscaleExe
+    if (-not $exe) { return "" }
+    try {
+      $json = & $exe status --json 2>$null | Out-String
+      if (-not $json) { return "" }
+      return (ConvertFrom-Json $json).BackendState
+    } catch { return "" }
+  }
+  function Install-Tailscale {
+    if ($NoTailscaleInstall) {
+      Warn "Tailscale not found (-NoTailscaleInstall). Install it from https://tailscale.com/download/windows"
+      return $false
+    }
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if (-not $winget) {
+      Warn "Tailscale not found and winget is unavailable. Install it from https://tailscale.com/download/windows, sign in, then run: tailcam tailscale serve"
+      return $false
+    }
+    Info "Installing Tailscale (winget)"
+    & winget install --id Tailscale.Tailscale -e --accept-source-agreements --accept-package-agreements
+    if (Find-Tailscale) { return $true }
+    Warn "Tailscale installation failed. Install it from https://tailscale.com/download/windows"
+    return $false
+  }
+  function Wait-TailscaleLogin {
+    # `tailscale up` prints a login URL and returns once the browser login
+    # completes; then confirm the backend reports Running.
+    $timeout = 600
+    if ($env:TAILCAM_TAILSCALE_LOGIN_TIMEOUT) { $timeout = [int]$env:TAILCAM_TAILSCALE_LOGIN_TIMEOUT }
+    if ((Get-TailscaleState) -eq "Running") { Info "Tailscale is connected."; return $true }
+    if ($NonInteractive -or $env:TAILCAM_INSTALL_NONINTERACTIVE) {
+      Warn "Tailscale is not signed in. Run 'tailscale up' (sign in via the link), then: tailcam tailscale serve"
+      return $false
+    }
+    $exe = Get-TailscaleExe
+    Write-Host ""
+    Info "Tailscale needs to sign in. A login link will appear below - open it on ANY device"
+    Write-Host "    and approve this PC. The installer waits up to ${timeout}s."
+    Write-Host ""
+    try { & $exe up --timeout "${timeout}s" } catch { Warn "tailscale up: $_" }
+    $waited = 0
+    while ($waited -lt $timeout) {
+      if ((Get-TailscaleState) -eq "Running") { Write-Host ""; Info "Tailscale is connected."; return $true }
+      Start-Sleep -Seconds 3
+      $waited += 3
+      if (($waited % 30) -eq 0) { Write-Host "    ...still waiting for the Tailscale login ($($timeout - $waited)s left)" }
+    }
+    Warn "Timed out waiting for the Tailscale login. TailCam works locally; once signed in run: tailcam tailscale serve"
+    return $false
+  }
+
   if (-not $NoTailscale) {
-    if (Find-Tailscale) {
+    $tsReady = $true
+    if (-not (Find-Tailscale)) { $tsReady = Install-Tailscale }
+    if ($tsReady) { $tsReady = Wait-TailscaleLogin }
+    if ($tsReady) {
       Info "Exposing TailCam over Tailscale"
       & $VenvPy -m tailcam tailscale serve
-    } else {
-      Warn "Tailscale not found. Install it from https://tailscale.com/download/windows, run 'tailscale up', then: tailcam tailscale serve"
     }
   }
 

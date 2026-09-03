@@ -88,7 +88,8 @@ export function Timelapse() {
   const del = useDeleteTimelapse();
   const postprocess = usePostprocess().data;
 
-  const [camId, setCamId] = useState("");
+  // Cameras are keyed by host + id: the same /dev/video0 exists on every Pi.
+  const [camKey, setCamKey] = useState("");
   const [name, setName] = useState("");
   const [presetName, setPresetName] = useState("Reliable Print");
   const [settings, setSettings] = useState<PrinterSettings>(DEFAULT_SETTINGS);
@@ -114,12 +115,21 @@ export function Timelapse() {
     return () => clearInterval(t);
   }, []);
 
+  const keyOf = (c: { host: string; id: string }) => `${c.host}\u0000${c.id}`;
   useEffect(() => {
-    if (!camId && cameras.length) setCamId(cameras[0].id);
-  }, [cameras, camId]);
+    if (!camKey && cameras.length) setCamKey(keyOf(cameras[0]));
+  }, [cameras, camKey]);
 
-  const camName = (id: string) => cameras.find((c) => c.id === id)?.name ?? id;
-  const selected = cameras.find((c) => c.id === camId);
+  // A timelapse belongs to the camera on the node that owns it — or, when a
+  // storage node captured on a peer's behalf, on `source_host`.
+  const camOf = (t: { camera_id: string; host: string; source_host?: string }) =>
+    cameras.find((c) => c.id === t.camera_id && c.host === (t.source_host || t.host));
+  const camName = (t: { camera_id: string; host: string; source_host?: string }) => {
+    const cam = camOf(t);
+    if (cam) return cam.name;
+    return t.source_host ? `${t.camera_id} · ${t.source_host}` : t.camera_id;
+  };
+  const selected = cameras.find((c) => keyOf(c) === camKey);
 
   const active = rows.filter((r) => r.state === "capturing" || r.state === "encoding");
   const done = rows.filter((r) => r.state !== "capturing" && r.state !== "encoding");
@@ -199,7 +209,7 @@ export function Timelapse() {
         <div>
           <div className="kicker"><span className="kicker-rule" /><span className="microlabel lit">3D Print &amp; Timelapse</span></div>
           <h1 className="screen-title">Timelapse</h1>
-          <p className="screen-sub">{rows.length} capture{rows.length !== 1 ? "s" : ""} · this device</p>
+          <p className="screen-sub">{rows.length} capture{rows.length !== 1 ? "s" : ""} · all devices</p>
         </div>
       </div>
 
@@ -215,10 +225,10 @@ export function Timelapse() {
           </label>
           <label className="tl-field">
             <span className="microlabel">Camera</span>
-            <select className="tl-select" value={camId} onChange={(e) => setCamId(e.target.value)}>
+            <select className="tl-select" value={camKey} onChange={(e) => setCamKey(e.target.value)}>
               {cameras.length === 0 && <option value="">No cameras</option>}
               {cameras.map((c) => (
-                <option key={`${c.host}/${c.id}`} value={c.id}>
+                <option key={keyOf(c)} value={keyOf(c)}>
                   {c.name} · {c.host}
                 </option>
               ))}
@@ -252,7 +262,7 @@ export function Timelapse() {
             <input
               className="tl-input"
               type="text"
-              placeholder={selected ? `${camName(selected.id)} timelapse` : "Timelapse"}
+              placeholder={selected ? `${selected.name} timelapse` : "Timelapse"}
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
@@ -353,7 +363,7 @@ export function Timelapse() {
       {active.length > 0 && (
         <div className="tl-active">
           {active.map((t) => {
-            const cam = cameras.find((c) => c.id === t.camera_id);
+            const cam = camOf(t);
             const capturing = t.state === "capturing";
             const elapsed = (t.end_ts ?? Date.now() / 1000) - t.start_ts;
             return (
@@ -378,7 +388,8 @@ export function Timelapse() {
                   <div className="tl-grow">
                     <div className="tl-name">{t.name}</div>
                     <div className="tl-meta mono">
-                      {camName(t.camera_id)} · {t.frames_captured} frames · {fmtDur(elapsed)} · every {t.interval_seconds}s
+                      {camName(t)} · {t.frames_captured} frames · {fmtDur(elapsed)} · every {t.interval_seconds}s
+                      {t.source_host && ` · stored on ${t.host}`}
                     </div>
                     {t.analysis_latest_state && HEALTH_BADGE[t.analysis_latest_state] && (
                       <span className={`badge ${HEALTH_BADGE[t.analysis_latest_state].cls}`}>
@@ -440,7 +451,7 @@ export function Timelapse() {
                 </div>
                 <div className="tl-body">
                   <span className="tl-name">{t.name}</span>
-                  <span className="tl-meta mono">{camName(t.camera_id)} · {fmtDateTime(t.created_ts)}</span>
+                  <span className="tl-meta mono">{camName(t)} · {t.host} · {fmtDateTime(t.created_ts)}</span>
                   <span className="tl-meta mono">
                     {t.frames_captured} frames
                     {t.state === "complete" && ` · ${videoSeconds(t).toFixed(1)}s @ ${t.output_fps}fps · ${fmtBytes(t.size_bytes)}`}
@@ -512,7 +523,7 @@ export function Timelapse() {
                 <div className="lb-info-l">
                   <span className="lb-cam">{play.name}</span>
                   <span className="lb-sub mono">
-                    {camName(play.camera_id)} · {play.frames_captured} frames · {videoSeconds(play).toFixed(1)}s @ {play.output_fps}fps · {fmtBytes(showSmooth ? play.smooth_size_bytes : play.size_bytes)}{showSmooth && play.smooth_engine ? ` · ${play.smooth_engine}` : ""}
+                    {camName(play)} · {play.frames_captured} frames · {videoSeconds(play).toFixed(1)}s @ {play.output_fps}fps · {fmtBytes(showSmooth ? play.smooth_size_bytes : play.size_bytes)}{showSmooth && play.smooth_engine ? ` · ${play.smooth_engine}` : ""}
                   </span>
                   {play.has_smooth && (
                     <div className="tl-player-toggle">

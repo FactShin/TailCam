@@ -50,6 +50,10 @@ tailcam tailscale status                    # show tailscale state
 
 To run without serving (local only): `tailcam run --no-tailscale`.
 
+The installers handle first-time setup: they install Tailscale when it's
+missing, run `tailscale up` and wait for you to approve the login link, then
+enable serve — see [Installation](installation).
+
 ## Access URL behavior
 
 The access URL TailCam reports adapts to your setup:

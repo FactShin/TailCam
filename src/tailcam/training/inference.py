@@ -16,11 +16,13 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Callable
 
 import numpy as np
 
 from tailcam.ai.analyzer import Analysis, Detection, OllamaAnalyzer
 from tailcam.ai.detector import BuiltinDetector
+from tailcam.ai.remote import RemoteDetector
 from tailcam.config import TrainingConfig
 from tailcam.logging_setup import get_logger
 from tailcam.persistence.store import Store
@@ -139,11 +141,14 @@ class InferenceRouter:
         config: TrainingConfig,
         ollama: OllamaAnalyzer,
         builtin: BuiltinDetector | None = None,
+        remote: Callable[[], RemoteDetector | None] | None = None,
     ) -> None:
         self._store = store
         self._config = config
         self._ollama = ollama
         self._builtin = builtin
+        # Returns the peer detector when [detection] node routes work elsewhere.
+        self._remote = remote or (lambda: None)
         self._lock = threading.Lock()
         self._cached_id: int | None = None
         self._classifier: LocalClassifier | None = None
@@ -207,22 +212,31 @@ class InferenceRouter:
         with self._lock:
             self._refresh_active()
             local = self._classifier is not None or self._detector is not None
-        return local or self._ollama.enabled or (
+        return local or self._ollama.enabled or self._remote() is not None or (
             self._builtin is not None and self._builtin.enabled
         )
 
     @property
     def detection_active(self) -> bool:
         """True when something produces bounding boxes (for the UI overlay) —
-        a trained detection model, or the built-in detector."""
+        a trained detection model, a detection node, or the built-in detector."""
         if self._active_detector() is not None:
+            return True
+        if self._remote() is not None:
             return True
         return self._builtin is not None and self._builtin.enabled
 
     def detection_note(self) -> str:
         """Status line for the overlay badge while the built-in detector is
         provisioning itself ("downloading model 42%") or failing."""
-        if self._active_detector() is not None or self._builtin is None:
+        if self._active_detector() is not None:
+            return ""
+        remote = self._remote()
+        if remote is not None:
+            if not remote.available:
+                return f"detection node unreachable: {remote.last_error or remote.label}"
+            return ""
+        if self._builtin is None:
             return ""
         s = self._builtin.status()
         if s.status == "downloading":
@@ -257,6 +271,14 @@ class InferenceRouter:
                 "task": "classification",
                 "error": err,  # e.g. selected local model failed -> tell the user
             }
+        remote = self._remote()
+        if remote is not None:
+            return {
+                "mode": "remote",
+                "model_name": remote.model_name(),
+                "task": "detection",
+                "error": err or ("" if remote.available else remote.last_error),
+            }
         if self._builtin is not None and self._builtin.enabled:
             s = self._builtin.status()
             return {
@@ -290,6 +312,12 @@ class InferenceRouter:
                 return Analysis(label="nothing", description="no objects", confidence=0.0)
         if self._ollama.enabled:
             return self._ollama.analyze(image)
+        # A detection node labels for us (its own full pipeline runs there).
+        remote = self._remote()
+        if remote is not None:
+            result = remote.analyze(image)
+            if result is not None:
+                return result
         # Zero-config fallback: label motion events with the built-in detector's
         # best box, so event badges (PERSON, CUP, DOG …) work with no setup.
         if self._builtin is not None and self._builtin.enabled:
@@ -314,6 +342,10 @@ class InferenceRouter:
         det = self._active_detector()
         if det is not None:
             return det.detect(image)
+        remote = self._remote()
+        if remote is not None:
+            boxes = remote.detect(image)
+            return boxes if boxes is not None else []
         if self._builtin is not None and self._builtin.enabled:
             return self._builtin.detect(image)
         return None

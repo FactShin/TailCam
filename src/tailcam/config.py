@@ -68,6 +68,12 @@ class StorageConfig:
     # drive or NAS mount to keep video off the system disk. Existing media stays
     # where it was written; new media goes to the new location.
     media_dir: str = ""
+    # Storage node: record and timelapse this node's cameras ON another TailCam
+    # node (peer key / hostname / base URL). That node pulls the camera stream
+    # over the tailnet and writes the files to its own disk — pick the machine
+    # with the most storage or the CPU to encode. "" = save here. If the node is
+    # unreachable when a capture starts, it runs locally instead.
+    node: str = ""
 
 
 @dataclass
@@ -130,6 +136,10 @@ class DetectionConfig:
     classes: list[str] = field(default_factory=list)
     # Camera pages start with the detection overlay switched on.
     overlay_default: bool = True
+    # Run detection (and motion-event labeling) on another TailCam node instead
+    # of this one: a peer key / hostname / base URL, "" = this device. A Pi
+    # streams cameras; the GPU box on the tailnet does the thinking.
+    node: str = ""
 
 
 @dataclass
@@ -331,7 +341,8 @@ class HomeAssistantConfig:
 
 # Bumped when older config files need a one-time value migration on load (see
 # ``AppConfig.load``). Version 2: motion.auto_record flipped to default-on.
-_CONFIG_VERSION = 2
+# Version 3: low-power hosts (Raspberry Pi / <2 GB) get lighter defaults.
+_CONFIG_VERSION = 3
 
 # Serializes AppConfig.save() so concurrent settings-writing requests can't
 # interleave writes to config.toml (see save()).
@@ -375,12 +386,37 @@ class AppConfig:
     homeassistant: HomeAssistantConfig = field(default_factory=HomeAssistantConfig)
     mcp: MCPConfig = field(default_factory=MCPConfig)
 
+    def apply_low_power_profile(self, *, only_defaults: bool = True) -> list[str]:
+        """Lighter defaults for a Raspberry Pi / <2 GB host: smaller, slower
+        streams, gentler motion sampling, and no object-detection model loaded
+        until asked (route it to a bigger node instead). With ``only_defaults``
+        a value the user already changed is left alone. Returns what changed."""
+        changed: list[str] = []
+        st, mo, det = self.stream, self.motion, self.detection
+
+        def _set(section: object, name: str, old: object, new: object) -> None:
+            if not only_defaults or getattr(section, name) == old:
+                if getattr(section, name) != new:
+                    setattr(section, name, new)
+                    changed.append(f"{type(section).__name__}.{name}")
+
+        _set(st, "default_fps", 15, 10)
+        _set(st, "jpeg_quality", 80, 70)
+        _set(st, "max_width", 1280, 960)
+        _set(mo, "sample_fps", 5, 3)
+        _set(det, "enabled", True, False)
+        return changed
+
     @classmethod
     def load(cls, path: Path | None = None) -> AppConfig:
+        from tailcam import hostinfo
+
         cfg_path = path or paths.config_file()
         config: AppConfig
         if not cfg_path.exists():
             config = cls()
+            if hostinfo.is_low_power():
+                config.apply_low_power_profile(only_defaults=False)
         else:
             try:
                 with cfg_path.open("rb") as fh:
@@ -436,6 +472,17 @@ class AppConfig:
             # auto_record=false because that was the *default*, not a choice —
             # every motion event showed "no clip" and nothing was recorded.
             config.motion.auto_record = True
+        if version < 3:
+            # v3 (1.8.0): a Pi that still runs the stock defaults gets the
+            # low-power profile; anything the user tuned is kept as-is.
+            from tailcam import hostinfo
+
+            if hostinfo.is_low_power():
+                changed = config.apply_low_power_profile(only_defaults=True)
+                if changed:
+                    logging.getLogger("tailcam.config").info(
+                        "Low-power host: applied lighter defaults (%s)", ", ".join(changed)
+                    )
         return config
 
     def to_dict(self) -> dict[str, Any]:

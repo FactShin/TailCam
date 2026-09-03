@@ -54,9 +54,9 @@ export const DOCS: DocPage[] = [
   { slug: "motion-detection", title: "Motion detection", group: "Cameras & capture", body: motion,
     summary: "How motion works, tuning, and auto-record." },
   { slug: "recording-media", title: "Recording & media", group: "Cameras & capture", body: recording,
-    summary: "Snapshots, recordings, the gallery, and retention." },
+    summary: "Snapshots, recordings, the folder picker, the gallery, and retention." },
   { slug: "timelapse", title: "Timelapse", group: "Cameras & capture", body: timelapse,
-    summary: "Capture, encode, smoothing, and print analysis." },
+    summary: "Capture on any node, encode, smoothing, and print analysis." },
 
   { slug: "ai-analysis", title: "AI analysis", group: "Intelligence", body: ai,
     summary: "Label motion events locally with Ollama." },
@@ -73,7 +73,7 @@ export const DOCS: DocPage[] = [
   { slug: "tailscale", title: "Tailscale setup", group: "Network & fleet", body: tailscale,
     summary: "Serving over the tailnet, ports, and identity." },
   { slug: "fleet", title: "Fleet (multi-node)", group: "Network & fleet", body: fleet,
-    summary: "Peer discovery, aggregated cameras, and relay." },
+    summary: "Peer discovery, aggregated cameras, storage nodes, and relay." },
   { slug: "security", title: "Security & access", group: "Network & fleet", body: security,
     summary: "Principals, roles, grants, and the audit log." },
 
