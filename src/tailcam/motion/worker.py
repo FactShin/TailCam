@@ -22,9 +22,15 @@ from tailcam.motion.detector import MotionDetector
 from tailcam.motion.events import EventLog
 
 if TYPE_CHECKING:
+    from tailcam.media.capture_router import CaptureRouter
     from tailcam.notify.service import NotificationService
 
 log = get_logger(__name__)
+
+# Motion is detected on a downscaled copy of each frame: frame differencing on
+# 320 px wide images costs ~1/16th of 1280 px and finds the same motion. Boxes
+# are scaled back to full-frame pixels for the overlay/API.
+ANALYSIS_WIDTH = 320
 
 
 class MotionWorker:
@@ -34,7 +40,7 @@ class MotionWorker:
         buffer,
         config: MotionConfig,
         event_log: EventLog,
-        recorder: RecordingService | None = None,
+        recorder: RecordingService | CaptureRouter | None = None,
         analyzer: FrameAnalyzer | None = None,
         notifier: NotificationService | None = None,
         reacquire: Callable[[], FrameBuffer | None] | None = None,
@@ -50,6 +56,7 @@ class MotionWorker:
         self._analyzer = analyzer
         self._notifier = notifier
         self._detector = MotionDetector(config.sensitivity, config.min_area)
+        self._analysis_scale = 1.0  # set from the first frame
         self._stop = threading.Event()
         self._thread = threading.Thread(
             target=self._run, name=f"motion-{camera_id}", daemon=True
@@ -98,6 +105,30 @@ class MotionWorker:
         self._stop.set()
         self._thread.join(timeout=5.0)
 
+    def _downscale(self, image):
+        h, w = image.shape[:2]
+        if w <= ANALYSIS_WIDTH:
+            self._analysis_scale = 1.0
+            return image
+        scale = ANALYSIS_WIDTH / float(w)
+        if scale != self._analysis_scale:
+            self._analysis_scale = scale
+            # min_area is configured in full-frame pixels; the detector sees
+            # the small frame, so scale the threshold by the area ratio.
+            self._detector.min_area = max(1, int(self.config.min_area * scale * scale))
+        return cv2.resize(
+            image, (ANALYSIS_WIDTH, max(1, int(round(h * scale)))), interpolation=cv2.INTER_AREA
+        )
+
+    def _upscale_boxes(self, boxes):
+        s = self._analysis_scale
+        if s == 1.0:
+            return boxes
+        inv = 1.0 / s
+        return [
+            (int(x * inv), int(y * inv), int(w * inv), int(h * inv)) for (x, y, w, h) in boxes
+        ]
+
     def _run(self) -> None:
         interval = 1.0 / max(1, self.config.sample_fps)
         consumer = FrameConsumer(self.buffer, self._reacquire)
@@ -113,8 +144,8 @@ class MotionWorker:
                     if consumer.ended:  # camera removed — stop cleanly
                         break
                     continue
-                result = self._detector.process(frame.image)
-                self.boxes = result.boxes
+                result = self._detector.process(self._downscale(frame.image))
+                self.boxes = self._upscale_boxes(result.boxes)
                 now = time.time()
 
                 if result.motion:
@@ -137,8 +168,9 @@ class MotionWorker:
                     self.active = False
                     recording_id = None
                     if recording_triggered and self._recorder:
-                        # Let the tail finish, then close the recording.
-                        time.sleep(self.config.record_tail_seconds)
+                        # Let the tail finish, then close the recording (a stop
+                        # request cuts the tail short instead of blocking it).
+                        self._stop.wait(self.config.record_tail_seconds)
                         record = self._recorder.stop(self.camera_id)
                         recording_id = record.id if record else None
                         recording_triggered = False

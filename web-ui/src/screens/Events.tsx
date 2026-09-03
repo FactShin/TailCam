@@ -41,7 +41,11 @@ function CamFilter({
 export function Events() {
   const navigate = useNavigate();
   const cameras = useCameras().data ?? [];
-  const camName = (id: string) => cameras.find((c) => c.id === id)?.name ?? id;
+  // Camera ids repeat across nodes (/dev/video0 on every Pi): match host too.
+  const camName = (row: { camera_id: string; host: string; source_host?: string }) =>
+    cameras.find((c) => c.id === row.camera_id && c.host === (row.source_host || row.host))?.name
+    ?? cameras.find((c) => c.id === row.camera_id)?.name
+    ?? row.camera_id;
   const [cam, setCam] = useState("");
   const events = useEvents(cam ? { camera_id: cam, limit: 80 } : { limit: 80 }).data ?? [];
 
@@ -89,7 +93,7 @@ export function Events() {
                 )}
                 <div className="event-body">
                   <div className="event-l1">
-                    <span className="event-cam">{camName(e.camera_id)}</span>
+                    <span className="event-cam">{camName(e)}</span>
                     {e.label && <span className={`event-label label-${e.label}`}>{icon} {e.label}</span>}
                     {ongoing && <span className="event-ongoing"><span className="rec-dot" /> ongoing</span>}
                   </div>

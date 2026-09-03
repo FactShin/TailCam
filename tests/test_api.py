@@ -221,3 +221,73 @@ def test_startup_closes_stale_events(store):
     assert store.close_stale_motion_events() == 1
     (event,) = store.list_motion_events()
     assert event.end_ts == 123.0  # closed at start_ts (true end unknown)
+
+
+def test_motion_toggle_persists_and_restores(client, context):
+    cam_id = client.get("/api/cameras?scope=local").json()[0]["id"]
+    assert client.patch(f"/api/cameras/{cam_id}", json={"motion_enabled": True}).status_code == 200
+    import json as _json
+
+    saved = _json.loads(context.store.get_camera(cam_id).settings_json)
+    assert saved["motion_enabled"] is True
+    assert context.manager.motion_enabled_ids() == [cam_id]
+
+    # Simulate a restart: a fresh context over the same store re-arms motion.
+    from tailcam.config import AppConfig
+    from tailcam.web.context import AppContext
+
+    context.disable_motion(cam_id, persist=False)
+    assert not context.motion_enabled(cam_id)
+    cfg = AppConfig()
+    cfg.tailscale.auto_serve = False
+    fresh = AppContext(cfg, store=context.store)
+    try:
+        fresh.startup()
+        assert fresh.motion_enabled(cam_id)
+    finally:
+        fresh.shutdown()
+
+    assert client.patch(f"/api/cameras/{cam_id}", json={"motion_enabled": False}).status_code == 200
+    assert _json.loads(context.store.get_camera(cam_id).settings_json)["motion_enabled"] is False
+
+
+def test_stream_settings_are_device_wide(client, context):
+    cam_id = client.get("/api/cameras?scope=local").json()[0]["id"]
+    # Inherits the global defaults until overridden.
+    cam = client.get(f"/api/cameras/{cam_id}").json()
+    assert cam["stream"] == {"fps": 15, "quality": 80, "max_width": 1280}
+    assert cam["stream_overrides"] == {"fps": None, "quality": None, "max_width": None}
+
+    # Global defaults change every camera without an override.
+    resp = client.post("/api/streaming", json={"fps": 10, "max_width": 960})
+    assert resp.status_code == 200 and resp.json() == {"fps": 10, "quality": 80, "max_width": 960}
+    assert context.config.stream.default_fps == 10
+    assert client.get(f"/api/cameras/{cam_id}").json()["stream"]["fps"] == 10
+
+    # A per-camera override wins, persists, and can be cleared with null.
+    resp = client.patch(f"/api/cameras/{cam_id}", json={"stream": {"fps": 5, "quality": 60}})
+    assert resp.json()["stream"] == {"fps": 5, "quality": 60, "max_width": 960}
+    import json as _json
+
+    saved = _json.loads(context.store.get_camera(cam_id).settings_json)["stream"]
+    assert saved["fps"] == 5 and saved["quality"] == 60 and saved["max_width"] is None
+    resp = client.patch(f"/api/cameras/{cam_id}", json={"stream": {"fps": None}})
+    assert resp.json()["stream"]["fps"] == 10 and resp.json()["stream"]["quality"] == 60
+
+    # The stream endpoint honors the camera settings and only lets a client go lower.
+    from tailcam.web import routes_stream
+
+    seen = {}
+
+    async def fake_stream(buffer, transform, fps, quality):
+        seen["fps"], seen["q"], seen["w"] = fps, quality, transform.max_width
+        yield b""
+
+    context.mjpeg.stream = fake_stream  # type: ignore[assignment]
+    client.get(f"/stream/{cam_id}.mjpg")
+    assert seen == {"fps": 10, "q": 60, "w": 960}
+    client.get(f"/stream/{cam_id}.mjpg?fps=30&q=90&w=1920")
+    assert seen == {"fps": 10, "q": 60, "w": 960}
+    client.get(f"/stream/{cam_id}.mjpg?fps=4&q=40&w=480")
+    assert seen == {"fps": 4, "q": 40, "w": 480}
+    assert routes_stream is not None

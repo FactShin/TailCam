@@ -96,6 +96,13 @@ def thumbnails_dir() -> Path:
 
 def timelapse_dir() -> Path:
     # Each timelapse gets <timelapse_dir>/<id>/ holding frames/ + the encoded mp4.
+    # Lives under the media location so a custom save folder (external drive,
+    # NAS) applies to timelapses too. Records store absolute paths, so captures
+    # made under the old <data-dir>/timelapse location keep working.
+    return media_dir() / "timelapse"
+
+
+def legacy_timelapse_dir() -> Path:
     return data_dir() / "timelapse"
 
 

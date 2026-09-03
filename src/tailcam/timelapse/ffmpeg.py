@@ -158,6 +158,36 @@ def build_encode_command(
     return cmd
 
 
+def build_plain_encode_command(
+    ffmpeg: str,
+    frames_dir: Path,
+    fps: int,
+    out_path: Path,
+    size: tuple[int, int] | None = None,
+) -> list[str]:
+    """Encode the numbered capture stills straight to a browser-playable H.264
+    mp4 at ``fps`` (no interpolation). ``size`` pins the output to the first
+    frame's dimensions so a mid-capture resolution change can't break the
+    encode; odd dimensions are rounded down for yuv420p."""
+    if size is not None:
+        w, h = size
+        scale = f"scale={max(2, w - w % 2)}:{max(2, h - h % 2)}"
+    else:
+        scale = "scale=trunc(iw/2)*2:trunc(ih/2)*2"
+    from tailcam import hostinfo
+
+    return [
+        ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+        "-framerate", str(max(1, fps)),
+        "-i", str(frames_dir / "%06d.jpg"),
+        "-vf", scale,
+        "-c:v", "libx264", "-preset", "veryfast" if not hostinfo.is_low_power() else "ultrafast",
+        "-crf", "20", "-threads", str(hostinfo.encode_threads()),
+        "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+        str(out_path),
+    ]
+
+
 def run_ffmpeg(cmd: list[str], timeout: float = 1800.0) -> bool:
     try:
         result = run_hidden(cmd, capture_output=True, text=True, timeout=timeout)

@@ -11,7 +11,11 @@ export function ActivityFeed() {
   const navigate = useNavigate();
   const cameras = useCameras().data ?? [];
   const events = useEvents({ limit: 14 }).data ?? [];
-  const camName = (id: string) => cameras.find((c) => c.id === id)?.name ?? id;
+  // Camera ids repeat across nodes (/dev/video0 on every Pi): match host too.
+  const camName = (row: { camera_id: string; host: string; source_host?: string }) =>
+    cameras.find((c) => c.id === row.camera_id && c.host === (row.source_host || row.host))?.name
+    ?? cameras.find((c) => c.id === row.camera_id)?.name
+    ?? row.camera_id;
 
   return (
     <aside className="actfeed" aria-label="Live activity">
@@ -42,7 +46,7 @@ export function ActivityFeed() {
               </span>
               <span className="actrow-body">
                 <span className="actrow-l1">
-                  {camName(e.camera_id)}
+                  {camName(e)}
                   {e.label && <span className={`event-label label-${e.label}`}>{e.label}</span>}
                   {ongoing && <span className="evlive"><span className="rec-dot" />LIVE</span>}
                 </span>

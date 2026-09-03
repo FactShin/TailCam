@@ -366,3 +366,67 @@ def test_postprocess_engines_and_default(client, context):
     assert r.json()["default_engine"] == "rife"
     assert context.config.timelapse.smooth_engine == "rife"
     assert client.post("/api/postprocess", json={"default_engine": "bogus"}).status_code == 400
+
+
+def test_timelapse_list_merges_peers(client, context, monkeypatch):
+    """A capture running on a peer must show up (and be stoppable) from here."""
+    remote = {
+        "id": 77, "camera_id": "/dev/video0", "name": "Pi print", "state": "capturing",
+        "mode": "interval", "interval_seconds": 2.0, "output_fps": 30, "frames_captured": 12,
+        "created_ts": 9e12, "start_ts": 9e12, "end_ts": None,
+        "host": "pi.tailnet.ts.net", "proxy_prefix": "/proxy/pi",
+    }
+
+    async def fake_remote(params):
+        assert params.get("limit") == 100
+        return [dict(remote)]
+
+    monkeypatch.setattr(context.cluster, "remote_timelapses", fake_remote)
+    rows = client.get("/api/timelapse").json()
+    assert rows and rows[0]["id"] == 77 and rows[0]["proxy_prefix"] == "/proxy/pi"
+    assert rows[0]["source_host"] == ""
+    # scope=local is what peers ask for — no recursion.
+    assert all(r["proxy_prefix"] == "" for r in client.get("/api/timelapse?scope=local").json())
+
+
+def test_timelapse_list_skips_incompatible_peer_rows(client, context, monkeypatch):
+    async def fake_remote(params):
+        return [{"id": "bogus"}]
+
+    monkeypatch.setattr(context.cluster, "remote_timelapses", fake_remote)
+    assert client.get("/api/timelapse").status_code == 200
+
+
+def test_timelapse_frames_follow_media_dir(service, context, tmp_path):
+    """Timelapses honor the custom save location, and delete removes the job
+    folder wherever it was written."""
+    from pathlib import Path
+
+    from tailcam import paths
+
+    custom = tmp_path / "usb"
+    paths.set_media_override(str(custom))
+    cam_id = _synthetic_id(context)
+    record = service.start(cam_id, interval_seconds=0.1)
+    assert Path(record.frames_dir).is_relative_to(custom / "timelapse")
+    assert _wait(lambda: service.get(record.id).frames_captured >= 2)
+    service.stop(record.id)
+    assert _wait(lambda: service.get(record.id).state == "complete")
+    job_dir = Path(record.frames_dir).parent
+    paths.set_media_override(None)  # location changed later — delete must still find it
+    assert service.delete(record.id)
+    assert not job_dir.exists()
+
+
+def test_encoded_timelapse_is_h264_when_ffmpeg_present(service, context):
+    from tailcam.timelapse.ffmpeg import ffmpeg_path
+
+    if ffmpeg_path() is None:
+        pytest.skip("no ffmpeg")
+    cam_id = _synthetic_id(context)
+    record = service.start(cam_id, interval_seconds=0.1, output_fps=10)
+    assert _wait(lambda: service.get(record.id).frames_captured >= 3)
+    service.stop(record.id)
+    assert _wait(lambda: service.get(record.id).state == "complete", timeout=30)
+    data = open(service.get(record.id).video_path, "rb").read()
+    assert b"avc1" in data or b"avcC" in data

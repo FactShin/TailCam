@@ -138,12 +138,36 @@ class OpenCVCameraSource(CameraSource):
             if not self._cap.isOpened():
                 log.warning("Failed to open camera %s", self.descriptor.id)
                 return False
+            if self.descriptor.backend == "v4l2":
+                self._tune_v4l2(cv2)
         # Apply initial properties.
         for name in ("width", "height", "fps", "brightness", "contrast", "saturation"):
             value = getattr(self.props, name, None)
             if value is not None:
                 self.set_property(name, float(value))
         return True
+
+    def _tune_v4l2(self, cv2: Any) -> None:
+        """Ask a V4L2 webcam for compressed MJPEG frames and a 1-frame queue.
+
+        Without this OpenCV negotiates raw YUYV, which at 720p is ~27 MB/s per
+        camera — two cameras saturate a Raspberry Pi's USB 2.0 bus and the frame
+        rate collapses. MJPEG is a tenth of that and every UVC webcam supports
+        it. ``TAILCAM_RAW_V4L2=1`` opts out for the rare device that misbehaves.
+        The 1-frame buffer keeps latency low and drops stale frames instead of
+        queueing them on a busy host.
+        """
+        if os.environ.get("TAILCAM_RAW_V4L2") == "1" or self._cap is None:
+            return
+        try:
+            mjpg = cv2.VideoWriter_fourcc(*"MJPG")  # type: ignore[attr-defined]
+            self._cap.set(cv2.CAP_PROP_FOURCC, mjpg)
+            self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            got = int(self._cap.get(cv2.CAP_PROP_FOURCC)) & 0xFFFFFFFF
+            name = "".join(chr((got >> (8 * i)) & 0xFF) for i in range(4))
+            log.info("Camera %s pixel format: %s", self.descriptor.id, name.strip() or got)
+        except Exception as exc:  # pragma: no cover - driver quirks
+            log.debug("v4l2 tuning failed on %s: %s", self.descriptor.id, exc)
 
     def read(self) -> np.ndarray | None:
         if self._cap is None:

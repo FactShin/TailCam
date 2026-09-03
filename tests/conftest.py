@@ -4,6 +4,10 @@ import pytest
 
 # Force the synthetic camera source for the whole suite (no hardware needed).
 os.environ["TAILCAM_SYNTHETIC"] = "1"
+# Deterministic host profile: the suite asserts the *standard* defaults, and a
+# small CI runner or a Pi must not flip them (tests that cover the low-power
+# profile set TAILCAM_LOW_POWER themselves).
+os.environ.setdefault("TAILCAM_LOW_POWER", "0")
 
 
 @pytest.fixture(autouse=True)

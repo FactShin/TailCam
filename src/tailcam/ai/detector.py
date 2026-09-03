@@ -140,7 +140,8 @@ class BuiltinDetector:
 
     @property
     def enabled(self) -> bool:
-        return bool(self._config.enabled)
+        # Routed to another node → this node never loads/provisions a model.
+        return bool(self._config.enabled) and not (self._config.node or "").strip()
 
     @property
     def ready(self) -> bool:
@@ -151,6 +152,8 @@ class BuiltinDetector:
         with self._lock:
             if not self._config.enabled:
                 return DetectorStatus(enabled=False, status="off")
+            if (self._config.node or "").strip():
+                return DetectorStatus(enabled=True, status="remote", detail=self._config.node)
             return DetectorStatus(
                 enabled=True,
                 engine=self._engine or self._resolve_engine(),

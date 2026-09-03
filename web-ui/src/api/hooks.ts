@@ -430,8 +430,51 @@ export function usePluginAction() {
   };
 }
 
+export function useStreaming() {
+  return useQuery({ queryKey: ["streaming"], queryFn: api.getStreaming });
+}
+
+export function useUpdateStreaming() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Partial<import("../types").StreamingDefaults>) => api.updateStreaming(body),
+    onSuccess: (data) => {
+      qc.setQueryData(["streaming"], data);
+      qc.invalidateQueries({ queryKey: ["cameras"] }); // effective per-camera values changed
+    },
+  });
+}
+
 export function useStorage() {
-  return useQuery({ queryKey: ["storage"], queryFn: api.getStorage });
+  return useQuery({ queryKey: ["storage"], queryFn: api.getStorage, refetchInterval: 15_000 });
+}
+
+export function useStorageAt(prefix: string, enabled = true) {
+  return useQuery({
+    queryKey: ["storage-at", prefix],
+    queryFn: () => api.getStorageAt(prefix),
+    enabled,
+  });
+}
+
+export function useUpdateStorageAt(prefix: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: import("../types").StorageUpdate) => api.updateStorageAt(prefix, body),
+    onSuccess: (data) => {
+      qc.setQueryData(["storage-at", prefix], data);
+      qc.invalidateQueries({ queryKey: ["storage"] });
+    },
+  });
+}
+
+export function useBrowseFs(prefix: string, path: string, showHidden: boolean, enabled: boolean) {
+  return useQuery({
+    queryKey: ["fs-browse", prefix, path, showHidden],
+    queryFn: () => api.browseFs(prefix, path, showHidden),
+    enabled,
+    staleTime: 5_000,
+  });
 }
 
 export function useUpdateStorage() {
@@ -560,6 +603,15 @@ function applyOptimistic(cam: CameraInfo, u: CameraSettingsUpdate): CameraInfo {
   const next: CameraInfo = { ...cam };
   if (u.name !== undefined) next.name = u.name;
   if (u.motion_enabled !== undefined) next.motion_enabled = u.motion_enabled;
+  if (u.detection_enabled !== undefined) next.detection_enabled = u.detection_enabled;
+  if (u.stream) {
+    next.stream_overrides = { ...next.stream_overrides, ...u.stream } as CameraInfo["stream_overrides"];
+    next.stream = {
+      fps: u.stream.fps ?? next.stream.fps,
+      quality: u.stream.quality ?? next.stream.quality,
+      max_width: u.stream.max_width ?? next.stream.max_width,
+    };
+  }
   if (u.transform) next.transform = { ...next.transform, ...u.transform };
   if (u.properties) {
     next.properties = { ...next.properties, ...u.properties };

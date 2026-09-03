@@ -73,6 +73,22 @@ analysis of what's using space and what to clean.
 
 ## Where files live
 
-Media is stored under TailCam's data directory (set with `TAILCAM_DATA_DIR`). The
-SQLite database tracks the index; the files themselves sit alongside it. Use
-`tailcam doctor` to see resolved paths.
+Media is stored under TailCam's data directory (set with `TAILCAM_DATA_DIR`)
+unless you set a custom save location. The SQLite database tracks the index;
+the files themselves sit alongside it. Use `tailcam doctor` to see resolved
+paths.
+
+- **Custom folder**: type a path or click **Browse…** in Settings → Recording &
+  storage to pick a folder on the device (drives and mounts are listed) — so you
+  never have to remember a path from your phone. Timelapses follow the same
+  location.
+- **Another machine**: pick a [storage node](fleet#storage-node) to record this
+  device's cameras on a peer with more disk. Its folder can be browsed from
+  here too.
+
+## Video format
+
+Recordings and timelapses are written as **H.264 in MP4** through ffmpeg
+(bundled, or the system binary), so they play inline in every browser and in the
+Home app. If no ffmpeg can run, TailCam falls back to OpenCV's writer (`avc1`,
+then `mp4v` — the latter may not play in Chrome/Firefox; install ffmpeg).

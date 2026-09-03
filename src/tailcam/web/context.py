@@ -12,13 +12,16 @@ from tailcam.activelearning.service import ActiveLearningService
 from tailcam.ai.analyzer import OllamaAnalyzer
 from tailcam.ai.detector import BuiltinDetector
 from tailcam.ai.pull import ModelPuller
+from tailcam.ai.remote import RemoteDetector
 from tailcam.camera.manager import CameraManager
 from tailcam.camera.source import use_synthetic
+from tailcam.cluster.remote_feed import RemoteFeedRegistry
 from tailcam.cluster.service import ClusterService, resolve_local_host
 from tailcam.config import AppConfig
 from tailcam.integrations.homeassistant import MqttPublisher
 from tailcam.integrations.homekit import HomeKitBridge
 from tailcam.logging_setup import get_logger
+from tailcam.media.capture_router import CaptureRouter
 from tailcam.media.gallery import MediaGallery
 from tailcam.media.recorder import RecordingService
 from tailcam.media.snapshot import SnapshotService
@@ -141,14 +144,28 @@ class AppContext:
             self.manager, self.store, config, self.detector, self.analyzer,
             self.training, self.local_host,
         )
-        # Motion analysis routes through the active trained/BYO model if set,
-        # else Ollama, else the built-in detector's best box.
-        self.inference = InferenceRouter(
-            self.store, config.training, self.analyzer, builtin=self.detector
-        )
         self.cluster = ClusterService(
             config.peers, self.tailscale, self.local_host, config.tailscale.serve_port
         )
+        # Detection node: when [detection] node points at a peer, boxes and
+        # motion labels come from that node's /api/detect-image.
+        self._remote_detector: RemoteDetector | None = None
+        self._remote_detector_for = ""
+        # Motion analysis routes through the active trained/BYO model if set,
+        # else Ollama, else the detection node, else the built-in detector.
+        self.inference = InferenceRouter(
+            self.store, config.training, self.analyzer, builtin=self.detector,
+            remote=self.remote_detector,
+        )
+        # Per-camera detection result cache: N open viewers of one camera share
+        # a single inference per second instead of each running their own.
+        self._detect_cache: dict[str, tuple[float, object]] = {}
+        self._detect_locks: dict[str, threading.Lock] = {}
+        # Storage node support: pulled peer-camera feeds (when THIS node is the
+        # storage node) and the router that sends this node's own captures to
+        # the configured storage node.
+        self.remote_feeds = RemoteFeedRegistry(self.cluster.peer_base)
+        self.capture = CaptureRouter(self)
         self.served = False
         self._motion_workers: dict[str, MotionWorker] = {}
         self._lock = threading.Lock()
@@ -160,11 +177,30 @@ class AppContext:
         self._last_prune = 0.0
 
     def startup(self) -> None:
+        from tailcam import hostinfo
+
+        prof = hostinfo.profile()
+        log.info(
+            "Host: %s · %.1f GB RAM · %d CPU · profile=%s",
+            prof.model or "generic", prof.total_ram_gb, prof.cpu_count,
+            "low-power" if prof.low_power else "standard",
+        )
+        if prof.low_power:
+            # OpenCV's internal thread pool (resize/imencode/dnn) competes with
+            # the capture and encode threads on a 4-core Pi; two is the sweet spot.
+            try:
+                import cv2
+
+                cv2.setNumThreads(2)
+            except Exception as exc:  # pragma: no cover - defensive
+                log.debug("cv2.setNumThreads: %s", exc)
         # Warm the built-in detector at boot so the model is downloaded and
         # loaded before anyone opens a camera view (no-op once provisioned).
         # Skipped in synthetic mode (CI/tests) — there it provisions lazily on
-        # the first real detect request instead of hitting the network per run.
-        if not use_synthetic():
+        # the first real detect request instead of hitting the network per run
+        # — and when detection is off or routed to another node (a Pi that
+        # ships frames elsewhere never loads a model into its 1 GB).
+        if not use_synthetic() and self.detector.enabled:
             self.detector.ensure_ready()
         stale = self.store.close_stale_motion_events()
         if stale:
@@ -180,6 +216,13 @@ class AppContext:
         # Eager-start workers so status reflects reality from the first poll
         # (the UI only streams cameras that report online).
         self.manager.start_all()
+        # Re-arm motion detection on the cameras it was enabled for.
+        restored = 0
+        for camera_id in self.manager.motion_enabled_ids():
+            if self.enable_motion(camera_id, persist=False):
+                restored += 1
+        if restored:
+            log.info("Motion detection restored on %d camera(s)", restored)
         self._prune_media()  # enforce the retention budget on boot
         self._start_notify_monitor()
         if self.config.homekit.enabled:
@@ -204,8 +247,9 @@ class AppContext:
         for worker in list(self._motion_workers.values()):
             worker.stop()
         self._motion_workers.clear()
-        self.recorder.stop_all()
+        self.capture.stop_all()
         self.timelapse.shutdown()
+        self.remote_feeds.shutdown()
         self.active_learning.shutdown()
         self.training.shutdown()
         self.manager.stop_all()
@@ -322,11 +366,59 @@ class AppContext:
     async def aclose(self) -> None:
         await self.cluster.aclose()
 
+    # -- detection routing -------------------------------------------------
+    def resolve_node_base(self, node: str) -> str | None:
+        """Base URL for a configured node reference: a peer key, a hostname
+        (MagicDNS or short), or a full http(s) URL. None while unknown."""
+        ref = (node or "").strip().rstrip("/")
+        if not ref:
+            return None
+        if ref.startswith("http://") or ref.startswith("https://"):
+            return ref
+        low = ref.lower()
+        for peer in self.cluster.cached_peers():
+            if low in (peer.key, peer.host.lower(), peer.host.split(".")[0].lower()):
+                return peer.base_url
+        return None
+
+    def remote_detector(self) -> RemoteDetector | None:
+        """The detection-node client when [detection] routes elsewhere and the
+        global switch is on; None means detect locally."""
+        node = (self.config.detection.node or "").strip()
+        if not node or not self.config.detection.enabled:
+            self._remote_detector = None
+            self._remote_detector_for = ""
+            return None
+        if self._remote_detector is None or self._remote_detector_for != node:
+            self._remote_detector = RemoteDetector(
+                lambda: self.resolve_node_base(node), label=node
+            )
+            self._remote_detector_for = node
+        return self._remote_detector
+
+    def detect_lock(self, camera_id: str) -> threading.Lock:
+        with self._lock:
+            lock = self._detect_locks.get(camera_id)
+            if lock is None:
+                lock = self._detect_locks[camera_id] = threading.Lock()
+            return lock
+
+    def cached_detection(self, camera_id: str, max_age: float):
+        entry = self._detect_cache.get(camera_id)
+        if entry and (time.monotonic() - entry[0]) <= max_age:
+            return entry[1]
+        return None
+
+    def store_detection(self, camera_id: str, result: object) -> None:
+        self._detect_cache[camera_id] = (time.monotonic(), result)
+
     # -- motion ------------------------------------------------------------
     def motion_enabled(self, camera_id: str) -> bool:
         return camera_id in self._motion_workers
 
-    def enable_motion(self, camera_id: str) -> bool:
+    def enable_motion(self, camera_id: str, persist: bool = True) -> bool:
+        if persist:
+            self.manager.set_motion_enabled(camera_id, True)
         with self._lock:
             if camera_id in self._motion_workers:
                 return True
@@ -334,7 +426,7 @@ class AppContext:
             if buffer is None:
                 return False
             worker = MotionWorker(
-                camera_id, buffer, self.config.motion, self.event_log, self.recorder,
+                camera_id, buffer, self.config.motion, self.event_log, self.capture,
                 analyzer=self.inference,
                 notifier=cast("NotificationService", self._motion_fanout),
                 reacquire=partial(self.manager.get_buffer, camera_id),
@@ -343,7 +435,9 @@ class AppContext:
             self._motion_workers[camera_id] = worker
             return True
 
-    def disable_motion(self, camera_id: str) -> None:
+    def disable_motion(self, camera_id: str, persist: bool = True) -> None:
+        if persist:
+            self.manager.set_motion_enabled(camera_id, False)
         with self._lock:
             worker = self._motion_workers.pop(camera_id, None)
         if worker:

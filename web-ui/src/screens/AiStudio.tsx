@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { useAi, useAiTest, useCameras, useDetectionInfo, useOllamaModels, useUpdateAi, useUpdateDetection } from "../api/hooks";
+import { useAi, useAiTest, useCameras, useDetectionInfo, useHosts, useOllamaModels, useUpdateAi, useUpdateDetection } from "../api/hooks";
 import { useToast } from "../components/toast";
 import { Button, ControlSlider, Segmented, Spinner, Toggle } from "../components/ui";
 import { IconBrain, IconCheck, IconChip, IconMotion, IconSparkle } from "../icons";
@@ -190,8 +190,11 @@ function PipelineCard({ onGoto }: { onGoto: (t: Tab) => void }) {
 function ObjectDetectionCard() {
   const toast = useToast();
   const det = useDetectionInfo().data;
+  const hosts = useHosts().data ?? [];
   const update = useUpdateDetection();
   if (!det) return null;
+  const peers = hosts.filter((h) => h.kind === "peer");
+  const nodeKnown = !det.node || peers.some((h) => h.node_key === det.node || h.host === det.node);
 
   const set = async (body: Parameters<typeof update.mutateAsync>[0], msg?: string) => {
     try {
@@ -206,6 +209,11 @@ function ObjectDetectionCard() {
     det.status === "ready" ? <span className="badge badge-ok">ready</span>
     : det.status === "downloading" ? <span className="badge badge-accent">downloading {det.percent ? `${Math.round(det.percent)}%` : "…"}</span>
     : det.status === "error" ? <span className="badge badge-err">error</span>
+    : det.status === "remote" ? (
+        det.node_reachable
+          ? <span className="badge badge-accent">on {det.node}</span>
+          : <span className="badge badge-warn">{det.node} unreachable</span>
+      )
     : det.enabled ? <span className="badge">starting…</span>
     : <span className="badge">off</span>;
 
@@ -237,6 +245,30 @@ function ObjectDetectionCard() {
       )}
       {det.enabled && (
         <div className="ais-det-tune">
+          <label className="ctl-row" style={{ marginBottom: 10 }}>
+            <span className="ctl-row-label">Run detection on</span>
+            <select
+              className="tl-select"
+              value={det.node}
+              onChange={(e) => set({ node: e.target.value }, e.target.value ? `Detection runs on ${e.target.value}` : "Detection runs on this device")}
+            >
+              <option value="">This device</option>
+              {peers.map((h) => (
+                <option key={h.node_key} value={h.node_key} disabled={!h.online}>
+                  {h.host}{h.online ? "" : " (offline)"}
+                </option>
+              ))}
+              {!nodeKnown && <option value={det.node}>{det.node} (not found)</option>}
+            </select>
+          </label>
+          <p className="ais-intro" style={{ marginTop: 0 }}>
+            {det.node
+              ? `Frames from this device's cameras are sent to ${det.node} for boxes and motion labels — it runs its own models, so nothing loads here.`
+              : det.low_power_host
+                ? "This is a low-power device (Raspberry Pi / under 2 GB). Pick a beefier node above to keep its CPU for streaming; you can also switch detection off per camera."
+                : "Detection runs here. Pick another node to offload the model to a stronger machine on your tailnet."}
+            {det.node && !det.node_reachable && det.node_error ? ` Currently: ${det.node_error}` : ""}
+          </p>
           <ControlSlider
             label="Confidence"
             value={Math.round(det.confidence * 100)}

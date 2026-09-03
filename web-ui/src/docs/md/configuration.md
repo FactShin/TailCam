@@ -24,9 +24,12 @@ in SQLite instead.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `default_fps` | `15` | Stream/record frame rate. |
+| `default_fps` | `15` | Stream/record frame rate for every camera without its own override. |
 | `jpeg_quality` | `80` | MJPEG quality (1–100). |
-| `max_width` | `1280` | Max stream width (downscaled if larger). |
+| `max_width` | `1280` | Max stream width (downscaled if larger; `0` = native). |
+
+These are the **global** streaming defaults (Settings → Streaming). A camera can
+override any of them on its page; viewers can only request *lower* values.
 
 ## `[motion]`
 
@@ -54,7 +57,8 @@ See [Motion detection](motion-detection).
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `media_dir` | `""` | Folder for recordings/snapshots/thumbnails. Blank = `<data-dir>/media`. Set to an external drive/NAS path. Editable from Settings → Recording & storage. |
+| `media_dir` | `""` | Folder for recordings, snapshots, thumbnails **and timelapses**. Blank = `<data-dir>/media`. Set to an external drive/NAS path — pick it with the folder browser in Settings → Recording & storage. |
+| `node` | `""` | **Storage node**: record and timelapse this node's cameras *on another TailCam node* (peer key, hostname, or base URL). That node pulls the camera stream over the tailnet and writes the files to its own disk. Blank = save here. Falls back to local if the node is unreachable when a capture starts. See [Fleet](fleet#storage-node). |
 
 ## `[tailscale]`
 
@@ -147,3 +151,35 @@ See [MCP overview](mcp-overview) and [MCP security](mcp-security).
 | `allow_image_content` | `true` | Permit opt-in image content in results. |
 | `require_confirm_for_writes` | `true` | Confirm restart/AI/import writes. |
 | `require_confirm_for_fleet_writes` | `true` | Confirm node/fleet reloads. |
+
+## `[detection]`
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `true` (`false` on low-power hosts) | Global object-detection switch. Each camera can override it. |
+| `engine` | `"auto"` | `auto` / `ultralytics` / `opencv`. |
+| `model` | `""` | Ultralytics model name/path override. |
+| `confidence` | `0.45` | Minimum box confidence. |
+| `classes` | `[]` | Only report these labels (empty = all 80 COCO classes). |
+| `overlay_default` | `true` | Camera pages start with the box overlay on. |
+| `node` | `""` | **Detection node**: run detection and motion labeling on another TailCam node (peer key / hostname / URL). This node then never loads a model — frames are sent to the peer's `POST /api/detect-image`. |
+
+## Low-power hosts
+
+TailCam probes the host at startup (`/api/system` reports `host_model`,
+`ram_gb`, `cpu_count`, `low_power`). A **Raspberry Pi** or any machine with
+**under 2 GB of RAM** gets the low-power profile:
+
+| Setting | Standard | Low-power |
+| --- | --- | --- |
+| `stream.default_fps` | 15 | 10 |
+| `stream.jpeg_quality` | 80 | 70 |
+| `stream.max_width` | 1280 | 960 |
+| `motion.sample_fps` | 5 | 3 |
+| `detection.enabled` | true | **false** (route it to a bigger node instead) |
+
+It is applied to a fresh install, and once (config version 3) to an existing
+file — only for values still at their stock defaults, so anything you tuned
+stays. Force it either way with `TAILCAM_LOW_POWER=1|0` in the service
+environment. Recordings and HomeKit use the `ultrafast` x264 preset on these
+hosts, and the systemd unit caps malloc arenas / OpenCV threads.

@@ -19,19 +19,32 @@ router = APIRouter()
 @router.get("/stream/{camera_id:path}.mjpg")
 def mjpeg_stream(
     camera_id: str,
-    fps: int = Query(default=15, ge=1, le=60),
+    fps: int | None = Query(default=None, ge=1, le=60),
     zoom: float = Query(default=1.0, ge=1.0, le=8.0),
     pan_x: float = Query(default=0.5, ge=0.0, le=1.0),
     pan_y: float = Query(default=0.5, ge=0.0, le=1.0),
-    w: int = Query(default=0, ge=0, le=3840),
-    q: int = Query(default=80, ge=1, le=100),
+    w: int | None = Query(default=None, ge=0, le=3840),
+    q: int | None = Query(default=None, ge=1, le=100),
     ctx: AppContext = Depends(get_context),
 ) -> StreamingResponse:
+    """MJPEG stream. fps / q (quality) / w (max width) default to the camera's
+    device-wide stream settings; a client may only go *lower* (dashboard tiles
+    ask for a low-bandwidth stream), never above what the camera is set to."""
     buffer = ctx.manager.get_buffer(camera_id)
     if buffer is None:
         raise HTTPException(status_code=404, detail="camera not found")
-    transform = StreamTransform(zoom=zoom, pan_x=pan_x, pan_y=pan_y, max_width=w)
-    generator = ctx.mjpeg.stream(buffer, transform, fps, q)
+    settings = ctx.manager.effective_stream_for(camera_id) or {}
+    cam_fps = int(settings.get("fps", 15))
+    cam_q = int(settings.get("quality", 80))
+    cam_w = int(settings.get("max_width", 0))
+    eff_fps = min(fps, cam_fps) if fps else cam_fps
+    eff_q = min(q, cam_q) if q else cam_q
+    if w:
+        eff_w = min(w, cam_w) if cam_w else w
+    else:
+        eff_w = cam_w
+    transform = StreamTransform(zoom=zoom, pan_x=pan_x, pan_y=pan_y, max_width=eff_w)
+    generator = ctx.mjpeg.stream(buffer, transform, eff_fps, eff_q)
     return StreamingResponse(generator, media_type=ctx.mjpeg.media_type)
 
 

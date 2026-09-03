@@ -223,6 +223,19 @@ def doctor() -> None:
     pyv = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     (ok if sys.version_info[:2] >= (3, 10) else bad)("Python 3.10+", pyv)
 
+    from tailcam import hostinfo
+
+    prof = hostinfo.profile()
+    ok(
+        "Host",
+        f"{prof.model or 'generic'} · {prof.total_ram_gb} GB RAM · {prof.cpu_count} CPU · "
+        + ("low-power profile" if prof.low_power else "standard profile"),
+    )
+    if config.storage.node:
+        ok("Storage node", f"recordings/timelapses go to {config.storage.node}")
+    if config.detection.node:
+        ok("Detection node", f"object detection runs on {config.detection.node}")
+
     # Desktop app backends (optional — the server runs fine without them).
     from tailcam.desktop import have_tray, have_webview
 

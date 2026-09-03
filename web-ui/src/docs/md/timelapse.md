@@ -18,6 +18,19 @@ Start a capture on any camera with an interval and (optional) duration:
 API: `POST /api/cameras/<id>/timelapse/start`. While capturing, a timelapse is in
 the `capturing` state and counts frames as they're stored.
 
+### Across the fleet
+
+The Timelapse screen lists captures from **every node** (`GET /api/timelapse`
+merges peers; `scope=local` for one node). A capture started on another node's
+camera runs on that node and shows up here with its `host` and `proxy_prefix`,
+so **Stop & save**, encode, smooth, and delete all work from any dashboard.
+Cameras are keyed by host *and* id — two Pis with `/dev/video0` never collide.
+
+With a [storage node](fleet#storage-node) configured, the capture runs on that
+node instead: it pulls the camera's stream and keeps the frames and video on its
+disk; the row carries `source_host` (the camera's node) and `host` (where it is
+stored).
+
 ## Encoding
 
 When you stop a capture (or it hits its duration), encode the frames into a video:
@@ -27,8 +40,8 @@ POST /api/timelapse/<id>/stop
 POST /api/timelapse/<id>/encode
 ```
 
-The encoded MP4 is served at `/timelapse/<id>/file` with a thumbnail at
-`/timelapse/<id>/thumbnail`.
+The encoded MP4 (H.264, browser-playable, via the bundled ffmpeg) is served at
+`/timelapse/<id>/file` with a thumbnail at `/timelapse/<id>/thumbnail`.
 
 ## Smoothing (frame interpolation)
 
@@ -68,5 +81,8 @@ local [AI](ai-analysis) backend.
 ## Frames and storage
 
 Individual captured frames are addressable at
-`/timelapse/<id>/frame/<frame_number>`. Timelapse bytes count toward the storage
-total reported by the system. Delete a timelapse with `DELETE /api/timelapse/<id>`.
+`/timelapse/<id>/frame/<frame_number>`. Timelapses live under the media
+location (`<media_dir>/timelapse/<id>/`), so a custom save folder or external
+drive applies to them too; captures made before 1.8 stay where they were.
+Timelapse bytes count toward the storage total reported by the system. Delete a
+timelapse with `DELETE /api/timelapse/<id>`.

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from tailcam import __version__
 from tailcam.camera.manager import ManagedCamera
@@ -31,12 +31,15 @@ from tailcam.web.schemas import (
     DetectionResult,
     DetectionUpdate,
     EngineInfo,
+    FsBrowseInfo,
+    FsEntry,
     HACameraEntry,
     HomeAssistantStatus,
     HomeAssistantUpdate,
     HomeKitStatus,
     HomeKitUpdate,
     HostInfo,
+    ImageAnalysisResult,
     InstalledPluginEntry,
     IntegrationsInfo,
     MarketPluginEntry,
@@ -65,7 +68,12 @@ from tailcam.web.schemas import (
     SampleInfo,
     SampleRelabel,
     StorageInfo,
+    StorageNodeInfo,
     StorageUpdate,
+    StreamingDefaults,
+    StreamingDefaultsUpdate,
+    StreamOverrides,
+    StreamSettingsModel,
     SystemInfo,
     TimelapseAnalysisEventInfo,
     TimelapseInfo,
@@ -93,7 +101,7 @@ def _camera_info(ctx: AppContext, cam: ManagedCamera) -> CameraInfo:
         fps=fps,
         width=cam.properties.width,
         height=cam.properties.height,
-        recording=ctx.recorder.is_recording(cam.descriptor.id),
+        recording=ctx.capture.is_recording(cam.descriptor.id),
         motion_enabled=ctx.motion_enabled(cam.descriptor.id),
         properties=cam.properties.to_dict(),
         transform=TransformModel(
@@ -101,6 +109,10 @@ def _camera_info(ctx: AppContext, cam: ManagedCamera) -> CameraInfo:
             flip_h=cam.transform.flip_h,
             flip_v=cam.transform.flip_v,
         ),
+        stream=StreamSettingsModel(**cam.effective_stream(ctx.config)),
+        stream_overrides=StreamOverrides(**cam.stream),
+        detection_enabled=ctx.manager.detection_enabled_for(cam.descriptor.id),
+        detection_override=cam.detection_enabled,
         last_error=worker.state.last_error if worker else None,
         host=ctx.local_host,
         proxy_prefix="",
@@ -202,6 +214,13 @@ def update_camera(
         settings["properties"] = update.properties.model_dump(exclude_none=True)
     if update.transform is not None:
         settings["transform"] = update.transform.model_dump()
+    if update.stream is not None:
+        # Only fields the client sent change; an explicit null clears an override.
+        settings["stream"] = update.stream.model_dump(exclude_unset=True)
+    if update.clear_detection_override:
+        settings["detection_enabled"] = None
+    elif update.detection_enabled is not None:
+        settings["detection_enabled"] = update.detection_enabled
     if settings:
         ctx.manager.update_settings(camera_id, settings)
 
@@ -243,18 +262,24 @@ def snapshot(camera_id: str, ctx: AppContext = Depends(get_context)) -> MediaCre
 
 @router.post("/cameras/{camera_id:path}/recording/start", response_model=OkResponse)
 def start_recording(camera_id: str, ctx: AppContext = Depends(get_context)) -> OkResponse:
-    started = ctx.recorder.start(camera_id, fps=ctx.config.stream.default_fps)
+    """Record this camera — here, or on the configured storage node."""
+    started = ctx.capture.start_recording(camera_id)
     if not started:
         raise HTTPException(status_code=409, detail="already recording or camera unavailable")
-    return OkResponse(detail="recording started")
+    where = ctx.capture.configured_node if ctx.capture.target() else "this device"
+    return OkResponse(detail=f"recording started on {where}")
 
 
 @router.post("/cameras/{camera_id:path}/recording/stop", response_model=MediaCreatedResponse)
 def stop_recording(camera_id: str, ctx: AppContext = Depends(get_context)) -> MediaCreatedResponse:
-    record = ctx.recorder.stop(camera_id)
+    record = ctx.capture.stop_recording(camera_id)
     if record is None:
         raise HTTPException(status_code=409, detail="not recording")
     return MediaCreatedResponse(media_id=record.id)
+
+
+# One inference per camera per this many seconds is shared by every viewer.
+_DETECT_CACHE_SECONDS = 1.0
 
 
 @router.post("/cameras/{camera_id:path}/detect", response_model=DetectionResult)
@@ -263,51 +288,121 @@ async def detect_objects(
 ) -> DetectionResult:
     """Run the active detection model on the camera's latest frame and return
     bounding boxes (where + what). 200 with ``detector_active=false`` when no
-    detection model is active — the UI just shows no overlay."""
+    detection model is active or detection is off for this camera — the UI
+    just shows no overlay. Results are cached ~1s per camera so several open
+    viewers cost one inference."""
     import anyio
 
-    # Cheap early-return first: this endpoint is polled ~every 1.5s per open
-    # viewer, and the active_model() DB read is only needed for the display
-    # name once we know detection is on.
+    # Cheap early-returns first: this endpoint is polled ~every 1.5s per open
+    # viewer.
+    if not ctx.manager.detection_enabled_for(camera_id):
+        return DetectionResult(camera_id=camera_id, detector_active=False)
     if not ctx.inference.detection_active:
         return DetectionResult(camera_id=camera_id, detector_active=False)
-    active_model = ctx.store.active_model()
+    cached = ctx.cached_detection(camera_id, _DETECT_CACHE_SECONDS)
+    if cached is not None:
+        return cached  # type: ignore[return-value]
     buffer = ctx.manager.get_buffer(camera_id)
     if buffer is None:
         raise HTTPException(status_code=404, detail="camera not found")
-    frame = await anyio.to_thread.run_sync(buffer.await_latest, -1, 2.0)
-    if frame is None:
-        raise HTTPException(status_code=503, detail="no frame available")
-    detections = await anyio.to_thread.run_sync(ctx.inference.detect, frame.image)
-    boxes = [
-        DetectionBox(
-            label=d.label, confidence=d.confidence, cx=d.cx, cy=d.cy, w=d.w, h=d.h
-        )
-        for d in (detections or [])
-    ]
+
+    def _run() -> DetectionResult:
+        with ctx.detect_lock(camera_id):
+            again = ctx.cached_detection(camera_id, _DETECT_CACHE_SECONDS)
+            if again is not None:
+                return again  # type: ignore[return-value]
+            frame = buffer.await_latest(-1, 2.0)
+            if frame is None:
+                raise HTTPException(status_code=503, detail="no frame available")
+            detections = ctx.inference.detect(frame.image)
+            result = DetectionResult(
+                camera_id=camera_id,
+                detector_active=True,
+                model_name=_detection_model_name(ctx),
+                boxes=[
+                    DetectionBox(
+                        label=d.label, confidence=d.confidence, cx=d.cx, cy=d.cy, w=d.w, h=d.h
+                    )
+                    for d in (detections or [])
+                ],
+                note=ctx.inference.detection_note(),
+            )
+            ctx.store_detection(camera_id, result)
+            return result
+
+    return await anyio.to_thread.run_sync(_run)
+
+
+def _detection_model_name(ctx: AppContext) -> str | None:
+    active_model = ctx.store.active_model()
     if active_model is not None and getattr(active_model, "task", "") == "detection":
-        model_name: str | None = active_model.name
-    else:
-        model_name = ctx.detector.status().model or None
-    return DetectionResult(
-        camera_id=camera_id,
+        return active_model.name
+    remote = ctx.remote_detector()
+    if remote is not None:
+        return remote.model_name()
+    return ctx.detector.status().model or None
+
+
+@router.post("/detect-image", response_model=ImageAnalysisResult)
+async def detect_image(
+    request: Request,
+    mode: str = Query("detect", pattern="^(detect|analyze)$"),
+    ctx: AppContext = Depends(get_context),
+) -> ImageAnalysisResult:
+    """Detect objects in (``mode=detect``) or label (``mode=analyze``) one
+    uploaded JPEG/PNG, using THIS node's pipeline. Peers whose ``[detection]
+    node`` points here send their frames to this endpoint, so a Pi can stream
+    while a bigger box runs the models."""
+    import anyio
+    import cv2
+    import numpy as np
+
+    body = await request.body()
+    if not body or len(body) > 12 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="image body required (max 12 MB)")
+    image = cv2.imdecode(np.frombuffer(body, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if image is None:
+        raise HTTPException(status_code=400, detail="could not decode image")
+    if mode == "analyze":
+        analysis = await anyio.to_thread.run_sync(ctx.inference.analyze, image)
+        return ImageAnalysisResult(
+            detector_active=ctx.inference.enabled,
+            model_name=_detection_model_name(ctx),
+            label=analysis.label if analysis else None,
+            description=analysis.description if analysis else None,
+            confidence=analysis.confidence if analysis else None,
+        )
+    if not ctx.inference.detection_active:
+        return ImageAnalysisResult(detector_active=False)
+    detections = await anyio.to_thread.run_sync(ctx.inference.detect, image)
+    return ImageAnalysisResult(
         detector_active=True,
-        model_name=model_name,
-        boxes=boxes,
-        note=ctx.inference.detection_note(),
+        model_name=_detection_model_name(ctx),
+        boxes=[
+            DetectionBox(label=d.label, confidence=d.confidence, cx=d.cx, cy=d.cy, w=d.w, h=d.h)
+            for d in (detections or [])
+        ],
     )
 
 
 @router.get("/detection", response_model=DetectionInfo)
 def detection_info(ctx: AppContext = Depends(get_context)) -> DetectionInfo:
     """Built-in object detection status: engine, model, download progress."""
+    from tailcam import hostinfo
+
     s = ctx.detector.status()
     cfg = ctx.config.detection
+    remote = ctx.remote_detector()
+    remote_status = remote.status() if remote else None
     return DetectionInfo(
         enabled=s.enabled, engine=s.engine, model=s.model, status=s.status,
         percent=s.percent, detail=s.detail, error=s.error,
         confidence=cfg.confidence, classes=cfg.classes,
         overlay_default=cfg.overlay_default,
+        node=cfg.node,
+        node_reachable=bool(remote_status["reachable"]) if remote_status else True,
+        node_error=str(remote_status["error"]) if remote_status else "",
+        low_power_host=hostinfo.is_low_power(),
     )
 
 
@@ -317,9 +412,13 @@ def update_detection(
 ) -> DetectionInfo:
     """Change built-in detection settings (persisted; takes effect immediately)."""
     cfg = ctx.config.detection
+    if update.node is not None:
+        cfg.node = update.node.strip()
+        # Clear stale per-camera results so the new source takes over at once.
+        ctx._detect_cache.clear()
     if update.enabled is not None:
         cfg.enabled = update.enabled
-        if update.enabled:
+        if update.enabled and not cfg.node:
             ctx.detector.ensure_ready()
     if update.confidence is not None:
         cfg.confidence = max(0.05, min(0.95, update.confidence))
@@ -342,6 +441,7 @@ def _media_info(ctx: AppContext, record) -> MediaInfo:
         has_thumbnail=bool(record.thumbnail),
         host=ctx.local_host,
         proxy_prefix="",
+        source_host=record.source_host,
     )
 
 
@@ -449,6 +549,7 @@ def _timelapse_info(
         analysis_latest_state=latest_state,
         host=ctx.local_host,
         proxy_prefix="",
+        source_host=r.source_host,
     )
 
 
@@ -458,16 +559,36 @@ def list_timelapse_presets() -> list[dict[str, object]]:
 
 
 @router.get("/timelapse", response_model=list[TimelapseInfo])
-def list_timelapses(
+async def list_timelapses(
     camera_id: str | None = None,
     limit: int = 100,
+    scope: str = Query("all", pattern="^(all|local)$"),
     ctx: AppContext = Depends(get_context),
 ) -> list[TimelapseInfo]:
+    """Timelapses across the fleet (default) or only this node's (``scope=local``).
+
+    A capture started on a peer's camera runs on that peer (or on the storage
+    node); without aggregation it would be invisible from the node you opened —
+    and impossible to stop — so every list merges the peers' local lists."""
     summaries = ctx.store.timelapse_analysis_summaries()
-    return [
+    local = [
         _timelapse_info(ctx, r, summaries.get(r.id or 0, (0, "")))
         for r in ctx.timelapse.list(camera_id, limit)
     ]
+    if scope == "local":
+        return local
+    remote_raw = await ctx.cluster.remote_timelapses(
+        {"limit": limit, **({"camera_id": camera_id} if camera_id else {})}
+    )
+    remote: list[TimelapseInfo] = []
+    for item in remote_raw:
+        try:
+            remote.append(TimelapseInfo.model_validate(item))
+        except ValueError:
+            continue  # a peer on an older version — skip rather than 500
+    merged = local + remote
+    merged.sort(key=lambda t: t.created_ts, reverse=True)
+    return merged[:limit]
 
 
 @router.post("/cameras/{camera_id:path}/timelapse/start", response_model=TimelapseInfo)
@@ -482,13 +603,12 @@ def start_timelapse(
         if req.analysis_enabled is None
         else req.analysis_enabled
     )
-    if analysis_enabled and not ctx.analyzer.enabled:
+    if analysis_enabled and not ctx.analyzer.enabled and not ctx.capture.target():
         raise HTTPException(
             status_code=409,
             detail="Enable and configure Ollama on the Models page before printer analysis",
         )
-    record = ctx.timelapse.start(
-        camera_id,
+    params = dict(
         name=req.name,
         interval_seconds=req.interval_seconds,
         output_fps=req.output_fps,
@@ -504,8 +624,12 @@ def start_timelapse(
         analysis_enabled=req.analysis_enabled,
         analysis_cadence_seconds=req.analysis_cadence_seconds,
     )
+    # Runs here, or on the storage node (which pulls this camera's stream).
+    record = ctx.capture.start_timelapse(camera_id, params)
     if record is None:
         raise HTTPException(status_code=503, detail="camera unavailable")
+    if isinstance(record, dict):
+        return TimelapseInfo.model_validate(record)
     return _timelapse_info(ctx, record)
 
 
@@ -952,6 +1076,9 @@ def stop_run(run_id: int, ctx: AppContext = Depends(get_context)) -> TrainingRun
 
 @router.get("/system", response_model=SystemInfo)
 def system_info(ctx: AppContext = Depends(get_context)) -> SystemInfo:
+    from tailcam import hostinfo
+
+    prof = hostinfo.profile()
     status = ctx.tailscale.status()
     port = ctx.config.server.port
     return SystemInfo(
@@ -963,7 +1090,37 @@ def system_info(ctx: AppContext = Depends(get_context)) -> SystemInfo:
         local_url=f"http://localhost:{port}/",
         media_bytes=ctx.gallery.total_bytes() + ctx.store.total_timelapse_bytes(),
         hidden_count=len(ctx.config.cameras.hidden),
+        host_model=prof.model,
+        ram_gb=prof.total_ram_gb,
+        cpu_count=prof.cpu_count,
+        low_power=prof.low_power,
     )
+
+
+def _streaming_defaults(ctx: AppContext) -> StreamingDefaults:
+    st = ctx.config.stream
+    return StreamingDefaults(fps=st.default_fps, quality=st.jpeg_quality, max_width=st.max_width)
+
+
+@router.get("/streaming", response_model=StreamingDefaults)
+def streaming_defaults(ctx: AppContext = Depends(get_context)) -> StreamingDefaults:
+    """Global stream defaults every camera inherits (fps, JPEG quality, max width)."""
+    return _streaming_defaults(ctx)
+
+
+@router.post("/streaming", response_model=StreamingDefaults)
+def update_streaming_defaults(
+    update: StreamingDefaultsUpdate, ctx: AppContext = Depends(get_context)
+) -> StreamingDefaults:
+    st = ctx.config.stream
+    if update.fps is not None:
+        st.default_fps = update.fps
+    if update.quality is not None:
+        st.jpeg_quality = update.quality
+    if update.max_width is not None:
+        st.max_width = update.max_width
+    ctx.config.save()
+    return _streaming_defaults(ctx)
 
 
 @router.post("/system/reload", response_model=list[CameraInfo])
@@ -1460,11 +1617,36 @@ def _writable(path: Path) -> bool:
         return False
 
 
+async def _storage_nodes(ctx: AppContext, local: StorageInfo) -> list[StorageNodeInfo]:
+    """This device plus every online peer, with their free disk (for the
+    storage-node picker)."""
+    nodes = [
+        StorageNodeInfo(
+            node_key="local", host=ctx.local_host, online=True, media_dir=local.media_dir,
+            disk_total=local.disk_total, disk_free=local.disk_free, version=__version__,
+        )
+    ]
+    peers = {p.key: p for p in await ctx.cluster.peers()}
+    remote = await ctx.cluster.remote_json("/api/storage")
+    for key, peer in peers.items():
+        data = remote.get(key) or {}
+        nodes.append(
+            StorageNodeInfo(
+                node_key=key, host=peer.host, online=peer.online and bool(data),
+                media_dir=str(data.get("media_dir", "")),
+                disk_total=int(data.get("disk_total", 0) or 0),
+                disk_free=int(data.get("disk_free", 0) or 0),
+                version=peer.version,
+            )
+        )
+    return nodes
+
+
 def _storage_info(ctx: AppContext) -> StorageInfo:
     import os
     import shutil
 
-    from tailcam import paths
+    from tailcam import hostinfo, paths
 
     resolved = paths.media_dir()
     custom = ctx.config.storage.media_dir.strip()
@@ -1481,6 +1663,7 @@ def _storage_info(ctx: AppContext) -> StorageInfo:
         total = free = used = 0
     writable = os.access(resolved if resolved.exists() else probe, os.W_OK)
     m, r = ctx.config.motion, ctx.config.retention
+    route = ctx.capture.status()
     return StorageInfo(
         media_dir=str(resolved),
         custom_dir=custom,
@@ -1491,6 +1674,11 @@ def _storage_info(ctx: AppContext) -> StorageInfo:
         disk_used=used,
         media_bytes=ctx.gallery.total_bytes(),
         media_count=ctx.store.count_media(),
+        timelapse_bytes=ctx.store.total_timelapse_bytes(),
+        node=str(route["node"]),
+        node_online=bool(route["node_online"]),
+        node_error=str(route["error"]),
+        low_power_host=hostinfo.is_low_power(),
         auto_record=m.auto_record,
         record_tail_seconds=m.record_tail_seconds,
         retention_enabled=r.enabled,
@@ -1500,18 +1688,40 @@ def _storage_info(ctx: AppContext) -> StorageInfo:
 
 
 @router.get("/storage", response_model=StorageInfo)
-def storage_info(ctx: AppContext = Depends(get_context)) -> StorageInfo:
-    """Where recordings/snapshots are saved, disk usage, motion auto-record, and
-    the retention budget."""
-    return _storage_info(ctx)
+async def storage_info(
+    scope: str = Query("all", pattern="^(all|local)$"),
+    ctx: AppContext = Depends(get_context),
+) -> StorageInfo:
+    """Where recordings/snapshots are saved, disk usage, motion auto-record, the
+    retention budget, and (``scope=all``) every fleet node's disk for the
+    storage-node picker."""
+    info = _storage_info(ctx)
+    if scope == "all":
+        info.nodes = await _storage_nodes(ctx, info)
+    return info
 
 
 @router.post("/storage", response_model=StorageInfo)
-def update_storage(update: StorageUpdate, ctx: AppContext = Depends(get_context)) -> StorageInfo:
-    """Set the save location (validated for writability), motion auto-record, and
-    retention. A blank media_dir reverts to the default app data location."""
+async def update_storage(
+    update: StorageUpdate, ctx: AppContext = Depends(get_context)
+) -> StorageInfo:
+    """Set the save location (validated for writability), the storage node,
+    motion auto-record, and retention. A blank media_dir reverts to the default
+    app data location; a blank node saves on this device."""
     from tailcam import paths
 
+    if update.node is not None:
+        node = update.node.strip()
+        if node and node.lower() in ("local", ctx.local_host.lower()):
+            node = ""
+        if node and ctx.resolve_node_base(node) is None:
+            await ctx.cluster.refresh(force=True)
+            if ctx.resolve_node_base(node) is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"'{node}' is not a TailCam node visible on the tailnet",
+                )
+        ctx.config.storage.node = node
     if update.media_dir is not None:
         new = update.media_dir.strip()
         if new:
@@ -1542,7 +1752,111 @@ def update_storage(update: StorageUpdate, ctx: AppContext = Depends(get_context)
     if update.max_age_days is not None:
         ctx.config.retention.max_age_days = max(1, update.max_age_days)
     ctx.config.save()
-    return _storage_info(ctx)
+    info = _storage_info(ctx)
+    info.nodes = await _storage_nodes(ctx, info)
+    return info
+
+
+def _fs_roots() -> list[FsEntry]:
+    """Sensible starting points: home, the media default, and mounted drives."""
+    import os
+    import sys
+
+    from tailcam import paths
+
+    roots: list[Path] = [Path.home(), paths.default_media_dir()]
+    if sys.platform == "win32":
+        import string
+
+        for letter in string.ascii_uppercase:
+            drive = Path(f"{letter}:\\")
+            if drive.exists():
+                roots.append(drive)
+    else:
+        roots.append(Path("/"))
+        for base in ("/media", "/mnt", "/Volumes", "/srv", "/run/media"):
+            b = Path(base)
+            if b.is_dir():
+                try:
+                    roots.extend(p for p in sorted(b.iterdir()) if p.is_dir())
+                except OSError:
+                    continue
+                if base == "/run/media":  # /run/media/<user>/<drive>
+                    for user_dir in list(roots):
+                        if str(user_dir).startswith("/run/media/") and user_dir.is_dir():
+                            try:
+                                roots.extend(
+                                    p for p in sorted(user_dir.iterdir()) if p.is_dir()
+                                )
+                            except OSError:
+                                pass
+    out: list[FsEntry] = []
+    seen: set[str] = set()
+    for r in roots:
+        try:
+            resolved = str(r.resolve())
+        except OSError:
+            continue
+        if resolved in seen or not r.exists():
+            continue
+        seen.add(resolved)
+        out.append(FsEntry(name=r.name or resolved, path=resolved, writable=os.access(r, os.W_OK)))
+    return out
+
+
+@router.get("/fs/browse", response_model=FsBrowseInfo)
+def fs_browse(
+    path: str = Query("", max_length=4096),
+    show_hidden: bool = False,
+) -> FsBrowseInfo:
+    """List the sub-folders of ``path`` on THIS node (folders only, never file
+    contents) so the save location can be picked without typing a path from
+    memory — including on a remote node, through the proxy. Blank ``path``
+    returns starting points (home, mounted drives)."""
+    import os
+    import shutil
+
+    roots = _fs_roots()
+    if not path.strip():
+        return FsBrowseInfo(path="", roots=roots)
+    target = Path(path).expanduser()
+    if not target.is_absolute():
+        return FsBrowseInfo(path=path, exists=False, roots=roots, error="path must be absolute")
+    try:
+        target = target.resolve()
+    except OSError as exc:
+        return FsBrowseInfo(path=path, exists=False, roots=roots, error=str(exc))
+    parent = str(target.parent) if target.parent != target else None
+    if not target.exists():
+        return FsBrowseInfo(path=str(target), parent=parent, exists=False, roots=roots,
+                            error="folder does not exist (it will be created when set)")
+    if not target.is_dir():
+        return FsBrowseInfo(path=str(target), parent=parent, exists=False, roots=roots,
+                            error="not a folder")
+    entries: list[FsEntry] = []
+    try:
+        for child in sorted(target.iterdir(), key=lambda c: c.name.lower()):
+            if not show_hidden and child.name.startswith("."):
+                continue
+            try:
+                if not child.is_dir():
+                    continue
+                entries.append(
+                    FsEntry(name=child.name, path=str(child), writable=os.access(child, os.W_OK))
+                )
+            except OSError:
+                continue
+    except PermissionError:
+        return FsBrowseInfo(path=str(target), parent=parent, roots=roots, error="permission denied")
+    try:
+        du = shutil.disk_usage(target)
+        total, free = du.total, du.free
+    except OSError:
+        total = free = 0
+    return FsBrowseInfo(
+        path=str(target), parent=parent, exists=True, writable=os.access(target, os.W_OK),
+        disk_total=total, disk_free=free, entries=entries, roots=roots,
+    )
 
 
 @router.get("/update", response_model=UpdateInfo)

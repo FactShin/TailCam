@@ -43,7 +43,11 @@ export function Gallery() {
   const toast = useToast();
   const cameras = useCameras().data ?? [];
   // Media is aggregated across every tailnet node; filter chips show all cameras.
-  const camName = (id: string) => cameras.find((c) => c.id === id)?.name ?? id;
+  // Camera ids repeat across nodes (/dev/video0 on every Pi): match host too.
+  const camName = (row: { camera_id: string; host: string; source_host?: string }) =>
+    cameras.find((c) => c.id === row.camera_id && c.host === (row.source_host || row.host))?.name
+    ?? cameras.find((c) => c.id === row.camera_id)?.name
+    ?? row.camera_id;
 
   const [cam, setCam] = useState("");
   const [type, setType] = useState("");
@@ -107,14 +111,14 @@ export function Gallery() {
         <>
           <div className="media-grid">
             {rows.map((m, i) => (
-              <button key={`${m.host}/${m.id}`} className="media-card" onClick={() => setLight(i)} aria-label={`${m.media_type} from ${camName(m.camera_id)}`}>
+              <button key={`${m.host}/${m.id}`} className="media-card" onClick={() => setLight(i)} aria-label={`${m.media_type} from ${camName(m)}`}>
                 <div className="media-thumb">
                   <img className="thumb-canvas" src={m.has_thumbnail ? mediaThumbUrl(m.proxy_prefix, m.id) : mediaFileUrl(m.proxy_prefix, m.id)} alt="" loading="lazy" />
                   {m.media_type === "recording" && <span className="media-play"><IconPlay size={20} /></span>}
                   <span className={`media-type-tag ${m.media_type}`}>{m.media_type === "recording" ? "REC" : "IMG"}</span>
                 </div>
                 <div className="media-meta">
-                  <span className="media-cam">{camName(m.camera_id)} <span className="media-host mono">{m.host}</span></span>
+                  <span className="media-cam">{camName(m)} <span className="media-host mono">{m.host}</span></span>
                   <span className="media-time mono">{fmtAgo(m.created_ts)}</span>
                   <span className="media-sub mono">
                     <span className={`trigger trigger-${m.trigger}`}>{m.trigger}</span> · {fmtBytes(m.size_bytes)}
@@ -130,7 +134,7 @@ export function Gallery() {
       {light != null && rows[light] && (
         <Lightbox
           row={rows[light]}
-          camName={camName(rows[light].camera_id)}
+          camName={camName(rows[light])}
           hasPrev={light > 0}
           hasNext={light < rows.length - 1}
           onPrev={() => setLight((i) => Math.max(0, (i ?? 0) - 1))}
@@ -144,7 +148,7 @@ export function Gallery() {
         title="Delete media?"
         danger
         confirmLabel="Delete"
-        body={confirm ? `This ${confirm.media_type} from ${camName(confirm.camera_id)} will be permanently removed.` : ""}
+        body={confirm ? `This ${confirm.media_type} from ${camName(confirm)} will be permanently removed.` : ""}
         onCancel={() => setConfirm(null)}
         onConfirm={() => confirm && doDelete(confirm)}
       />

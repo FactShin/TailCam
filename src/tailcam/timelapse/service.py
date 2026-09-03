@@ -12,12 +12,14 @@ import math
 import shutil
 import threading
 import time
+from collections.abc import Callable
 from functools import partial
 from pathlib import Path
 
 import cv2
 
 from tailcam import paths
+from tailcam.camera.frame import FrameBuffer
 from tailcam.camera.manager import CameraManager
 from tailcam.config import TimelapseConfig
 from tailcam.logging_setup import get_logger
@@ -27,6 +29,7 @@ from tailcam.streaming.encoder import encode_jpeg
 from tailcam.timelapse.analyzer import TimelapseAnalysisQueue
 from tailcam.timelapse.ffmpeg import (
     build_encode_command,
+    build_plain_encode_command,
     build_smooth_command,
     ffmpeg_path,
     run_ffmpeg,
@@ -75,16 +78,25 @@ class TimelapseService:
         smooth_quality: str | None = None,
         analysis_enabled: bool | None = None,
         analysis_cadence_seconds: float | None = None,
+        source_host: str = "",
+        buffer: FrameBuffer | None = None,
+        reacquire: Callable[[], FrameBuffer | None] | None = None,
+        camera_name: str | None = None,
     ) -> TimelapseRecord | None:
-        buffer = self._manager.get_buffer(camera_id)
+        """Start a capture. By default frames come from this node's camera
+        ``camera_id``; a storage node capturing a *peer's* camera passes the
+        pulled ``buffer`` (+ ``reacquire``) and the owning ``source_host``."""
+        if buffer is None:
+            buffer = self._manager.get_buffer(camera_id)
+            reacquire = partial(self._manager.get_buffer, camera_id)
         if buffer is None:
             return None
         interval = interval_seconds or self._config.default_interval_seconds
         fps = output_fps or self._config.default_output_fps
         capture_quality = jpeg_quality or self._config.jpeg_quality
         frame_cap = self._config.max_frames if max_frames is None else max_frames
-        cam = self._manager.get(camera_id)
-        cam_name = cam.name if cam else camera_id
+        cam = self._manager.get(camera_id) if not source_host else None
+        cam_name = camera_name or (cam.name if cam else camera_id)
         ts = time.time()
         record = TimelapseRecord(
             id=None,
@@ -119,6 +131,7 @@ class TimelapseService:
             analysis_cadence_seconds=(
                 analysis_cadence_seconds or self._config.analysis_cadence_seconds
             ),
+            source_host=source_host,
         )
         tl_id = self._store.add_timelapse(record)
         record.id = tl_id
@@ -139,7 +152,7 @@ class TimelapseService:
                 tl_id, n, frames_dir, analysis_every, analysis_enabled
             ),
             on_complete=lambda: self._finalize_async(tl_id),
-            reacquire=partial(self._manager.get_buffer, camera_id),
+            reacquire=reacquire,
         )
         with self._lock:
             self._workers[tl_id] = worker
@@ -199,6 +212,10 @@ class TimelapseService:
             worker = self._workers.get(tl_id)
         if worker is not None:
             worker.stop()  # finish the current frame and join the capture thread
+            if worker.alive:
+                log.warning(
+                    "timelapse %s: capture thread did not exit in time; encoding anyway", tl_id
+                )
             self._store.update_timelapse(
                 tl_id,
                 frames_captured=worker.frames_captured,
@@ -229,6 +246,11 @@ class TimelapseService:
             if record is None:
                 return
             result = _encode_frames(Path(record.frames_dir), record.output_fps)
+            if result is None and not any(Path(record.frames_dir).glob("*.jpg")):
+                # Interrupted before a single frame landed — nothing to keep.
+                self._store.update_timelapse(tl_id, state="error")
+                log.warning("timelapse %s: no frames were captured", tl_id)
+                return
             if result is None:
                 self._store.update_timelapse(tl_id, state="error")
                 log.warning("timelapse %s: nothing to encode", tl_id)
@@ -443,7 +465,13 @@ class TimelapseService:
         record = self._store.get_timelapse(tl_id)
         if record is None:
             return False
-        job_dir = paths.timelapse_dir() / str(tl_id)
+        # The job folder is wherever this capture was written (the media
+        # location can change between captures) — never a recomputed path.
+        job_dir = (
+            Path(record.frames_dir).parent
+            if record.frames_dir
+            else paths.timelapse_dir() / str(tl_id)
+        )
         try:
             if job_dir.exists():
                 shutil.rmtree(job_dir, ignore_errors=True)
@@ -482,25 +510,52 @@ def _encode_frames(
         return None
     h, w = first.shape[:2]
     out_path = frames_dir.parent / "timelapse.mp4"
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
-    writer = cv2.VideoWriter(str(out_path), fourcc, float(max(1, fps)), (w, h))
-    if not writer.isOpened():
-        log.error("timelapse: failed to open VideoWriter at %s", out_path)
+    written = _encode_with_ffmpeg(frames_dir, fps, out_path, (w, h), len(frames))
+    if written == 0:
+        written = _encode_with_opencv(frames, fps, out_path, (w, h))
+    if written == 0:
         return None
+    thumb_path = _write_timelapse_thumb(first, frames_dir.parent)
+    return out_path, thumb_path, (w, h, written)
+
+
+def _encode_with_ffmpeg(
+    frames_dir: Path, fps: int, out_path: Path, size: tuple[int, int], count: int
+) -> int:
+    """H.264 (browser-playable) via ffmpeg. Returns frames encoded, 0 on failure."""
+    exe = ffmpeg_path()
+    if exe is None:
+        return 0
+    pending = out_path.with_suffix(".pending.mp4")
+    pending.unlink(missing_ok=True)
+    ok = run_ffmpeg(build_plain_encode_command(exe, frames_dir, fps, pending, size))
+    if ok and pending.exists() and pending.stat().st_size > 0:
+        pending.replace(out_path)
+        return count
+    pending.unlink(missing_ok=True)
+    log.warning("timelapse: ffmpeg encode failed; falling back to OpenCV writer")
+    return 0
+
+
+def _encode_with_opencv(
+    frames: list[Path], fps: int, out_path: Path, size: tuple[int, int]
+) -> int:
+    from tailcam.media.video_sink import OpenCVSink
+
+    w, h = size
+    sink = OpenCVSink(out_path, float(max(1, fps)), (w, h))
+    if not sink.opened:
+        log.error("timelapse: failed to open VideoWriter at %s", out_path)
+        return 0
     written = 0
     for frame_path in frames:
         img = cv2.imread(str(frame_path))
         if img is None:
             continue
-        if img.shape[:2] != (h, w):
-            img = cv2.resize(img, (w, h))
-        writer.write(img)
+        sink.write(img)
         written += 1
-    writer.release()
-    if written == 0:
-        return None
-    thumb_path = _write_timelapse_thumb(first, frames_dir.parent)
-    return out_path, thumb_path, (w, h, written)
+    sink.close()
+    return written
 
 
 def _write_timelapse_thumb(image, job_dir: Path) -> Path | None:

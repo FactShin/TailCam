@@ -65,6 +65,10 @@ class TimelapseCaptureWorker:
         self._stop.set()
         self._thread.join(timeout=12.0)
 
+    @property
+    def alive(self) -> bool:
+        return self._thread.is_alive()
+
     def _run(self) -> None:
         next_due = time.monotonic()
         deadline = (time.monotonic() + self.duration) if self.duration else None
