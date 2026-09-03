@@ -97,21 +97,28 @@ class FfmpegPipeSink:
             return False
 
     def close(self) -> bool:
-        try:
-            if self._proc.stdin is not None:
-                self._proc.stdin.close()
-        except OSError:
-            pass
+        # communicate() closes stdin itself (that's ffmpeg's EOF), then drains
+        # stderr while waiting, so a chatty encoder can't deadlock on a full
+        # pipe. Closing stdin by hand first makes communicate() raise
+        # "flush of closed file" and leaves the process un-waited.
         err = b""
         try:
-            # communicate() drains stderr while waiting so a chatty encoder
-            # can't deadlock on a full pipe.
             _, err = self._proc.communicate(timeout=120)
+        except ValueError:
+            # stdin already gone (a broken pipe closed it): just wait.
+            try:
+                self._proc.wait(timeout=120)
+            except subprocess.TimeoutExpired:
+                self._proc.kill()
+                self._proc.wait(timeout=10)
+                log.error("ffmpeg did not finish %s in time; killed", self.path.name)
+                self._discard_partial()
+                return False
         except subprocess.TimeoutExpired:
             self._proc.kill()
             try:
                 _, err = self._proc.communicate(timeout=10)
-            except subprocess.TimeoutExpired:  # pragma: no cover - defensive
+            except (subprocess.TimeoutExpired, ValueError):  # pragma: no cover
                 pass
             log.error("ffmpeg did not finish %s in time; killed", self.path.name)
             self._discard_partial()

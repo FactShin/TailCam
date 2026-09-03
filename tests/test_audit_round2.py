@@ -356,3 +356,21 @@ def test_snapshot_accepts_view_params(client, params):
 
         img = cv2.imdecode(np.frombuffer(r.content, np.uint8), cv2.IMREAD_COLOR)
         assert img.shape[1] == 64
+
+
+def test_ffmpeg_sink_round_trip_produces_a_finished_mp4(tmp_path):
+    """The real encoder path: frames in, a complete (moov-bearing) mp4 out, and
+    close() must not raise on the already-consumed stdin."""
+    from tailcam.media import video_sink as vs
+    from tailcam.timelapse.ffmpeg import ffmpeg_path
+
+    if ffmpeg_path() is None:
+        pytest.skip("no ffmpeg")
+    out = tmp_path / "clip.mp4"
+    sink = vs.open_video_sink(out, 10, (64, 48))
+    assert isinstance(sink, vs.FfmpegPipeSink)
+    for i in range(12):
+        assert sink.write(np.full((48, 64, 3), i * 20, np.uint8))
+    assert sink.close() is True
+    data = out.read_bytes()
+    assert b"moov" in data and b"avc1" in data
