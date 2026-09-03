@@ -116,5 +116,7 @@ select = ["E", "F", "I", "UP", "B", "W"]
 ignore = ["B008"]
 
 [tool.mypy]
-python_version = "3.10"
+# Typecheck under the running interpreter: numpy ≥2.5 ships PEP 695 `type`
+# aliases in its stubs, which mypy rejects when told to target 3.10. Syntax
+# compatibility with 3.10 is enforced by ruff (target-version = "py310").
 ignore_missing_imports = true
