@@ -48,20 +48,28 @@ const qs = (params: Record<string, string | number | undefined>) => {
 
 // ---- URL builders (used in <img>/<video>/<a>, prefixed for remote hosts) ----
 
-export function streamUrl(prefix: string, id: string, v: ViewParams): string {
-  // Absent fps/q/w → the camera's device-wide stream settings apply.
-  const params: Record<string, string | number | undefined> = {
-    fps: v.fps ? Math.round(v.fps) : undefined,
+// Absent fps/q/w → the camera's device-wide stream settings apply.
+function viewParams(v: ViewParams, withFps: boolean): Record<string, string | number | undefined> {
+  return {
+    fps: withFps && v.fps ? Math.round(v.fps) : undefined,
     zoom: v.zoom > 1 ? v.zoom.toFixed(1) : undefined,
     pan_x: v.zoom > 1 ? v.panX.toFixed(2) : undefined,
     pan_y: v.zoom > 1 ? v.panY.toFixed(2) : undefined,
     w: v.w || undefined,
     q: v.quality,
   };
-  return `${prefix}/stream/${id}.mjpg${qs(params)}`;
 }
 
-export const snapshotUrl = (prefix: string, id: string) => `${prefix}/stream/${id}/snapshot.jpg`;
+export function streamUrl(prefix: string, id: string, v: ViewParams): string {
+  return `${prefix}/stream/${id}.mjpg${qs(viewParams(v, true))}`;
+}
+
+// Single frame with the same view (zoom/pan/w/q) as the MJPEG stream — used by
+// snapshot-polling viewers (WebKit) so zoom/pan work there too. fps is a
+// stream-only concept; the poller sets its own cadence.
+export function snapshotUrl(prefix: string, id: string, v?: ViewParams): string {
+  return `${prefix}/stream/${id}/snapshot.jpg${v ? qs(viewParams(v, false)) : ""}`;
+}
 export const mediaFileUrl = (prefix: string, mid: number) => `${prefix}/media/${mid}/file`;
 export const mediaThumbUrl = (prefix: string, mid: number) => `${prefix}/media/${mid}/thumbnail`;
 export const cacheBust = () => `_=${Date.now()}`;

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { useAi, useAiTest, useCameras, useDetectionInfo, useHosts, useOllamaModels, useUpdateAi, useUpdateDetection } from "../api/hooks";
@@ -192,6 +192,12 @@ function ObjectDetectionCard() {
   const det = useDetectionInfo().data;
   const hosts = useHosts().data ?? [];
   const update = useUpdateDetection();
+  // Slider edits locally and commits on release — one POST per drag, not one
+  // per pixel.
+  const [conf, setConf] = useState(0);
+  useEffect(() => {
+    if (det) setConf(Math.round(det.confidence * 100));
+  }, [det?.confidence]);
   if (!det) return null;
   const peers = hosts.filter((h) => h.kind === "peer");
   const nodeKnown = !det.node || peers.some((h) => h.node_key === det.node || h.host === det.node);
@@ -271,12 +277,15 @@ function ObjectDetectionCard() {
           </p>
           <ControlSlider
             label="Confidence"
-            value={Math.round(det.confidence * 100)}
+            value={conf}
             min={5}
             max={95}
             step={5}
             unit="%"
-            onChange={(v) => set({ confidence: v / 100 })}
+            onChange={setConf}
+            onCommit={() => {
+              if (conf !== Math.round(det.confidence * 100)) set({ confidence: conf / 100 });
+            }}
           />
           <label className="ctl-row" style={{ marginTop: 6 }}>
             <span className="ctl-row-label">Show boxes by default on camera pages</span>
@@ -294,7 +303,10 @@ function ObjectDetectionCard() {
 
 /** Analyze one live frame through the real pipeline — instant validation. */
 function TestPanel() {
-  const cameras = (useCameras().data ?? []).filter((c) => c.status !== "offline");
+  // /api/ai/test takes a bare camera id and runs on THIS node — a peer's
+  // camera (same id, different node) would hit the wrong device, so list
+  // only local cameras.
+  const cameras = (useCameras().data ?? []).filter((c) => c.status !== "offline" && c.proxy_prefix === "");
   const test = useAiTest();
   const [cam, setCam] = useState("");
   const target = cam || cameras[0]?.id || "";
@@ -310,7 +322,7 @@ function TestPanel() {
       <div className="ais-test-row">
         <select className="tl-select" value={target} onChange={(e) => setCam(e.target.value)}>
           {cameras.length === 0 && <option value="">— no cameras online —</option>}
-          {cameras.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          {cameras.map((c) => <option key={`${c.host}/${c.id}`} value={c.id}>{c.name}</option>)}
         </select>
         <Button
           variant="primary"

@@ -17,6 +17,7 @@ from pathlib import Path
 # Below this much RAM the host is treated as "low power" (Pi Zero 2 / Pi 4 1-2 GB
 # / Pi 5 1 GB). Can be forced either way with TAILCAM_LOW_POWER=1|0.
 _LOW_POWER_RAM_BYTES = 2 * 1024**3
+_PI_LOW_POWER_RAM_BYTES = 4 * 1024**3
 
 
 @dataclass(frozen=True)
@@ -32,7 +33,35 @@ class HostProfile:
         return round(self.total_ram_bytes / 1024**3, 2)
 
 
+def _windows_total_ram() -> int:
+    try:
+        import ctypes
+
+        class _MemStatus(ctypes.Structure):
+            _fields_ = [
+                ("dwLength", ctypes.c_ulong),
+                ("dwMemoryLoad", ctypes.c_ulong),
+                ("ullTotalPhys", ctypes.c_ulonglong),
+                ("ullAvailPhys", ctypes.c_ulonglong),
+                ("ullTotalPageFile", ctypes.c_ulonglong),
+                ("ullAvailPageFile", ctypes.c_ulonglong),
+                ("ullTotalVirtual", ctypes.c_ulonglong),
+                ("ullAvailVirtual", ctypes.c_ulonglong),
+                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+            ]
+
+        status = _MemStatus()
+        status.dwLength = ctypes.sizeof(_MemStatus)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):  # type: ignore[attr-defined]
+            return int(status.ullTotalPhys)
+    except Exception:
+        pass
+    return 0
+
+
 def _total_ram() -> int:
+    if sys.platform == "win32":
+        return _windows_total_ram()
     try:
         if hasattr(os, "sysconf"):
             pages = os.sysconf("SC_PHYS_PAGES")
@@ -70,7 +99,9 @@ def profile() -> HostProfile:
     elif override in ("0", "false", "no"):
         low = False
     else:
-        low = (0 < ram < _LOW_POWER_RAM_BYTES) or is_pi
+        # A Pi 5 with 8 GB is a perfectly capable box; only the small ones get
+        # the lighter defaults.
+        low = (0 < ram < _LOW_POWER_RAM_BYTES) or (is_pi and 0 < ram < _PI_LOW_POWER_RAM_BYTES)
     return HostProfile(
         total_ram_bytes=ram,
         cpu_count=os.cpu_count() or 1,

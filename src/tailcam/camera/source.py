@@ -38,6 +38,11 @@ class CameraSource(ABC):
     @abstractmethod
     def read(self) -> np.ndarray | None: ...
 
+    def grab(self) -> bool:
+        """Advance the device by one frame without decoding it (keeps a UVC
+        camera streaming while nobody consumes frames). Default: a full read."""
+        return self.read() is not None
+
     @abstractmethod
     def set_property(self, name: str, value: float) -> None: ...
 
@@ -228,6 +233,14 @@ class OpenCVCameraSource(CameraSource):
             return None
         return frame
 
+    def grab(self) -> bool:
+        if self._cap is None:
+            return False
+        try:
+            return bool(self._cap.grab())
+        except Exception:  # pragma: no cover - driver quirk
+            return False
+
     def set_property(self, name: str, value: float) -> None:
         if self._cap is None or name not in LOGICAL_TO_CAP:
             return
@@ -260,6 +273,13 @@ class SyntheticCameraSource(CameraSource):
 
     def open(self) -> bool:
         self._opened = True
+        return True
+
+    def grab(self) -> bool:
+        if not self._opened:
+            return False
+        self._frame_index += 1
+        time.sleep(max(0.0, 1.0 / max(1, self.props.fps)))
         return True
 
     def read(self) -> np.ndarray | None:

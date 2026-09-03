@@ -1,10 +1,18 @@
-# TailCam in Docker. See docs/docker.md (or the in-app Docs → "Docker" page).
+# TailCam in Docker. See the in-app Docs → "Running in Docker" page.
 #
 #   docker compose up -d
 #
 # Set TS_AUTHKEY (a Tailscale auth key) to join your tailnet and serve over
-# Tailscale; omit it to run local-only on the published port. Pass a webcam with
-# the `devices` entry (Linux hosts only).
+# Tailscale; omit it to run local-only on the published port.
+#
+# Cameras (Linux hosts only — Docker Desktop on macOS/Windows can't see USB
+# webcams): the default below binds the host's /dev into the container and
+# allows every video4linux device (char major 81), so a webcam plugged in
+# later just works and a missing /dev/video0 doesn't stop the container from
+# starting. /dev/net/tun (char 10:200) is allowed the same way for Tailscale
+# kernel networking; if it's unavailable, the entrypoint falls back to
+# userspace networking automatically. To pin specific devices instead, use
+# the commented `devices:` block and drop the /dev volume + cgroup rules.
 
 services:
   tailcam:
@@ -23,11 +31,17 @@ services:
       - tailcam-data:/data            # database + recordings/snapshots/timelapse
       - tailcam-config:/config        # config.toml
       - tailcam-tsstate:/var/lib/tailscale  # Tailscale node identity (persist it!)
-    devices:
-      - "/dev/video0:/dev/video0"     # a USB webcam (Linux hosts only; add more as needed)
-      - "/dev/net/tun:/dev/net/tun"   # kernel networking for Tailscale (else userspace)
+      - /dev:/dev                     # hot-plug cameras (Linux hosts; remove with `devices:`)
+    device_cgroup_rules:
+      - "c 81:* rmw"                  # video4linux: any /dev/video* (present now or later)
+      - "c 10:200 rwm"                # /dev/net/tun for Tailscale kernel networking
     cap_add:
-      - NET_ADMIN                     # required for Tailscale kernel networking
+      - NET_ADMIN                     # Tailscale kernel networking (else userspace fallback)
+    # Alternative: pass exact devices. The container then FAILS TO START if a
+    # listed device is missing at `up` time, so only use this on a fixed setup.
+    # devices:
+    #   - "/dev/video0:/dev/video0"
+    #   - "/dev/net/tun:/dev/net/tun"
 
 volumes:
   tailcam-data:

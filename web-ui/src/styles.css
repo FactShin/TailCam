@@ -471,7 +471,9 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .empty .btn { margin-top: 6px; }
 
 /* ===== viewer ===== */
-.viewer { position: relative; width: 100%; height: 100%; background: #06081a; overflow: hidden; }
+.viewer { position: relative; width: 100%; height: 100%; background: #06081a; overflow: hidden; touch-action: pan-y; }
+/* Interactive stage: pinch/drag zoom+pan the stream, never the page. */
+.viewer-grab { touch-action: none; }
 .viewer-canvas { display: block; width: 100%; height: 100%; }
 .tile-media .viewer-canvas { object-fit: cover; }
 .osd { position: absolute; right: 9px; bottom: 8px; font-size: 11px; color: rgba(255, 255, 255, 0.82); text-shadow: 0 1px 3px #000; letter-spacing: 0.02em; z-index: 3; pointer-events: none; }
@@ -1320,6 +1322,9 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .stor-node-host { flex: 1; font-weight: 600; }
 .stor-node-free { font-size: 11px; color: var(--muted, #8a90a8); }
 .stor-node-browse { font-size: 11px; color: var(--accent, #5b7fff); text-decoration: underline; }
+/* Own root (not .navsheet-root, which the desktop layout hides) so the picker
+   shows on desktop and phone alike; the sheet itself reuses .navsheet styling. */
+.fp-root { position: absolute; inset: 0; z-index: 40; display: flex; align-items: flex-end; }
 .folder-picker { max-width: 560px; margin: 0 auto; max-height: 80vh; display: flex; flex-direction: column; }
 .fp-path { display: flex; gap: 6px; align-items: center; margin: 8px 0; }
 .fp-path .tl-input { flex: 1; }

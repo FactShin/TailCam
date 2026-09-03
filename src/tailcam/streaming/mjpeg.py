@@ -20,6 +20,12 @@ from tailcam.streaming.encoder import encode_jpeg
 
 BOUNDARY = "frame"
 
+# Each open viewer parks a worker thread in await_latest almost continuously.
+# Starlette's default thread limiter (40) is shared with every sync API route,
+# so a video wall plus Home Assistant/HomeKit pulls could starve /api entirely.
+# Streams get their own pool.
+_STREAM_LIMITER = anyio.CapacityLimiter(96)
+
 
 class _EncodeCache:
     """One JPEG encode per (frame, transform, quality), shared by every viewer.
@@ -87,7 +93,9 @@ class MJPEGBackend(StreamBackend):
         next_due = 0.0
 
         while not buffer.closed:
-            frame = await anyio.to_thread.run_sync(buffer.await_latest, last_seq, 1.0)
+            frame = await anyio.to_thread.run_sync(
+                buffer.await_latest, last_seq, 1.0, limiter=_STREAM_LIMITER
+            )
             if frame is None:
                 continue  # timeout: loop again (lets disconnects break out)
             last_seq = frame.seq
@@ -98,7 +106,8 @@ class MJPEGBackend(StreamBackend):
             next_due = now + min_interval
 
             jpeg = await anyio.to_thread.run_sync(
-                self._encode, buffer, frame.seq, frame.image, transform, quality
+                self._encode, buffer, frame.seq, frame.image, transform, quality,
+                limiter=_STREAM_LIMITER,
             )
 
             yield (

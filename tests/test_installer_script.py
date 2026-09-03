@@ -111,3 +111,33 @@ def test_pyproject_arm64_markers():
     assert "uvicorn~=0.34; platform_machine == 'ARM64'" in pyproject
     assert "websockets>=13; platform_machine == 'ARM64'" in pyproject
     assert "imageio-ffmpeg~=0.5; platform_machine != 'ARM64'" in pyproject
+
+
+def test_native_probes_survive_ps51_stop_preference():
+    # Windows PowerShell 5.1 + $ErrorActionPreference="Stop" turns redirected
+    # native stderr (`2>$null`) into a terminating error. Every such probe
+    # must run through the helper that relaxes the preference.
+    assert "function Invoke-Native" in SCRIPT
+    for probe in ("sys.version_info[:2] >= (3, 10)", "platform.machine()",
+                  "status --json 2>$null", "ollama list 2>$null"):
+        line = next(ln for ln in SCRIPT.splitlines() if probe in ln)
+        assert "Invoke-Native" in line, f"probe not wrapped: {line.strip()}"
+
+
+def test_tailscale_login_loop_gated_on_needslogin():
+    # Poll only when `tailscale up` failed AND the daemon reports NeedsLogin;
+    # an empty/Stopped state must bail out with advice, not wait 10 minutes.
+    start = SCRIPT.index("function Wait-TailscaleLogin")
+    body = SCRIPT[start:SCRIPT.index("if (-not $NoTailscale)")]
+    assert "$upRc = $LASTEXITCODE" in body
+    assert '$upRc -eq 0 -or $state -ne "NeedsLogin"' in body
+    assert body.index('if (-not $state)') < body.index("while ($waited -lt $timeout)")
+
+
+def test_tray_relaunched_after_install():
+    # Stop-TailCamProcesses kills a running tray; when autostart is configured
+    # (HKCU Run key) the installer brings it back instead of leaving it dead.
+    tail = SCRIPT[SCRIPT.index("Setup-DesktopApp $VenvPy"):]
+    assert "CurrentVersion\\Run" in tail
+    assert "Start-Process" in tail
+    assert "'-m','tailcam','app','--no-window'" in tail

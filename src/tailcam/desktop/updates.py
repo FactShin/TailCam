@@ -23,4 +23,7 @@ def apply_update() -> str:
         return "Updater launched — TailCam will restart itself."
     if not upd.run_pip_upgrade():
         return "Update failed — see the service log."
-    return installer.restart()
+    # install(), not restart(), when a service is registered: it re-renders
+    # the unit (and migrates legacy anycam.service/com.anycam names), and it
+    # restarts either way — mirrors `tailcam update`.
+    return installer.install() if installer.is_installed() else installer.restart()

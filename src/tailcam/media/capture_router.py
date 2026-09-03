@@ -26,6 +26,9 @@ if TYPE_CHECKING:
 log = get_logger(__name__)
 
 _TIMEOUT = 8.0
+# Stopping a remote recording waits for the storage node's encoder to close
+# the file; give it room instead of declaring the node down.
+_STOP_TIMEOUT = 90.0
 _DOWN_BACKOFF = 20.0
 
 
@@ -46,6 +49,10 @@ class CaptureRouter:
         self._lock = threading.Lock()
         # camera_id -> peer key for recordings running on the storage node.
         self._remote_recordings: dict[str, str] = {}
+        # Stops the storage node didn't acknowledge (it was unreachable at
+        # the moment): retried from the monitor loop so the remote session
+        # can't run forever.
+        self._pending_stops: dict[str, str] = {}
         self._down_until = 0.0
         self.last_error = ""
 
@@ -98,24 +105,38 @@ class CaptureRouter:
             self._client = httpx.Client(timeout=_TIMEOUT, follow_redirects=False)
         return self._client
 
-    def _post(self, base: str, path: str, body: dict[str, Any]) -> dict[str, Any] | None:
+    def _post(
+        self, base: str, path: str, body: dict[str, Any], timeout: float | None = None
+    ) -> tuple[int, dict[str, Any] | None]:
+        """POST to the storage node → (status, json). Status 0 = unreachable.
+
+        Only connection failures and 5xx mark the node *down* (local fallback
+        for a while). A 4xx is an answer — e.g. 409 "already recording" means
+        the session exists there and must be adopted, not duplicated locally.
+        """
         try:
-            resp = self._http().post(f"{base}{path}", json=body)
-            if resp.status_code >= 400:
-                detail = ""
-                try:
-                    detail = str(resp.json().get("detail", ""))
-                except ValueError:
-                    detail = resp.text[:200]
-                raise RuntimeError(f"HTTP {resp.status_code} {detail}".strip())
-            data = resp.json()
-            self.last_error = ""
-            return data if isinstance(data, dict) else None
+            resp = self._http().post(f"{base}{path}", json=body, timeout=timeout or _TIMEOUT)
         except Exception as exc:
             self.last_error = str(exc)
             self._down_until = time.monotonic() + _DOWN_BACKOFF
             log.warning("storage node request %s failed: %s — falling back to local", path, exc)
-            return None
+            return 0, None
+        try:
+            data = resp.json()
+        except ValueError:
+            data = None
+        if resp.status_code >= 500:
+            detail = str(data.get("detail", "")) if isinstance(data, dict) else resp.text[:200]
+            self.last_error = f"HTTP {resp.status_code} {detail}".strip()
+            self._down_until = time.monotonic() + _DOWN_BACKOFF
+            log.warning("storage node %s failed: %s — falling back to local", path, self.last_error)
+            return resp.status_code, None
+        if resp.status_code >= 400:
+            detail = str(data.get("detail", "")) if isinstance(data, dict) else resp.text[:200]
+            self.last_error = f"HTTP {resp.status_code} {detail}".strip()
+            return resp.status_code, data if isinstance(data, dict) else None
+        self.last_error = ""
+        return resp.status_code, data if isinstance(data, dict) else None
 
     def _camera_name(self, camera_id: str) -> str:
         cam = self._ctx.manager.get(camera_id)
@@ -137,7 +158,7 @@ class CaptureRouter:
         tgt = self.target()
         if tgt is not None:
             key, base = tgt
-            data = self._post(
+            status, data = self._post(
                 base,
                 f"/api/remote/{self.local_key}/cameras/{camera_id}/recording/start",
                 {
@@ -147,11 +168,24 @@ class CaptureRouter:
                     "source_host": self._ctx.local_host,
                 },
             )
-            if data is not None and data.get("ok", True):
+            if status == 200 and data is not None and data.get("ok", True):
                 with self._lock:
                     self._remote_recordings[camera_id] = key
                 log.info("recording %s (%s) on storage node %s", camera_id, trigger, key)
                 return True
+            if status == 409:
+                # The storage node is already recording this camera (we
+                # restarted and forgot): adopt that session, don't start a
+                # second, local one.
+                with self._lock:
+                    self._remote_recordings[camera_id] = key
+                log.info("adopted running recording of %s on storage node %s", camera_id, key)
+                return False
+            if status not in (0,) and status < 500:
+                # A definite refusal (404 source not visible, 502 stream): fall
+                # through to local so the clip isn't lost.
+                log.warning("storage node refused %s: %s — recording locally", camera_id,
+                            self.last_error)
         return self._ctx.recorder.start(camera_id, fps=self._stream_fps(camera_id), trigger=trigger)
 
     def stop_recording(self, camera_id: str):
@@ -161,18 +195,46 @@ class CaptureRouter:
             base = self._ctx.resolve_node_base(key) or self._ctx.resolve_node_base(
                 self.configured_node
             )
+            status, data = (0, None)
             if base is not None:
-                data = self._post(
-                    base, f"/api/remote/{self.local_key}/cameras/{camera_id}/recording/stop", {}
+                status, data = self._post(
+                    base, f"/api/remote/{self.local_key}/cameras/{camera_id}/recording/stop",
+                    {}, timeout=_STOP_TIMEOUT,
                 )
-                if data is not None:
-                    peer_host = next(
-                        (p.host for p in self._ctx.cluster.cached_peers() if p.key == key), key
-                    )
-                    return RemoteMedia(id=data.get("media_id"), host=peer_host)
-            log.warning("could not stop remote recording %s on %s", camera_id, key)
+            if status == 200 and data is not None:
+                peer_host = next(
+                    (p.host for p in self._ctx.cluster.cached_peers() if p.key == key), key
+                )
+                return RemoteMedia(id=data.get("media_id"), host=peer_host)
+            if status == 409:
+                return None  # nothing was recording there any more
+            # Unreachable (or timed out mid-finalize): remember to stop it
+            # again later rather than leaving the session running on the peer.
+            with self._lock:
+                self._pending_stops[camera_id] = key
+            log.warning("could not stop remote recording %s on %s; will retry", camera_id, key)
             return None
         return self._ctx.recorder.stop(camera_id)
+
+    def retry_pending_stops(self) -> int:
+        """Re-send stops the storage node didn't acknowledge (called from the
+        monitor loop). Returns how many are still pending."""
+        with self._lock:
+            pending = dict(self._pending_stops)
+        for camera_id, key in pending.items():
+            base = self._ctx.resolve_node_base(key)
+            if base is None:
+                continue
+            status, _ = self._post(
+                base, f"/api/remote/{self.local_key}/cameras/{camera_id}/recording/stop",
+                {}, timeout=_STOP_TIMEOUT,
+            )
+            if status in (200, 409):
+                with self._lock:
+                    self._pending_stops.pop(camera_id, None)
+                log.info("stopped lingering remote recording %s on %s", camera_id, key)
+        with self._lock:
+            return len(self._pending_stops)
 
     # RecordingService-compatible aliases (the motion worker is written against
     # the recorder's start/stop names).
@@ -207,10 +269,10 @@ class CaptureRouter:
                     "source_fps": self._stream_fps(camera_id),
                 }
             )
-            data = self._post(
+            status, data = self._post(
                 base, f"/api/remote/{self.local_key}/cameras/{camera_id}/timelapse/start", body
             )
-            if data is not None and "id" in data:
+            if status == 200 and data is not None and "id" in data:
                 data["proxy_prefix"] = f"/proxy/{key}"
                 log.info("timelapse for %s started on storage node %s", camera_id, key)
                 return data

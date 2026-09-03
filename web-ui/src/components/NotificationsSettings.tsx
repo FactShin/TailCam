@@ -13,12 +13,16 @@ export function NotificationsSettings() {
   const toast = useToast();
 
   const [form, setForm] = useState<NotificationsUpdate>({});
+  // Raw text of the labels field — parsed into `labels` on save, so commas and
+  // spaces can actually be typed (parsing per keystroke ate them).
+  const [labelsStr, setLabelsStr] = useState("");
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
     if (data && !dirty) {
       const { channels: _drop, ...rest } = data;
       setForm(rest);
+      setLabelsStr((data.labels ?? []).join(", "));
     }
   }, [data, dirty]);
 
@@ -26,6 +30,24 @@ export function NotificationsSettings() {
     setForm((f) => ({ ...f, ...patch }));
     setDirty(true);
   };
+
+  // The Save button lives inside the enabled-only section, so switching off
+  // could never be saved — persist the master switch immediately instead.
+  const setEnabled = async (v: boolean) => {
+    setForm((f) => ({ ...f, enabled: v }));
+    try {
+      await update.mutateAsync({ enabled: v });
+      toast.ok(v ? "Notifications on" : "Notifications off");
+    } catch {
+      setForm((f) => ({ ...f, enabled: !v }));
+      toast.err("Could not update");
+    }
+  };
+
+  const payload = (): NotificationsUpdate => ({
+    ...form,
+    labels: labelsStr.split(",").map((s) => s.trim()).filter(Boolean),
+  });
 
   const hasChannel = !!(
     form.discord_webhook ||
@@ -35,7 +57,7 @@ export function NotificationsSettings() {
 
   const save = async () => {
     try {
-      await update.mutateAsync(form);
+      await update.mutateAsync(payload());
       setDirty(false);
       toast.ok("Notifications saved");
     } catch {
@@ -46,7 +68,7 @@ export function NotificationsSettings() {
   const sendTest = async () => {
     try {
       if (dirty) {
-        await update.mutateAsync(form);
+        await update.mutateAsync(payload());
         setDirty(false);
       }
       const r = await test.mutateAsync();
@@ -57,7 +79,6 @@ export function NotificationsSettings() {
   };
 
   const enabled = !!form.enabled;
-  const labelsStr = (form.labels ?? []).join(", ");
   const conf = form.min_confidence ?? 0;
 
   return (
@@ -65,7 +86,7 @@ export function NotificationsSettings() {
       <div className="panel-title">
         <IconBell size={16} /> Notifications
         <span style={{ flex: 1 }} />
-        <Toggle checked={enabled} label="Enable notifications" onChange={(v) => set({ enabled: v })} />
+        <Toggle checked={enabled} label="Enable notifications" disabled={update.isPending} onChange={setEnabled} />
       </div>
       <p className="ais-intro">
         Get a ping on Discord, Telegram, or your own bot (Hermes/OpenClaw, via the generic webhook)
@@ -134,7 +155,7 @@ export function NotificationsSettings() {
             <label className="tl-field">
               <span className="microlabel">Only these labels (comma-sep · blank = all)</span>
               <input className="tl-input" value={labelsStr} placeholder="person, vehicle"
-                onChange={(e) => set({ labels: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })} />
+                onChange={(e) => { setLabelsStr(e.target.value); setDirty(true); }} />
             </label>
             <label className="tl-field">
               <span className="microlabel">Cooldown per camera (seconds)</span>

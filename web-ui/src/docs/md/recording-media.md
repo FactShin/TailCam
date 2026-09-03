@@ -25,6 +25,20 @@ Recordings can also start automatically on motion — see
 [Motion detection](motion-detection) and `motion.auto_record`. Recording fps
 comes from `stream.default_fps`.
 
+### Timing, disk space, and interrupted clips
+
+- Clips are paced on the wall clock: the encoder receives exactly the camera's
+  stream frame rate per second, repeating the last frame when the source is
+  slower (a Pi camera negotiated down to 10 fps, a 5 fps storage-node pull). A
+  clip therefore plays at real speed regardless of what the camera delivered.
+- A recording won't start with less than **200 MB** free at the save location,
+  and a recording whose encoder dies mid-way (disk full, drive unmounted) ends
+  immediately; the camera page shows the reason. An unfinished file is removed
+  rather than left as an unplayable stub.
+- Stopping TailCam finalizes every active recording in parallel; the Linux
+  service allows three minutes for that (`TimeoutStopSec`), so a restart never
+  cuts an encoder off mid-file.
+
 ## Recording & storage settings
 
 **Settings → Recording & storage** controls, with no config-file editing:

@@ -93,6 +93,12 @@ def test_installer_windows_schtask(monkeypatch):
     assert "New-ScheduledTaskTrigger -AtLogOn" in script
     assert "-m tailcam run" in script
     assert "TailCam" in script
+    # Scoped to the installing user (not every account that logs on), and run
+    # in that user's interactive session.
+    assert "-AtLogOn -User $u" in script
+    assert "New-ScheduledTaskPrincipal -UserId $u -LogonType Interactive" in script
+    assert "-Principal $p" in script
+    assert "$env:USERDOMAIN" in script and "$env:USERNAME" in script
 
     calls.clear()
     installer.uninstall()

@@ -18,6 +18,15 @@ import type { CameraInfo, MediaInfo } from "../types";
 
 const PAGE = 12;
 
+// Filter value is "<host> <id>": camera ids repeat across nodes (/dev/video0 on
+// every Pi), so a chip must identify the node too. Hostnames never contain
+// spaces; the id (which may) is everything after the first one.
+const camFilterKey = (c: { host: string; id: string }) => `${c.host} ${c.id}`;
+const splitCamFilter = (v: string): { host: string; id: string } => {
+  const i = v.indexOf(" ");
+  return i < 0 ? { host: "", id: v } : { host: v.slice(0, i), id: v.slice(i + 1) };
+};
+
 function CamFilter({
   cameras,
   value,
@@ -31,7 +40,7 @@ function CamFilter({
     <div className="filter-scroll">
       <button className={`chip-filter ${!value ? "is-on" : ""}`} onClick={() => onChange("")}>All cameras</button>
       {cameras.map((c) => (
-        <button key={`${c.host}/${c.id}`} className={`chip-filter ${value === c.id ? "is-on" : ""}`} onClick={() => onChange(c.id)}>
+        <button key={`${c.host}/${c.id}`} className={`chip-filter ${value === camFilterKey(c) ? "is-on" : ""}`} onClick={() => onChange(camFilterKey(c))}>
           {c.name}
         </button>
       ))}
@@ -56,10 +65,15 @@ export function Gallery() {
   const [confirm, setConfirm] = useState<MediaInfo | null>(null);
   const sentinel = useRef<HTMLDivElement>(null);
 
-  const mediaQ = useMedia({ camera_id: cam || undefined, media_type: type || undefined, limit });
+  // The API filters by camera id only; narrow to the chosen node client-side.
+  const camSel = splitCamFilter(cam);
+  const mediaQ = useMedia({ camera_id: camSel.id || undefined, media_type: type || undefined, limit });
   const del = useDeleteMedia();
-  const rows = mediaQ.data ?? [];
-  const hasMore = rows.length >= limit;
+  const fetched = mediaQ.data ?? [];
+  const rows = camSel.host
+    ? fetched.filter((m) => (m.source_host || m.host) === camSel.host)
+    : fetched;
+  const hasMore = fetched.length >= limit;
 
   useEffect(() => setLimit(PAGE), [cam, type]);
   useEffect(() => {

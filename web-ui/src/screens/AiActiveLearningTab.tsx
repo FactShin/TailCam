@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   useActiveLearning,
@@ -79,10 +79,15 @@ type SetFn = (body: ActiveLearningSettings, msg?: string) => Promise<void>;
 // ------------------------------------------------------------ 1. Models & source
 function ModelsPanel({ al, set }: { al: ActiveLearningInfo; set: SetFn }) {
   const backends = useLabelingBackends().data ?? [];
-  const cameras = useCameras().data ?? [];
+  // "camera:<id>" is resolved on this node, so only local cameras are valid
+  // sources (a peer's /dev/video0 would resolve to the wrong device).
+  const cameras = (useCameras().data ?? []).filter((c) => c.proxy_prefix === "");
   const datasets = useDatasets().data ?? [];
   const detectionDatasets = datasets.filter((d) => d.task === "detection");
   const selected = backends.find((b) => b.id === al.labeling_model);
+  // Slider edits locally and commits on release — one POST per drag.
+  const [conf, setConf] = useState(Math.round(al.confidence_threshold * 100));
+  useEffect(() => setConf(Math.round(al.confidence_threshold * 100)), [al.confidence_threshold]);
 
   return (
     <div className="panel">
@@ -116,7 +121,7 @@ function ModelsPanel({ al, set }: { al: ActiveLearningInfo; set: SetFn }) {
           >
             <option value="cameras">All online cameras</option>
             {cameras.map((c) => (
-              <option key={c.id} value={`camera:${c.id}`}>Camera: {c.name}</option>
+              <option key={`${c.host}/${c.id}`} value={`camera:${c.id}`}>Camera: {c.name}</option>
             ))}
             {detectionDatasets.map((d) => (
               <option key={d.id} value={`dataset:${d.id}`}>Dataset: {d.name} ({d.sample_count})</option>
@@ -126,12 +131,16 @@ function ModelsPanel({ al, set }: { al: ActiveLearningInfo; set: SetFn }) {
         <label className="tl-field">
           <span className="microlabel">Interval (s)</span>
           <input
+            key={al.interval_seconds}  // re-seed when the saved value changes
             className="tl-input"
             type="number"
             min={1}
             step={1}
             defaultValue={al.interval_seconds}
-            onBlur={(e) => set({ interval_seconds: Math.max(1, Number(e.target.value) || 10) })}
+            onBlur={(e) => {
+              const v = Math.max(1, Number(e.target.value) || 10);
+              if (v !== al.interval_seconds) set({ interval_seconds: v });
+            }}
           />
         </label>
       </div>
@@ -149,12 +158,15 @@ function ModelsPanel({ al, set }: { al: ActiveLearningInfo; set: SetFn }) {
       <div className="ais-det-tune">
         <ControlSlider
           label="Confidence threshold"
-          value={Math.round(al.confidence_threshold * 100)}
+          value={conf}
           min={5}
           max={95}
           step={5}
           unit="%"
-          onChange={(v) => set({ confidence_threshold: v / 100 })}
+          onChange={setConf}
+          onCommit={() => {
+            if (conf !== Math.round(al.confidence_threshold * 100)) set({ confidence_threshold: conf / 100 });
+          }}
         />
         <label className="ctl-row" style={{ marginTop: 6 }}>
           <span className="ctl-row-label">Also review frames where the model sees nothing</span>

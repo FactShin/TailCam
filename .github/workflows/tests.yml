@@ -1,0 +1,63 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # conftest.py sets this too; explicit here so nothing ever touches hardware.
+  TAILCAM_SYNTHETIC: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check src tests
+      - run: mypy src/tailcam
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      # The integration tests exercise the HomeKit (HAP-python) and MQTT extras.
+      - run: pip install -e ".[dev,homekit,mqtt]"
+      - run: pytest -q
+
+  # Windows: the platform-specific layers (installer invariants, service
+  # registration, desktop shortcut, self-update) plus the API surface. The
+  # camera/V4L2 and timing-sensitive capture suites are Linux-only by nature.
+  test-windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      # test_desktop.py is POSIX-only by nature (launcher entries, .app bundle)
+      # and runs in the desktop-app workflow's linux-core/macos jobs.
+      - run: >-
+          pytest -q tests/test_windows.py tests/test_installer_script.py
+          tests/test_service_control.py tests/test_update.py
+          tests/test_hostinfo.py tests/test_version.py tests/test_api.py
+          tests/test_storage.py tests/test_cluster.py tests/test_mcp.py

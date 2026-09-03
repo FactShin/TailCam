@@ -18,9 +18,11 @@ curl -fsSL https://raw.githubusercontent.com/factshin/tailcam/main/install-docke
 ```
 
 Flags: `--authkey KEY`, `--hostname NAME`, `--port N`, `--device /dev/videoN`
-(repeatable), `--image REF`, `--name NAME`, `--no-tailscale`. The script
-auto-detects `/dev/video0`, replaces any existing container, and keeps your data
-in named volumes.
+(repeatable), `--no-hotplug`, `--image REF`, `--name NAME`, `--no-tailscale`. On
+Linux the script binds the host's `/dev` into the container and allows every
+video4linux device, so webcams can be plugged in later and a missing
+`/dev/video0` doesn't stop the container. It replaces any existing container and
+keeps your data in named volumes.
 
 ## Prebuilt image
 
@@ -46,7 +48,8 @@ TS_AUTHKEY=tskey-auth-xxxx docker compose up -d
 ```
 
 `docker-compose.yml` builds the image, persists data in named volumes, and (on
-Linux) passes through `/dev/video0`.
+Linux) binds `/dev` with a device-cgroup rule for video4linux, so cameras
+hot-plug and none has to be present at `up` time.
 
 ## Two ways to run
 
@@ -72,7 +75,7 @@ open it on the host:
 ```bash
 docker run -d --name tailcam -p 8088:8088 \
   -v tailcam-data:/data -v tailcam-config:/config \
-  --device /dev/video0:/dev/video0 \
+  -v /dev:/dev --device-cgroup-rule 'c 81:* rmw' \
   ghcr.io/factshin/tailcam:latest
 ```
 
@@ -82,7 +85,17 @@ Tailscale path for those.
 
 ## Cameras
 
-Pass each webcam through with `--device` (Compose: the `devices:` list):
+The default (Linux) is hot-plug: bind the host `/dev` and allow the video4linux
+character devices (major 81), so any webcam present now or plugged in later is
+visible:
+
+```bash
+-v /dev:/dev --device-cgroup-rule 'c 81:* rmw'
+```
+
+To pin specific devices instead, pass each one with `--device` (Compose: the
+commented `devices:` block). The container then refuses to start when a listed
+device is missing, so only do this on a fixed setup:
 
 ```bash
 --device /dev/video0:/dev/video0
@@ -146,8 +159,9 @@ Your volumes persist, so config, media, and Tailscale identity carry over.
 
 ## Troubleshooting
 
-- **No cameras in the container.** Confirm `--device /dev/video0` is passed and the
-  host is Linux. Check `docker logs tailcam` and the [Troubleshooting](troubleshooting)
+- **No cameras in the container.** Confirm the host is Linux and either the
+  hot-plug flags (`-v /dev:/dev --device-cgroup-rule 'c 81:* rmw'`) or a
+  `--device` are passed. Check `docker logs tailcam` and the [Troubleshooting](troubleshooting)
   page. Test with `TAILCAM_SYNTHETIC=1`.
 - **Tailscale won't connect.** Make sure `TS_AUTHKEY` is valid and unexpired.
   Without `/dev/net/tun` + `NET_ADMIN` it uses userspace networking — check

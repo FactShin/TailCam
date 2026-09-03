@@ -11,6 +11,7 @@ own node while serving them from this one.
 
 from __future__ import annotations
 
+import re
 from functools import partial
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -43,8 +44,20 @@ async def _source_base(ctx: AppContext, source_key: str) -> str:
     return base
 
 
+_CAMERA_ID_RE = re.compile(r"^[A-Za-z0-9_./:-]{1,200}$")
+
+
+def _check_camera_id(camera_id: str) -> str:
+    """A camera id is a device path or index — never a URL fragment. httpx
+    normalizes ``..`` segments, so a crafted id could otherwise steer the pull
+    at any path on the source node."""
+    if ".." in camera_id or not _CAMERA_ID_RE.match(camera_id):
+        raise HTTPException(status_code=400, detail="invalid camera id")
+    return camera_id
+
+
 def _session_key(source_key: str, camera_id: str) -> str:
-    return ctx_key(source_key, camera_id)
+    return ctx_key(source_key, _check_camera_id(camera_id))
 
 
 def ctx_key(source_key: str, camera_id: str) -> str:

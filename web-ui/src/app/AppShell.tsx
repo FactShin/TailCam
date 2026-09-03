@@ -162,7 +162,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const onKey = useCallback(
     (e: KeyboardEvent) => {
       const tag = ((e.target as HTMLElement)?.tagName || "").toLowerCase();
-      const typing = tag === "input" || tag === "textarea" || (e.target as HTMLElement)?.isContentEditable;
+      const typing =
+        tag === "input" || tag === "textarea" || tag === "select" || (e.target as HTMLElement)?.isContentEditable;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPalOpen((o) => !o);

@@ -21,9 +21,31 @@ Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" 
 Stop-ScheduledTask -TaskName "AnyCam" -ErrorAction SilentlyContinue
 Unregister-ScheduledTask -TaskName "AnyCam" -Confirm:$false -ErrorAction SilentlyContinue
 
+function Get-ServePort {
+  # The tailnet HTTPS port lives in config.toml ([tailscale] serve_port);
+  # default 8443. Read it with a plain regex so this works without the venv.
+  $port = 8443
+  foreach ($base in @($env:TAILCAM_CONFIG_DIR, (Join-Path $env:APPDATA "TailCam"))) {
+    if (-not $base) { continue }
+    $cfg = Join-Path $base "config.toml"
+    if (-not (Test-Path $cfg)) { continue }
+    try {
+      $text = Get-Content $cfg -Raw -ErrorAction Stop
+      $m = [regex]::Match($text, '(?ms)^\[tailscale\]\s*$(.*?)(?=^\[|\z)')
+      if ($m.Success) {
+        $pm = [regex]::Match($m.Groups[1].Value, '(?m)^\s*serve_port\s*=\s*(\d+)')
+        if ($pm.Success) { $port = [int]$pm.Groups[1].Value }
+      }
+    } catch { }
+    break
+  }
+  return $port
+}
+
 if (Get-Command tailscale -ErrorAction SilentlyContinue) {
-  Info "Resetting tailscale serve"
-  tailscale serve --https 8443 off 2>$null
+  $servePort = Get-ServePort
+  Info "Resetting tailscale serve (port $servePort)"
+  tailscale serve --https $servePort off 2>$null
 }
 
 foreach ($v in @($VenvDir, $LegacyVenvDir)) {

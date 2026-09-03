@@ -35,9 +35,15 @@ PS_INSTALL_CMD = (
 
 
 def parse_version(v: str) -> tuple[int, ...]:
-    """'0.2.4' -> (0, 2, 4); tolerant of suffixes."""
-    parts = re.findall(r"\d+", v)[:3]
-    return tuple(int(p) for p in parts) if parts else (0,)
+    """'0.2.4' -> (0, 2, 4); tolerant of suffixes.
+
+    All numeric components count, so a four-part hotfix (1.8.1.1) sorts
+    after 1.8.1 — truncating to three parts made such releases invisible.
+    """
+    m = re.search(r"\d+(?:\.\d+)*", v)
+    if not m:
+        return (0,)
+    return tuple(int(p) for p in m.group(0).split("."))
 
 
 def latest_version(timeout: float = 6.0) -> str | None:
@@ -67,8 +73,30 @@ def update_available(use_cache: bool = True) -> tuple[str, str | None, bool]:
 
 def run_pip_upgrade() -> bool:
     """In-place upgrade of the current environment (POSIX)."""
-    proc = subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", ZIP_URL])
+    # --no-cache-dir: the zip URL never changes, so a cached download would
+    # happily reinstall the version we already have.
+    proc = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "--no-cache-dir", "--upgrade", ZIP_URL]
+    )
     return proc.returncode == 0
+
+
+def installed_version() -> str | None:
+    """The version now on disk, read by a fresh interpreter (this process still
+    has the old module loaded). None if it can't be determined."""
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", "import tailcam; print(tailcam.__version__)"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    out = proc.stdout.strip()
+    return out or None
 
 
 def spawn_windows_installer() -> None:

@@ -7,6 +7,12 @@
 # volumes (data, config, and Tailscale node identity). Pass --authkey to join
 # your tailnet and serve over Tailscale; otherwise it runs local-only on a port.
 #
+# Cameras (Linux hosts): by default the host's /dev is bound into the container
+# and every video4linux device (char major 81) is allowed, so webcams can be
+# hot-plugged and a missing /dev/video0 doesn't stop the container. Pass
+# --device to pin specific devices instead (the container then won't start if
+# one is missing), or --no-hotplug to skip the /dev bind without pinning any.
+#
 # Examples:
 #   ... | bash -s -- --authkey tskey-auth-xxxx
 #   ... | bash -s -- --port 9000 --device /dev/video1
@@ -19,6 +25,7 @@ TS_NAME="${TS_HOSTNAME:-tailcam}"
 AUTHKEY="${TS_AUTHKEY:-}"
 DO_TAILSCALE=1
 DEVICES=""
+HOTPLUG=1
 
 log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
@@ -34,10 +41,15 @@ while [ $# -gt 0 ]; do
         --image) IMAGE="$2"; shift ;;
         --name) NAME="$2"; shift ;;
         --no-tailscale) DO_TAILSCALE=0 ;;
+        --no-hotplug) HOTPLUG=0 ;;
         -h|--help)
             echo "Usage: install-docker.sh [--authkey KEY] [--hostname NAME] [--port N]"
-            echo "                         [--device /dev/videoN] [--image REF] [--name NAME]"
-            echo "                         [--no-tailscale]"
+            echo "                         [--device /dev/videoN]... [--no-hotplug]"
+            echo "                         [--image REF] [--name NAME] [--no-tailscale]"
+            echo "  --device PATH   pass exactly this device (repeatable). Disables the hot-plug"
+            echo "                  default; the container won't start if the device is missing."
+            echo "  --no-hotplug    don't bind the host /dev (no cameras unless --device is given)"
+            echo "  Default on Linux: bind /dev + allow all video4linux devices (hot-plug)."
             exit 0 ;;
         *) warn "Unknown option: $1" ;;
     esac
@@ -47,10 +59,10 @@ done
 have docker || { err "Docker is not installed. Install it: https://docs.docker.com/get-docker/"; exit 1; }
 docker info >/dev/null 2>&1 || { err "Cannot reach the Docker daemon. Is it running, and do you have permission?"; exit 1; }
 
-# Default to the first webcam on Linux hosts when no --device was given.
-if [ -z "${DEVICES// /}" ] && [ "$(uname -s)" = "Linux" ] && [ -e /dev/video0 ]; then
-    DEVICES="/dev/video0"
-fi
+# Explicit --device pins devices; otherwise Linux hosts get the hot-plug setup
+# (bind /dev + cgroup rule for video4linux) so cameras can come and go.
+[ -n "${DEVICES// /}" ] && HOTPLUG=0
+[ "$(uname -s)" = "Linux" ] || HOTPLUG=0
 
 log "Pulling ${IMAGE}"
 if ! docker pull "$IMAGE"; then
@@ -74,7 +86,10 @@ set -- -d --name "$NAME" --restart unless-stopped \
 
 if [ "$DO_TAILSCALE" = 1 ] && [ -n "$AUTHKEY" ]; then
     set -- "$@" -e "TS_AUTHKEY=${AUTHKEY}" -e "TS_HOSTNAME=${TS_NAME}"
-    if [ -e /dev/net/tun ]; then
+    if [ "$HOTPLUG" = 1 ]; then
+        # /dev is bound below; allow the tun char device through the cgroup.
+        set -- "$@" --device-cgroup-rule 'c 10:200 rwm' --cap-add NET_ADMIN
+    elif [ -e /dev/net/tun ]; then
         set -- "$@" --device /dev/net/tun:/dev/net/tun --cap-add NET_ADMIN
     else
         warn "/dev/net/tun not present — Tailscale will use userspace networking."
@@ -83,6 +98,9 @@ elif [ -n "$AUTHKEY" ]; then
     warn "--no-tailscale set; ignoring the provided auth key."
 fi
 
+if [ "$HOTPLUG" = 1 ]; then
+    set -- "$@" -v /dev:/dev --device-cgroup-rule 'c 81:* rmw'
+fi
 for d in $DEVICES; do
     set -- "$@" --device "${d}:${d}"
 done

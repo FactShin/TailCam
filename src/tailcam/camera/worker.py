@@ -25,10 +25,15 @@ from tailcam.logging_setup import get_logger
 log = get_logger(__name__)
 
 _MAX_CONSECUTIVE_FAILURES = 10
-# Cap retry interval at 60s: with eager-started workers, a permanently failing
-# camera (unplugged USB, an out-of-reach iPhone Continuity Camera, denied
-# permission) would otherwise hammer reopen attempts forever.
-_RECONNECT_BACKOFF_MAX = 60.0
+# Cap the retry interval: a permanently failing camera (unplugged USB, an
+# out-of-reach iPhone Continuity Camera, denied permission) must not hammer
+# reopen attempts, but a replugged webcam should be back within seconds, not
+# a minute. An open attempt on a missing device is a cheap failure.
+_RECONNECT_BACKOFF_MAX = 15.0
+# With nobody waiting on the buffer for this long, the loop only grab()s
+# (keeps the device streaming, no JPEG decode) — the biggest idle CPU saving
+# on a Pi with cameras nobody is watching.
+_IDLE_GRAB_AFTER = 3.0
 
 SourceFactory = Callable[[CameraDescriptor, CameraProperties], CameraSource]
 
@@ -81,8 +86,15 @@ class CameraWorker:
     def stop(self) -> None:
         self._stop.set()
         self.buffer.close()
-        if self._thread:
-            self._thread.join(timeout=5.0)
+        thread = self._thread
+        if thread:
+            thread.join(timeout=5.0)
+            if thread.is_alive():
+                # Still inside a blocking driver read: keep the reference so
+                # running stays truthful (a replacement would only get EBUSY
+                # until this thread lets go of the device).
+                log.warning("camera %s: capture thread slow to exit", self.descriptor.id)
+                return
             self._thread = None
 
     @property
@@ -155,6 +167,20 @@ class CameraWorker:
             try:
                 while not self._stop.is_set():
                     self._drain_commands(source)
+                    if self.buffer.idle_for() > _IDLE_GRAB_AFTER:
+                        # Nobody is watching/recording/analyzing: pull frames
+                        # off the device without decoding them.
+                        if source.grab():
+                            failures = 0
+                            self._record_fps()
+                        else:
+                            failures += 1
+                            if failures >= _MAX_CONSECUTIVE_FAILURES:
+                                self.state.status = CameraStatus.DEGRADED
+                                self.state.last_error = "read failures; reconnecting"
+                                break
+                            time.sleep(0.05)
+                        continue
                     image = source.read()
                     if image is None:
                         failures += 1

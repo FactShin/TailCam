@@ -162,9 +162,12 @@ class CameraManager:
             cam = self._cameras.get(camera_id)
             if cam is None:
                 return False
-            if cam.worker:
-                cam.worker.stop()
-                cam.worker = None
+            worker, cam.worker = cam.worker, None
+        # Join the capture thread outside the lock: every /api/cameras poll and
+        # new stream takes the lock, and a stuck V4L2 read holds the join for
+        # seconds.
+        if worker:
+            worker.stop()
         self.get_buffer(camera_id)  # lazily recreates + starts
         return True
 
@@ -173,13 +176,15 @@ class CameraManager:
         from future discovery (persisted to config)."""
         with self._lock:
             cam = self._cameras.pop(camera_id, None)
-            if cam and cam.worker:
-                cam.worker.stop()
             self._store.delete_camera(camera_id)
-            if self._config is not None and camera_id not in self._config.cameras.hidden:
-                self._config.cameras.hidden.append(camera_id)
-                self._config.save()
-            return cam is not None
+            hide = self._config is not None and camera_id not in self._config.cameras.hidden
+            if hide:
+                self._config.cameras.hidden.append(camera_id)  # type: ignore[union-attr]
+        if cam and cam.worker:
+            cam.worker.stop()
+        if hide:
+            self._config.save()  # type: ignore[union-attr]
+        return cam is not None
 
     def status(self, camera_id: str) -> CameraStatus:
         cam = self.get(camera_id)
@@ -238,10 +243,11 @@ class CameraManager:
 
     def stop_all(self) -> None:
         with self._lock:
+            workers = [cam.worker for cam in self._cameras.values() if cam.worker]
             for cam in self._cameras.values():
-                if cam.worker:
-                    cam.worker.stop()
-                    cam.worker = None
+                cam.worker = None
+        for worker in workers:
+            worker.stop()
 
     def _persist(self, cam: ManagedCamera) -> None:
         self._store.upsert_camera(

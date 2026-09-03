@@ -175,6 +175,7 @@ class AppContext:
         self._cam_status: dict[str, str] = {}
         self._peer_online: dict[str, bool] = {}
         self._last_prune = 0.0
+        self._last_rediscover = 0.0
 
     def startup(self) -> None:
         from tailcam import hostinfo
@@ -313,9 +314,53 @@ class AppContext:
                 # Enforce the retention budget periodically (every ~5 min).
                 if time.monotonic() - self._last_prune > 300:
                     self._prune_media()
+                self._reap_stale_remote_sessions()
+                self.capture.retry_pending_stops()
+                self._rediscover_if_offline()
             except Exception as exc:  # never let the monitor die
                 log.debug("notify monitor: %s", exc)
             self._notify_stop.wait(8.0)
+
+    # A storage-node recording whose source stopped delivering frames for this
+    # long is finalized so a dead Pi can't leave it "recording" forever.
+    _REMOTE_STALE_SECONDS = 180.0
+
+    def _reap_stale_remote_sessions(self) -> None:
+        stale = set(self.remote_feeds.stale_keys(self._REMOTE_STALE_SECONDS))
+        if not stale:
+            return
+        for key in self.recorder.session_keys():
+            if "|" in key and key in stale:
+                log.warning("remote recording %s: no frames for %.0fs; finalizing",
+                            key, self._REMOTE_STALE_SECONDS)
+                self.recorder.stop(key)
+        for key in stale:
+            if not self.recorder.is_recording(key):
+                self.remote_feeds.stop_feed(key)
+
+    _REDISCOVER_EVERY = 30.0
+
+    def _rediscover_if_offline(self) -> None:
+        """Linux: a replugged webcam often comes back on a new /dev/video node;
+        re-run the (cheap, ioctl-based) discovery while any camera is offline
+        so it shows up without a manual re-scan."""
+        import sys
+
+        if not sys.platform.startswith("linux") or use_synthetic():
+            return
+        now = time.monotonic()
+        if now - self._last_rediscover < self._REDISCOVER_EVERY:
+            return
+        if not any(self.manager.status(c.descriptor.id).value == "offline"
+                   for c in self.manager.list()):
+            return
+        self._last_rediscover = now
+        before = {c.descriptor.id for c in self.manager.list()}
+        self.manager.discover()
+        self.manager.start_all()
+        new = {c.descriptor.id for c in self.manager.list()} - before
+        if new:
+            log.info("Discovered camera(s) after replug: %s", ", ".join(sorted(new)))
 
     def _prune_media(self) -> None:
         """Delete media beyond the retention budget (size + age). Opt-in: never

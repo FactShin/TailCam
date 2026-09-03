@@ -46,17 +46,28 @@ function Warn($m) { Write-Host "!!  $m" -ForegroundColor Yellow }
 # and pauses so the window stays open.
 function Fail($m) { throw $m }
 
+# Windows PowerShell 5.1 turns a native command's stderr into a terminating
+# NativeCommandError when $ErrorActionPreference is "Stop" and the stream is
+# redirected (`2>$null`) — so a harmless probe like `python -c ...` or
+# `tailscale status --json` killed the install. Run such probes with the
+# preference relaxed; the caller still inspects $LASTEXITCODE / output.
+function Invoke-Native([scriptblock]$Block) {
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try { & $Block } finally { $ErrorActionPreference = $prev }
+}
+
 # --- locate / install Python 3.10+ (x64 on ARM64 machines) -------------------
 function Test-PyVersion($exe, $argList) {
   try {
-    & $exe @argList -c "import sys; raise SystemExit(0 if sys.version_info[:2] >= (3, 10) else 1)" 2>$null
+    Invoke-Native { & $exe @argList -c "import sys; raise SystemExit(0 if sys.version_info[:2] >= (3, 10) else 1)" 2>$null }
     return ($LASTEXITCODE -eq 0)
   } catch { return $false }
 }
 
 function Get-PyMachine($exe, $argList) {
   try {
-    $m = & $exe @argList -c "import platform; print(platform.machine())" 2>$null
+    $m = Invoke-Native { & $exe @argList -c "import platform; print(platform.machine())" 2>$null }
     if ($LASTEXITCODE -eq 0) { return ("$m").Trim() }
   } catch { }
   return ""
@@ -292,7 +303,7 @@ function Install-TailCam {
     $exe = Get-TailscaleExe
     if (-not $exe) { return "" }
     try {
-      $json = & $exe status --json 2>$null | Out-String
+      $json = Invoke-Native { & $exe status --json 2>$null | Out-String }
       if (-not $json) { return "" }
       return (ConvertFrom-Json $json).BackendState
     } catch { return "" }
@@ -324,14 +335,39 @@ function Install-TailCam {
       return $false
     }
     $exe = Get-TailscaleExe
+    $state = Get-TailscaleState
+    if (-not $state) {
+      # No daemon to talk to: `tailscale up` can't succeed and polling won't help.
+      Warn "The Tailscale service isn't running (open the Tailscale app from the Start menu, or: Start-Service Tailscale)."
+      Warn "Once it's up, run: tailscale up   then: tailcam tailscale serve"
+      return $false
+    }
     Write-Host ""
     Info "Tailscale needs to sign in. A login link will appear below - open it on ANY device"
     Write-Host "    and approve this PC. The installer waits up to ${timeout}s."
     Write-Host ""
-    try { & $exe up --timeout "${timeout}s" } catch { Warn "tailscale up: $_" }
+    $upRc = 1
+    try { Invoke-Native { & $exe up --timeout "${timeout}s" }; $upRc = $LASTEXITCODE } catch { Warn "tailscale up: $_" }
+    $state = Get-TailscaleState
+    if ($state -eq "Running") { Info "Tailscale is connected."; return $true }
+    # Poll only when `up` failed AND the daemon is alive waiting on a browser
+    # login. Empty/Stopped means the daemon is gone or was brought down —
+    # waiting ten minutes can't change that.
+    if ($upRc -eq 0 -or $state -ne "NeedsLogin") {
+      if (-not $state) { Warn "The Tailscale service stopped responding. Open the Tailscale app, sign in, then run: tailcam tailscale serve" }
+      elseif ($state -eq "Stopped") { Warn "Tailscale is stopped (signed in, not connected). Run 'tailscale up', then: tailcam tailscale serve" }
+      else { Warn "Tailscale is in state '$state'. TailCam works locally; once connected run: tailcam tailscale serve" }
+      return $false
+    }
     $waited = 0
     while ($waited -lt $timeout) {
-      if ((Get-TailscaleState) -eq "Running") { Write-Host ""; Info "Tailscale is connected."; return $true }
+      $state = Get-TailscaleState
+      if ($state -eq "Running") { Write-Host ""; Info "Tailscale is connected."; return $true }
+      if ($state -ne "NeedsLogin") {
+        Write-Host ""
+        Warn "Tailscale stopped waiting for the login (state: '$state'). Open the Tailscale app, sign in, then run: tailcam tailscale serve"
+        return $false
+      }
       Start-Sleep -Seconds 3
       $waited += 3
       if (($waited % 30) -eq 0) { Write-Host "    ...still waiting for the Tailscale login ($($timeout - $waited)s left)" }
@@ -358,7 +394,7 @@ function Install-TailCam {
   Info "AI motion labeling (optional)"
   $ollama = Get-Command ollama -ErrorAction SilentlyContinue
   if ($ollama) {
-    $models = (& ollama list 2>$null | Out-String)
+    $models = Invoke-Native { & ollama list 2>$null | Out-String }
     if ($models -match 'moondream|llava|minicpm-v|llama3.2-vision|bakllava') {
       Write-Host "    Ollama is installed and a vision model is downloaded."
     } else {
@@ -371,6 +407,19 @@ function Install-TailCam {
     Write-Host "        ollama pull moondream"
   }
   Write-Host "    You can also do all of this from the TailCam UI -> AI."
+
+  # Stop-TailCamProcesses force-killed a running tray earlier; if the user
+  # has the tray set to start at logon, bring it back now rather than leaving
+  # it gone until the next sign-in.
+  $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+  if ((Get-ItemProperty -Path $runKey -Name "TailCam" -ErrorAction SilentlyContinue).TailCam) {
+    $pythonw = Join-Path $VenvDir "Scripts\pythonw.exe"
+    if (-not (Test-Path $pythonw)) { $pythonw = "pythonw" }
+    try {
+      Start-Process -FilePath $pythonw -ArgumentList '-m','tailcam','app','--no-window' -WindowStyle Hidden
+      Info "Relaunched the TailCam tray app."
+    } catch { Warn "Could not relaunch the tray app ($_). Start it from the Start menu." }
+  }
 
   Write-Host ""
   Info "TailCam installed."

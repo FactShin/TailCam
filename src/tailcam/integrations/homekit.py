@@ -21,6 +21,7 @@ import secrets
 import shutil
 import threading
 from functools import lru_cache
+from pathlib import Path
 from re import compile as _re_compile
 from typing import TYPE_CHECKING, Any
 
@@ -187,8 +188,21 @@ class HomeKitBridge:
     def _cfg(self):
         return self._ctx.config.homekit
 
+    def _ffmpeg(self) -> str | None:
+        """The ffmpeg to run: the configured name if it resolves, else the
+        bundled imageio-ffmpeg binary recordings/timelapses already use (a
+        launchd agent or systemd unit rarely has Homebrew/apt on PATH)."""
+        configured = (self._cfg.ffmpeg or "ffmpeg").strip()
+        if shutil.which(configured):
+            return shutil.which(configured)
+        if configured != "ffmpeg" and Path(configured).is_file():
+            return configured
+        from tailcam.timelapse.ffmpeg import ffmpeg_path
+
+        return ffmpeg_path()
+
     def ffmpeg_present(self) -> bool:
-        return shutil.which(self._cfg.ffmpeg) is not None
+        return self._ffmpeg() is not None
 
     @property
     def running(self) -> bool:
@@ -256,7 +270,9 @@ class HomeKitBridge:
         for cam in cams:
             source = mjpeg_url(base, cam.id) + f"?fps={source_fps}&w={source_w}"
             snap = snapshot_url(base, cam.id)
-            bridge.add_accessory(_make_camera(driver, cam.name, source, snap, self._cfg.ffmpeg))
+            bridge.add_accessory(
+                _make_camera(driver, cam.name, source, snap, self._ffmpeg() or self._cfg.ffmpeg)
+            )
         driver.add_accessory(bridge)
         self._driver = driver
         self._bridge = bridge

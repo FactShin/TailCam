@@ -124,7 +124,11 @@ class ClusterService:
             if r.status_code != 200:
                 return None
             data = r.json()
-        except (httpx.HTTPError, ValueError):
+        except Exception:  # unreachable, not JSON, TLS, anything — not a peer
+            return None
+        # Auto-discovery probes every tailnet host's :8443, so the answer may
+        # be any web app: only a TailCam-shaped object counts.
+        if not isinstance(data, dict) or "version" not in data:
             return None
         host = data.get("host") or httpx.URL(base_url).host or base_url
         if host == self.local_host:
@@ -182,9 +186,12 @@ class ClusterService:
                 )
                 r.raise_for_status()
                 items = r.json()
-            except (httpx.HTTPError, ValueError):
+            except Exception:
                 peer.online = False
                 return []
+            if not isinstance(items, list):
+                return []
+            items = [it for it in items if isinstance(it, dict)]
             prefix = f"/proxy/{peer.key}"
             for it in items:
                 it["host"] = peer.host

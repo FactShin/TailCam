@@ -56,6 +56,12 @@ class FrameBuffer:
         with self._cond:
             return self._frame
 
+    def idle_for(self) -> float:
+        """Seconds since a consumer last waited on this buffer (inf if never)."""
+        if self.last_wait_at <= 0:
+            return float("inf")
+        return time.monotonic() - self.last_wait_at
+
     def await_latest(self, last_seq: int, timeout: float = 1.0) -> Frame | None:
         """Block until a frame newer than ``last_seq`` arrives (or timeout/close).
 

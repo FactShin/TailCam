@@ -15,6 +15,8 @@ from tailcam.streaming.encoder import encode_jpeg
 
 log = get_logger(__name__)
 
+_MAX_SAVE_FAILURES = 5
+
 
 class TimelapseCaptureWorker:
     """Saves numbered JPEG frames at a fixed cadence until stopped.
@@ -54,6 +56,8 @@ class TimelapseCaptureWorker:
         self.width = 0
         self.height = 0
         self._first = True
+        self._save_failures = 0
+        self.failed = False  # capture aborted because frames couldn't be written
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name=f"timelapse-{tl_id}", daemon=True)
 
@@ -91,16 +95,25 @@ class TimelapseCaptureWorker:
             if self.max_frames and self.frames_captured >= self.max_frames:
                 natural = True
                 break
-        if natural and self._on_complete is not None:
-            self._on_complete()
+        if (natural or self.failed) and self._on_complete is not None:
+            self._on_complete()  # a failed capture still finalizes what it has
 
     def _save(self, image: np.ndarray) -> None:
         try:
             path = self.frames_dir / f"{self.frames_captured:06d}.jpg"
             path.write_bytes(encode_jpeg(image, self.jpeg_quality))
-        except Exception as exc:  # pragma: no cover - disk full etc.
+        except Exception as exc:  # disk full, drive unmounted
+            self._save_failures += 1
             log.warning("timelapse %s: failed to save frame: %s", self.tl_id, exc)
+            if self._save_failures >= _MAX_SAVE_FAILURES:
+                log.error(
+                    "timelapse %s: %d consecutive save failures; stopping capture",
+                    self.tl_id, self._save_failures,
+                )
+                self.failed = True
+                self._stop.set()
             return
+        self._save_failures = 0
         if self._first:
             self.height, self.width = image.shape[:2]
             self._first = False

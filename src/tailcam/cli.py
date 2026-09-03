@@ -105,6 +105,10 @@ def run(
 
     probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
+        # SO_REUSEADDR: without it, TIME_WAIT sockets left by the previous
+        # instance make this probe fail for ~60s after every restart, so the
+        # service's own restart looked like "port already in use".
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         probe.bind((config.server.host, config.server.port))
     except OSError:
         typer.echo(
@@ -350,7 +354,10 @@ def install_service() -> None:
     setup_logging()
     from tailcam.service import installer
 
-    typer.echo(installer.install())
+    msg = installer.install()
+    typer.echo(msg)
+    if msg.startswith("FAILED"):
+        raise typer.Exit(code=1)
 
 
 @app.command(name="uninstall-service")
@@ -567,8 +574,25 @@ def update(
 
     # install(), not restart(): re-rendering the unit migrates nodes still on
     # the legacy anycam.service/com.anycam names, and it restarts either way.
-    typer.echo(installer.install() if installer.is_installed() else installer.restart())
-    typer.echo(f"Updated to {latest}.")
+    msg = installer.install() if installer.is_installed() else installer.restart()
+    typer.echo(msg)
+    # This process still has the old module loaded; ask a fresh interpreter
+    # what pip actually left on disk before claiming success.
+    now = upd.installed_version()
+    if now == latest:
+        typer.echo(f"Updated to {latest}.")
+    elif now is None:
+        typer.echo(
+            f"pip finished, but the installed version couldn't be read back; "
+            f"check with `tailcam version` (expected {latest})."
+        )
+        raise typer.Exit(code=1)
+    else:
+        typer.echo(
+            f"pip finished, but the installed version is {now}, not {latest} "
+            f"(was {current}). Re-run the install script to force a clean upgrade."
+        )
+        raise typer.Exit(code=1)
 
 
 @app.command()

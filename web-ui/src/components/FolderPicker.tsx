@@ -26,7 +26,7 @@ export function FolderPicker({
   const data = q.data;
 
   return (
-    <div className="navsheet-root" role="dialog" aria-label="Choose a folder" onClick={onClose}>
+    <div className="fp-root" role="dialog" aria-label="Choose a folder" onClick={onClose}>
       <div className="navsheet-backdrop" />
       <div className="navsheet folder-picker" onClick={(e) => e.stopPropagation()}>
         <div className="navsheet-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
