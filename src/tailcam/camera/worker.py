@@ -134,7 +134,10 @@ class CameraWorker:
                         "“Let desktop apps access your camera”"
                     )
                 else:
-                    self.state.last_error = "can't open device (in use, unplugged, or denied)"
+                    self.state.last_error = (
+                        getattr(source, "last_error", "")
+                        or "can't open device (in use, unplugged, or denied)"
+                    )
                 source.close()
                 if self._stop.wait(backoff):
                     break
@@ -143,7 +146,9 @@ class CameraWorker:
 
             backoff = 0.5
             self.state.status = CameraStatus.ONLINE
-            self.state.last_error = None
+            # A downgraded open (e.g. 720p refused, running at 480p) keeps its
+            # note so the camera page can say why the picture is smaller.
+            self.state.last_error = getattr(source, "last_error", "") or None
             failures = 0
             transform = self.state.transform
 

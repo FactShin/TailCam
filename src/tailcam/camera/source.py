@@ -11,6 +11,7 @@ import sys
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -61,6 +62,10 @@ class OpenCVCameraSource(CameraSource):
         self.descriptor = descriptor
         self.props = props
         self._cap: Any = None
+        # Why the last open() failed (shown on the camera page), and what the
+        # driver actually gave us on success: (fourcc, width, height).
+        self.last_error = ""
+        self.negotiated: tuple[str, int, int] | None = None
 
     def _api_preference(self) -> int:
         import cv2
@@ -126,6 +131,7 @@ class OpenCVCameraSource(CameraSource):
     def open(self) -> bool:
         import cv2
 
+        self.last_error = ""
         if sys.platform == "win32":
             if not self._open_windows():
                 log.warning(
@@ -133,41 +139,86 @@ class OpenCVCameraSource(CameraSource):
                     self.descriptor.id,
                 )
                 return False
+        elif self.descriptor.backend == "v4l2":
+            if not self._open_v4l2(cv2):
+                return False
         else:
             self._cap = cv2.VideoCapture(self._device_arg(), self._api_preference())
             if not self._cap.isOpened():
                 log.warning("Failed to open camera %s", self.descriptor.id)
                 return False
-            if self.descriptor.backend == "v4l2":
-                self._tune_v4l2(cv2)
-        # Apply initial properties.
-        for name in ("width", "height", "fps", "brightness", "contrast", "saturation"):
+        # Apply initial properties (size/fps were negotiated at open on V4L2).
+        names: tuple[str, ...] = ("brightness", "contrast", "saturation")
+        if self.descriptor.backend != "v4l2":
+            names = ("width", "height", "fps", *names)
+        for name in names:
             value = getattr(self.props, name, None)
             if value is not None:
                 self.set_property(name, float(value))
         return True
 
-    def _tune_v4l2(self, cv2: Any) -> None:
-        """Ask a V4L2 webcam for compressed MJPEG frames and a 1-frame queue.
+    # V4L2 open ladder. Every attempt asks for the format BEFORE the first
+    # STREAMON — that's the whole point: OpenCV's default open negotiates raw
+    # YUYV at 640x480 and streams immediately, and on a Raspberry Pi with two
+    # webcams on one USB 2.0 bus the second STREAMON fails with ENOSPC ("No
+    # space left on device"), which surfaces as "can't open device". MJPEG at
+    # the wanted size needs a tenth of the bandwidth; if even that is refused
+    # we step down to 640x480 rather than leaving the camera offline.
+    def _v4l2_attempts(self) -> list[tuple[str, int | None, int | None]]:
+        w, h = int(self.props.width or 0) or None, int(self.props.height or 0) or None
+        if os.environ.get("TAILCAM_RAW_V4L2") == "1":
+            return [("", w, h), ("", None, None)]
+        attempts: list[tuple[str, int | None, int | None]] = [("MJPG", w, h)]
+        if (w, h) != (640, 480):
+            attempts.append(("MJPG", 640, 480))
+        attempts.append(("", w, h))  # raw, as before
+        attempts.append(("", None, None))  # whatever the driver defaults to
+        return attempts
 
-        Without this OpenCV negotiates raw YUYV, which at 720p is ~27 MB/s per
-        camera — two cameras saturate a Raspberry Pi's USB 2.0 bus and the frame
-        rate collapses. MJPEG is a tenth of that and every UVC webcam supports
-        it. ``TAILCAM_RAW_V4L2=1`` opts out for the rare device that misbehaves.
-        The 1-frame buffer keeps latency low and drops stale frames instead of
-        queueing them on a busy host.
-        """
-        if os.environ.get("TAILCAM_RAW_V4L2") == "1" or self._cap is None:
-            return
+    def _open_v4l2(self, cv2: Any) -> bool:
+        wanted = (int(self.props.width or 0), int(self.props.height or 0))
+        for fourcc, w, h in self._v4l2_attempts():
+            params: list[int] = [cv2.CAP_PROP_BUFFERSIZE, 1]
+            if fourcc:
+                params += [cv2.CAP_PROP_FOURCC, int(cv2.VideoWriter_fourcc(*fourcc))]
+            if w and h:
+                params += [cv2.CAP_PROP_FRAME_WIDTH, w, cv2.CAP_PROP_FRAME_HEIGHT, h]
+            if self.props.fps:
+                params += [cv2.CAP_PROP_FPS, int(self.props.fps)]
+            try:
+                cap = cv2.VideoCapture(self._device_arg(), cv2.CAP_V4L2, params)
+            except (cv2.error, TypeError):  # very old OpenCV without open params
+                cap = cv2.VideoCapture(self._device_arg(), cv2.CAP_V4L2)
+            if cap.isOpened() and self._verify_frames(cap, deadline_s=2.5):
+                self._cap = cap
+                self._log_v4l2_format(cv2, fourcc or "raw", (w, h), wanted)
+                return True
+            cap.release()
+        self.last_error = linux_open_diagnosis(self.descriptor.id)
+        log.warning("Failed to open camera %s: %s", self.descriptor.id, self.last_error)
+        return False
+
+    def _log_v4l2_format(
+        self, cv2: Any, asked: str, size: tuple[int | None, int | None], wanted: tuple[int, int]
+    ) -> None:
         try:
-            mjpg = cv2.VideoWriter_fourcc(*"MJPG")  # type: ignore[attr-defined]
-            self._cap.set(cv2.CAP_PROP_FOURCC, mjpg)
-            self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             got = int(self._cap.get(cv2.CAP_PROP_FOURCC)) & 0xFFFFFFFF
-            name = "".join(chr((got >> (8 * i)) & 0xFF) for i in range(4))
-            log.info("Camera %s pixel format: %s", self.descriptor.id, name.strip() or got)
-        except Exception as exc:  # pragma: no cover - driver quirks
-            log.debug("v4l2 tuning failed on %s: %s", self.descriptor.id, exc)
+            name = "".join(chr((got >> (8 * i)) & 0xFF) for i in range(4)).strip() or str(got)
+            gw = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            gh = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        except Exception:  # pragma: no cover - driver quirks
+            name, gw, gh = asked, 0, 0
+        self.negotiated = (name, gw, gh)
+        log.info("Camera %s pixel format: %s %sx%s", self.descriptor.id, name, gw, gh)
+        if wanted[0] and (gw, gh) != wanted and gw:
+            log.warning(
+                "Camera %s refused %sx%s (USB bandwidth?) — running at %sx%s. Move it to "
+                "another USB port or see `tailcam doctor` for the uvcvideo bandwidth fix.",
+                self.descriptor.id, wanted[0], wanted[1], gw, gh,
+            )
+            self.last_error = (
+                f"running at {gw}x{gh}: {wanted[0]}x{wanted[1]} refused (USB bandwidth?)"
+            )
 
     def read(self) -> np.ndarray | None:
         if self._cap is None:
@@ -245,6 +296,54 @@ class SyntheticCameraSource(CameraSource):
     @property
     def is_open(self) -> bool:
         return self._opened
+
+
+def linux_open_diagnosis(path: str) -> str:
+    """Why a V4L2 node couldn't be opened for capture, in words a user can act
+    on. Distinguishes the OS-level failures (unplugged, permission, busy) from
+    the one that looks identical in OpenCV but isn't: the node opens fine and
+    only *streaming* is refused — on a Raspberry Pi that is USB bandwidth."""
+    import errno
+
+    try:
+        fd = os.open(path, os.O_RDWR | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return "device is gone (unplugged?) — it comes back automatically when reconnected"
+    except PermissionError:
+        return (
+            "permission denied — add your user to the video group: "
+            "sudo usermod -aG video $USER (then log out and back in)"
+        )
+    except OSError as exc:
+        if exc.errno == errno.EBUSY:
+            return "device is in use by another program"
+        return f"can't open device ({exc.strerror or exc})"
+    os.close(fd)
+    return (
+        "device opens but refuses to stream — usually USB bandwidth (two cameras on one "
+        "USB 2.0 bus). Move a camera to another USB port, lower its resolution, or apply "
+        "the uvcvideo bandwidth fix (`tailcam doctor`)."
+    )
+
+
+def uvc_bandwidth_quirk_active() -> bool:
+    """Whether uvcvideo runs with UVC_QUIRK_FIX_BANDWIDTH (0x80) — the kernel
+    setting that lets two USB webcams share a Raspberry Pi's USB bus."""
+    try:
+        raw = Path("/sys/module/uvcvideo/parameters/quirks").read_text().strip()
+        return bool(int(raw, 0) & 0x80)
+    except (OSError, ValueError):
+        pass
+    try:
+        for conf in Path("/etc/modprobe.d").glob("*.conf"):
+            for line in conf.read_text(errors="ignore").splitlines():
+                line = line.strip()
+                if line.startswith("options") and "uvcvideo" in line and "quirks" in line:
+                    value = line.split("quirks=", 1)[1].split()[0]
+                    return bool(int(value, 0) & 0x80)
+    except (OSError, ValueError):
+        pass
+    return False
 
 
 def use_synthetic() -> bool:

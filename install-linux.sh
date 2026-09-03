@@ -14,6 +14,7 @@ PORT="${TAILCAM_PORT:-8088}"
 DO_SERVICE=1
 DO_TAILSCALE=1
 DO_TAILSCALE_INSTALL=1
+DO_UVC_QUIRK=1
 # How long to wait for the browser login after `tailscale up` (seconds).
 TS_LOGIN_TIMEOUT="${TAILCAM_TAILSCALE_LOGIN_TIMEOUT:-600}"
 VENV_DIR="${HOME}/.local/share/tailcam/venv"
@@ -36,11 +37,13 @@ while [ $# -gt 0 ]; do
         --no-service) DO_SERVICE=0 ;;
         --no-tailscale) DO_TAILSCALE=0 ;;
         --no-tailscale-install) DO_TAILSCALE_INSTALL=0 ;;
+        --no-uvc-quirk) DO_UVC_QUIRK=0 ;;
         --desktop) DO_DESKTOP=1 ;;
         -h|--help)
             echo "Usage: install-linux.sh [--port N] [--ref REF] [--no-service] [--no-tailscale] [--no-tailscale-install] [--desktop]"
             echo "  --no-tailscale          skip everything Tailscale-related"
             echo "  --no-tailscale-install  don't auto-install Tailscale when it's missing (still serve if present)"
+            echo "  --no-uvc-quirk          Raspberry Pi: don't set the uvcvideo USB-bandwidth quirk"
             exit 0 ;;
         *) warn "Unknown option: $1" ;;
     esac
@@ -69,6 +72,42 @@ ensure_system_deps() {
     sudo apt-get update -y || warn "apt-get update failed."
     sudo apt-get install -y $required || warn "Failed to install ${required}; TailCam may not import. Install them manually."
     sudo apt-get install -y $optional || true
+}
+
+# --- Raspberry Pi: let two USB webcams share one bus --------------------------
+# UVC webcams (Logitech C920 family especially) advertise far more USB bandwidth
+# than MJPEG actually needs; the kernel reserves what they claim, so the second
+# camera's stream is refused with ENOSPC ("No space left on device") and shows
+# as offline. quirks=0x80 (UVC_QUIRK_FIX_BANDWIDTH) makes uvcvideo reserve what
+# the negotiated format really uses. Takes effect after a reboot (or a module
+# reload while no camera is in use).
+tune_raspberry_pi() {
+    [ "$DO_UVC_QUIRK" -eq 1 ] || return 0
+    local model=""
+    [ -r /proc/device-tree/model ] && model="$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)"
+    case "$model" in *[Rr]aspberry*) ;; *) return 0 ;; esac
+    local conf=/etc/modprobe.d/tailcam-uvcvideo.conf
+    if grep -qs 'quirks' "$conf" 2>/dev/null; then
+        return 0
+    fi
+    if ! sudo -n true 2>/dev/null && [ ! -t 0 ]; then
+        warn "Raspberry Pi: the uvcvideo bandwidth fix needs sudo. Run once, then reboot:"
+        echo "    echo 'options uvcvideo quirks=0x80' | sudo tee $conf"
+        return 0
+    fi
+    log "Raspberry Pi: enabling the uvcvideo USB-bandwidth fix ($conf)"
+    if echo 'options uvcvideo quirks=0x80' | sudo tee "$conf" >/dev/null 2>&1; then
+        # Reload now if nothing is streaming; otherwise it applies at next boot.
+        if ! fuser /dev/video* >/dev/null 2>&1; then
+            sudo modprobe -r uvcvideo 2>/dev/null && sudo modprobe uvcvideo 2>/dev/null \
+                && log "uvcvideo reloaded with quirks=0x80" \
+                || warn "uvcvideo will use the bandwidth fix after the next reboot."
+        else
+            warn "A camera is in use; the uvcvideo bandwidth fix applies after the next reboot."
+        fi
+    else
+        warn "Could not write $conf (run: echo 'options uvcvideo quirks=0x80' | sudo tee $conf)."
+    fi
 }
 
 # --- Python 3.10+ -----------------------------------------------------------
@@ -287,6 +326,7 @@ ensure_ai_hint() {
 
 log "Installing TailCam on Linux (${DISTRO:-unknown}, ref=${REF}, port=${PORT})"
 ensure_system_deps
+tune_raspberry_pi
 ensure_python
 install_tailcam
 remove_legacy_anycam
