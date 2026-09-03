@@ -52,7 +52,7 @@ class _RecordingSession:
         self._resize_warned = False
         self._open_failed = False
         self.path: Path | None = None
-        self._first_image = None
+        self._first_image: np.ndarray | None = None
         self.frames_written = 0
         self.codec = ""
         self.error = ""  # why the session ended early (disk full, encoder died)
