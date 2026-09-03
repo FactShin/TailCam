@@ -64,8 +64,12 @@ def _create_shortcut_ps(lnk: Path, target: Path, icon: Path | None) -> str:
 
 def _set_autostart_ps(target: Path) -> str:
     # pythonw + --no-window: tray only at login, no console, no window popping up.
+    # The Run key is created first: a fresh profile (CI runners, a brand-new
+    # user) may not have it yet, and Set-ItemProperty on a missing key fails —
+    # silently, from a no-console service — so autostart never got registered.
     value = f'"{target}" -m tailcam app --no-window'
     return (
+        f"New-Item -Path '{_RUN_KEY}' -Force | Out-Null\n"
         f"Set-ItemProperty -Path '{_RUN_KEY}' -Name '{APP_NAME}' "
         f"-Value {_ps_single_quote(value)}\n"
     )
@@ -122,6 +126,11 @@ def uninstall_shortcut(home: Path | None = None) -> bool:
 
 
 def _run_ps(script: str) -> None:
-    run_hidden(
-        ["powershell", "-NoProfile", "-NonInteractive", "-Command", script], check=False
+    proc = run_hidden(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+        check=False, capture_output=True, text=True,
     )
+    if proc.returncode != 0:
+        log.warning(
+            "PowerShell step failed (%s): %s", proc.returncode, (proc.stderr or "").strip()[-400:]
+        )
