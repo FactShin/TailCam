@@ -12,6 +12,8 @@ from datetime import datetime
 from functools import partial
 from pathlib import Path
 
+import numpy as np
+
 from tailcam import paths
 from tailcam.camera.frame import FrameConsumer
 from tailcam.camera.manager import CameraManager
@@ -72,7 +74,7 @@ class _RecordingSession:
         interval = 1.0 / self.fps
         next_due = time.monotonic()
         consumer = FrameConsumer(self.buffer, self._reacquire)
-        last = None
+        last: np.ndarray | None = None
         try:
             while not self._stop.is_set():
                 frame = consumer.next_frame(timeout=min(1.0, interval))
