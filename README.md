@@ -14,6 +14,7 @@ port forwarding.
 [![version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Ffactshin%2Ftailcam%2Fmain%2Fweb-ui%2Fpackage.json&query=%24.version&prefix=v&label=version&color=5b7fff&style=flat-square)](https://github.com/factshin/tailcam)
 [![platforms](https://img.shields.io/badge/platform-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows-0E74FF?style=flat-square)](#install-in-60-seconds)
 [![python](https://img.shields.io/badge/python-3.10%2B-5A38F2?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
+[![pypi](https://img.shields.io/pypi/v/tailcam?label=pypi&color=5b7fff&style=flat-square)](https://pypi.org/project/tailcam/)
 [![docker](https://img.shields.io/badge/docker-ghcr.io%2Ffactshin%2Ftailcam-9C20EE?style=flat-square&logo=docker&logoColor=white)](#docker)
 [![license](https://img.shields.io/badge/license-MIT-2ee6a8?style=flat-square)](#license)
 
@@ -198,11 +199,16 @@ Mac/Linux services. Camera names need the optional `pygrabber` package
 <summary><b>Manual install (pipx / pip)</b></summary>
 
 ```bash
-pipx install git+https://github.com/factshin/tailcam.git
+pipx install tailcam
 # or
-python3 -m venv .venv && .venv/bin/pip install git+https://github.com/factshin/tailcam.git
+python3 -m venv .venv && .venv/bin/pip install tailcam
 tailcam run
+
+# extras (HomeKit, MQTT, desktop, training, …)
+pip install 'tailcam[homekit]'
 ```
+
+Git fallback (no PyPI): `pip install git+https://github.com/factshin/tailcam.git`
 
 </details>
 
