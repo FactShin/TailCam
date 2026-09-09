@@ -81,6 +81,7 @@ def create_app(config: AppConfig | None = None, context: AppContext | None = Non
 
     spa_index = _SPA_DIR / "index.html"
     if spa_index.exists():
+        spa_root = _SPA_DIR.resolve()
         # Serve the built React dashboard. Hashed assets live under /assets;
         # everything else falls back to index.html for client-side routing.
         app.mount("/assets", StaticFiles(directory=str(_SPA_DIR / "assets")), name="assets")
@@ -89,7 +90,13 @@ def create_app(config: AppConfig | None = None, context: AppContext | None = Non
         async def spa(full_path: str) -> FileResponse:
             if any(("/" + full_path).startswith(p) for p in _API_PREFIXES):
                 raise HTTPException(status_code=404, detail="not found")
-            candidate = _SPA_DIR / full_path
+            # Decoded parent segments and symlinks must never expose files
+            # outside the public dashboard bundle.
+            try:
+                candidate = (spa_root / full_path).resolve()
+                candidate.relative_to(spa_root)
+            except (ValueError, OSError, RuntimeError):
+                raise HTTPException(status_code=404, detail="not found") from None
             if full_path and candidate.is_file():
                 return FileResponse(candidate)  # manifest, icons, sw.js, favicon
             return FileResponse(spa_index)

@@ -1,8 +1,10 @@
 # TailCam — AI Detection Roadmap (Phase: "Smart Motion")
 
-> Status: PLANNED. Prereq fix shipped in v0.2.7 (motion events no longer leak
-> "ongoing"). This phase turns TailCam's pixel-diff motion into a Blink/Ring-style
-> smart detection system, with a path to custom detectors (3D-printer failure).
+> **Historical roadmap.** Ollama motion analysis, built-in object detection,
+> notifications, and model training now ship. See the current
+> [AI analysis guide](../web-ui/src/docs/md/ai-analysis.md) and
+> [training guide](../web-ui/src/docs/md/training.md). The original proposal
+> below includes exploratory work and is not a list of current limitations.
 
 ## Vision (user's words)
 1. **Now-ish:** security-camera-grade motion detection (like Blink/Ring) — fewer

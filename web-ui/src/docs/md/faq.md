@@ -2,9 +2,11 @@
 
 ## Does TailCam send anything to the cloud?
 
-No. Capture, streaming, recording, and AI analysis all run on machines you
-control. [Tailscale](tailscale) provides the private network and identity; there's
-no TailCam cloud service in the loop.
+There is no TailCam cloud service. Capture, storage, and built-in detection run
+on your machines, with [Tailscale](tailscale) providing remote connectivity.
+Downloads and update checks contact package, model, plugin, and GitHub services.
+Optional notifications and AI-provider plugins may send events or frames to
+the services you configure; review them before enabling them.
 
 ## Do I need Tailscale?
 
@@ -40,7 +42,8 @@ Under TailCam's data and config directories (`TAILCAM_DATA_DIR` /
 
 ## How do I control storage usage?
 
-Set `[retention]` `max_gb` and `max_age_days`. The oldest media is pruned first.
+Enable `[retention]` `enabled`, then set `max_gb` and `max_age_days`. Cleanup is
+off by default; when enabled, the oldest media is pruned first.
 See [Recording & media](recording-media). The MCP `suggest_retention_cleanup`
 tool analyzes usage non-destructively.
 
@@ -64,9 +67,11 @@ or detection training run, and activate the result. See [Training](training).
 
 ## How do I update TailCam?
 
-`tailcam update` (or `--check` to look without installing). The dashboard shows a
-banner when an update is available. Across a [fleet](fleet), `check_fleet_version_drift`
-flags laggards.
+For PyPI installs, use `pipx upgrade tailcam` or `python -m pip install
+--upgrade tailcam` inside TailCam's virtual environment, then restart the server.
+`tailcam update` and the dashboard update banner instead track **GitHub main**,
+which may be ahead of PyPI. See [Installation](installation). Across a
+[fleet](fleet), `check_fleet_version_drift` flags nodes on different versions.
 
 ## I used to run AnyCam — will my data carry over?
 

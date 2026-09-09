@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="web-ui/src/brand/source/logo-full.svg" alt="TailCam logo" width="128" />
+<img src="https://raw.githubusercontent.com/factshin/tailcam/main/web-ui/src/brand/source/logo-full.svg" alt="TailCam logo" width="128" />
 
 # TailCam
 
@@ -8,12 +8,12 @@
 
 TailCam turns any Linux, macOS, or Windows machine with a webcam into a private,
 AI-powered camera system you can watch from anywhere over
-[Tailscale](https://tailscale.com) — no cloud, no accounts, no subscriptions, no
+[Tailscale](https://tailscale.com) — no TailCam cloud, account, or subscription, and no
 port forwarding.
 
 [![version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Ffactshin%2Ftailcam%2Fmain%2Fweb-ui%2Fpackage.json&query=%24.version&prefix=v&label=version&color=5b7fff&style=flat-square)](https://github.com/factshin/tailcam)
 [![platforms](https://img.shields.io/badge/platform-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows-0E74FF?style=flat-square)](#install-in-60-seconds)
-[![python](https://img.shields.io/badge/python-3.10%2B-5A38F2?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
+[![python](https://img.shields.io/badge/python-3.10%2B-5A38F2?style=flat-square&logo=python&logoColor=white)](https://github.com/factshin/tailcam/blob/main/pyproject.toml)
 [![pypi](https://img.shields.io/pypi/v/tailcam?label=pypi&color=5b7fff&style=flat-square)](https://pypi.org/project/tailcam/)
 [![docker](https://img.shields.io/badge/docker-ghcr.io%2Ffactshin%2Ftailcam-9C20EE?style=flat-square&logo=docker&logoColor=white)](#docker)
 [![license](https://img.shields.io/badge/license-MIT-2ee6a8?style=flat-square)](#license)
@@ -23,7 +23,7 @@ port forwarding.
 [Agents / MCP](#ai-agents-mcp) · [Plugins](#plugins--marketplace) ·
 [Security](#security-model) · [Development](#development)
 
-<img src="docs/screenshots/dashboard.png" alt="TailCam dashboard — live camera grid across four devices" width="100%" />
+<img src="https://raw.githubusercontent.com/factshin/tailcam/main/docs/screenshots/dashboard.png" alt="TailCam dashboard — live camera grid across four devices" width="100%" />
 
 <sub>The dashboard aggregating four cameras across four tailnet devices — live grid, stats, and motion activity feed.
 All screenshots on this page are the real app running with TailCam's built-in synthetic demo camera.</sub>
@@ -56,65 +56,78 @@ already running. TailCam puts them to work as a monitoring system that is genuin
 <table>
   <tr>
     <td width="50%">
-      <img src="docs/screenshots/videowall.png" alt="Video wall" />
+      <img src="https://raw.githubusercontent.com/factshin/tailcam/main/docs/screenshots/videowall.png" alt="Video wall" />
       <br /><b>Video wall</b> — every camera full-bleed on one screen (press <code>W</code>). Low-bandwidth tiles; click any feed for full quality.
     </td>
     <td width="50%">
-      <img src="docs/screenshots/camera.png" alt="Camera view" />
+      <img src="https://raw.githubusercontent.com/factshin/tailcam/main/docs/screenshots/camera.png" alt="Camera view" />
       <br /><b>Camera view</b> — live stream with per-viewer FPS/zoom/pan/quality, plus device-wide resolution, rotation, and flips. Snapshot and record in one tap.
     </td>
   </tr>
   <tr>
     <td width="50%">
-      <img src="docs/screenshots/events.png" alt="Motion events" />
+      <img src="https://raw.githubusercontent.com/factshin/tailcam/main/docs/screenshots/events.png" alt="Motion events" />
       <br /><b>Events</b> — the motion log across all devices, with per-event clips, thumbnails, and AI labels when enabled.
     </td>
     <td width="50%">
-      <img src="docs/screenshots/gallery.png" alt="Gallery" />
+      <img src="https://raw.githubusercontent.com/factshin/tailcam/main/docs/screenshots/gallery.png" alt="Gallery" />
       <br /><b>Gallery</b> — snapshots and recordings from every camera, filterable by device and type.
     </td>
   </tr>
   <tr>
     <td width="50%">
-      <img src="docs/screenshots/ai-studio.png" alt="AI Studio" />
+      <img src="https://raw.githubusercontent.com/factshin/tailcam/main/docs/screenshots/ai-studio.png" alt="AI Studio" />
       <br /><b>AI Studio</b> — object detection, Ollama motion analysis, training, and active learning — all local, managed from one place.
     </td>
     <td width="50%">
-      <img src="docs/screenshots/timelapse.png" alt="Timelapse" />
+      <img src="https://raw.githubusercontent.com/factshin/tailcam/main/docs/screenshots/timelapse.png" alt="Timelapse" />
       <br /><b>Timelapse</b> — long captures with printer presets, then “Smooth” them into flowing motion with ffmpeg or GPU RIFE interpolation.
     </td>
   </tr>
   <tr>
     <td width="50%">
-      <img src="docs/screenshots/plugins.png" alt="Plugin marketplace" />
+      <img src="https://raw.githubusercontent.com/factshin/tailcam/main/docs/screenshots/plugins.png" alt="Plugin marketplace" />
       <br /><b>Plugins</b> — one-click, checksum-verified community plugins: notification channels, AI providers, event automations.
     </td>
     <td width="50%">
-      <img src="docs/screenshots/agents.png" alt="MCP agent access" />
+      <img src="https://raw.githubusercontent.com/factshin/tailcam/main/docs/screenshots/agents.png" alt="MCP agent access" />
       <br /><b>MCP</b> — connect Claude Code, Codex, or any MCP agent to your cameras with copy-paste snippets. 47 tools, role-gated and audited, over a stateless endpoint.
     </td>
   </tr>
   <tr>
     <td width="50%">
-      <img src="docs/screenshots/settings.png" alt="Settings" />
+      <img src="https://raw.githubusercontent.com/factshin/tailcam/main/docs/screenshots/settings.png" alt="Settings" />
       <br /><b>Settings</b> — system console: fleet devices, Tailscale status, storage and retention, integrations.
     </td>
     <td width="50%">
-      <img src="docs/screenshots/docs.png" alt="In-app docs" />
+      <img src="https://raw.githubusercontent.com/factshin/tailcam/main/docs/screenshots/docs.png" alt="In-app docs" />
       <br /><b>Docs</b> — the full manual ships inside the app. Everything you need without leaving the dashboard.
     </td>
   </tr>
 </table>
 
 <div align="center">
-  <img src="docs/screenshots/palette.png" alt="Command palette" width="72%" />
+  <img src="https://raw.githubusercontent.com/factshin/tailcam/main/docs/screenshots/palette.png" alt="Command palette" width="72%" />
   <br /><sub><b>Command palette</b> — <kbd>Cmd/Ctrl&nbsp;K</kbd> jumps to any camera, screen, or action.</sub>
 </div>
 
 ## Install in 60 seconds
 
-Pick the one-liner for your OS — each installer is dedicated to that platform (no
-cross-OS guesswork).
+TailCam is available on [PyPI](https://pypi.org/project/tailcam/). For the
+published release, use [pipx or pip](#install-from-pypi) with Python 3.10+:
+
+```bash
+pipx install tailcam
+tailcam run
+```
+
+Open `http://localhost:8088/`. The package includes the built dashboard; Node.js
+and a Git checkout are not needed. See [pipx setup](https://pipx.pypa.io/) if
+the `pipx` command isn't installed.
+
+For automatic system dependencies, Tailscale setup, and a background service,
+use the OS installer below. **These installers fetch GitHub `main` by default,
+which can be newer than the published PyPI release.**
 
 **Linux** (Debian/Ubuntu/Raspberry Pi OS):
 
@@ -151,12 +164,14 @@ After install, open the URL printed at the end (your tailnet HTTPS address, or
 
 ```bash
 # Linux / macOS — download then run with flags:
-curl -fsSL .../install-linux.sh -o install-linux.sh && bash install-linux.sh --port 9000 --no-tailscale
+curl -fsSL https://raw.githubusercontent.com/factshin/tailcam/main/install-linux.sh -o install-linux.sh
+bash install-linux.sh --port 9000 --no-tailscale
 ```
 
 ```powershell
 # Windows:
-irm .../install.ps1 -OutFile install.ps1 ; .\install.ps1 -Port 9000 -NoTailscale
+irm https://raw.githubusercontent.com/factshin/tailcam/main/install.ps1 -OutFile install.ps1
+.\install.ps1 -Port 9000 -NoTailscale
 ```
 
 Linux/macOS flags: `--port`, `--ref <tag>`, `--no-service`, `--no-tailscale`,
@@ -170,7 +185,6 @@ device — and waits (up to `TAILCAM_TAILSCALE_LOGIN_TIMEOUT` seconds, default 6
 until the machine joins your tailnet, then enables `tailscale serve`. Pass
 `--no-tailscale-install` to keep the old "warn only" behaviour; nothing here ever
 fails the install — TailCam always works locally.
-Windows: `-Port`, `-Ref`, `-NoService`, `-NoTailscale`.
 
 To uninstall: run `uninstall-linux.sh` / `uninstall-macos.sh` / `uninstall.ps1`, or
 `tailcam uninstall-service` to just remove the background service.
@@ -195,22 +209,58 @@ Mac/Linux services. Camera names need the optional `pygrabber` package
 
 </details>
 
-<details>
-<summary><b>Manual install (pipx / pip)</b></summary>
+### Install from PyPI
+
+**pipx** keeps TailCam in its own environment and exposes the `tailcam` command:
 
 ```bash
 pipx install tailcam
-# or
-python3 -m venv .venv && .venv/bin/pip install tailcam
 tailcam run
-
-# extras (HomeKit, MQTT, desktop, training, …)
-pip install 'tailcam[homekit]'
 ```
 
-Git fallback (no PyPI): `pip install git+https://github.com/factshin/tailcam.git`
+For a fresh install with HomeKit, use `pipx install 'tailcam[homekit]'` instead.
+To add HomeKit to an existing pipx install, use
+`pipx inject tailcam 'tailcam[homekit]'` and restart TailCam.
 
-</details>
+**pip in a virtual environment — Linux/macOS:**
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install tailcam
+.venv/bin/tailcam run
+```
+
+**Windows PowerShell** (use x64 Python on Windows ARM):
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install tailcam
+.\.venv\Scripts\tailcam.exe run
+```
+
+Install extras using the **same environment** as the running server, for example
+`.venv/bin/python -m pip install 'tailcam[homekit,mqtt]'` on Linux/macOS or
+`.\.venv\Scripts\python.exe -m pip install 'tailcam[homekit,mqtt]'` on Windows.
+HomeKit live video also needs system `ffmpeg`. Manual PyPI installs do not
+install Tailscale or register a background service; see the
+[installation guide](https://github.com/factshin/tailcam/blob/main/web-ui/src/docs/md/installation.md) for those steps and
+the environment paths used by the OS installers.
+
+### Updating
+
+- **PyPI / pipx:** `pipx upgrade tailcam`.
+- **PyPI / venv:** `.venv/bin/python -m pip install --upgrade tailcam` (Windows:
+  `.\.venv\Scripts\python.exe -m pip install --upgrade tailcam`). Include your
+  extras, such as `'tailcam[homekit,mqtt]'`, when upgrading their dependencies too.
+- **GitHub installer / development channel:** `tailcam update` checks and
+  installs GitHub `main`; `tailcam update --check` only checks. The dashboard
+  and desktop update actions use this same channel, even for a PyPI install.
+
+Restart the running server after a package upgrade (`tailcam restart` for a
+registered service), then check `tailcam version`. To stay on published PyPI
+releases, use pip/pipx upgrades rather than the in-app updater. Source installs
+remain available with `python -m pip install
+git+https://github.com/factshin/tailcam.git` in an activated virtual environment.
 
 ### Docker
 
@@ -261,7 +311,7 @@ in the in-app **Docs → Running in Docker** page (also served at `/docs/docker`
 - **Polished dashboard (PWA)** — a responsive React web app (installable on phone or
   desktop) with a live camera grid grouped by device, a video wall, a command palette
   (Cmd/Ctrl+K), a mobile-first camera view with pinch/zoom, gallery, and motion
-  events. Built and shipped inside the package; see [`web-ui/`](web-ui/).
+  events. Built and shipped inside the package; see [`web-ui/`](https://github.com/factshin/tailcam/blob/main/web-ui/).
 - **Desktop app (macOS, Linux, Windows)** — a menu-bar/tray app with the dashboard in
   its own window, service controls, fleet-node switching, and one-click updates
   (`tailcam app`) on all three platforms.
@@ -299,7 +349,7 @@ in the in-app **Docs → Running in Docker** page (also served at `/docs/docker`
   Python file.
 - **MCP server** — agents (Claude, Codex, …) can inspect cameras, events, and health
   and run guarded admin workflows, over a stateless (session-free) HTTP endpoint or
-  local stdio; see [`docs/mcp.md`](docs/mcp.md).
+  local stdio; see [`docs/mcp.md`](https://github.com/factshin/tailcam/blob/main/docs/mcp.md).
 - **Tailscale-native** — secure access over your tailnet; fully usable on a LAN too.
 
 ## Multi-host: every camera, from any device
@@ -396,8 +446,8 @@ shows whether Ollama is reachable and the model is pulled. (You can still set
 Motion events then show a label chip (🧍 person, 🚗 vehicle…) + the trigger
 thumbnail. To let one node analyze another's events, point the URL at that node
 (and run Ollama with `OLLAMA_HOST=0.0.0.0` so the tailnet can reach it). See
-[`docs/ai-detection-plan.md`](docs/ai-detection-plan.md) for the roadmap
-(notifications, 3D-print failure detection).
+[AI analysis](https://github.com/factshin/tailcam/blob/main/web-ui/src/docs/md/ai-analysis.md) for current usage. The original
+[AI roadmap](https://github.com/factshin/tailcam/blob/main/docs/ai-detection-plan.md) is retained as historical design context.
 
 ### Train your own — and let the loop label for you
 
@@ -430,8 +480,8 @@ from the live Tailscale principal every time — so there's no session token to
 steal or replay, and a revoked role takes effect on the agent's next call. Clients
 that send a session id anyway are simply ignored, never bounced.
 
-See [`docs/mcp.md`](docs/mcp.md) and
-[`docs/mcp-security.md`](docs/mcp-security.md).
+See [`docs/mcp.md`](https://github.com/factshin/tailcam/blob/main/docs/mcp.md) and
+[`docs/mcp-security.md`](https://github.com/factshin/tailcam/blob/main/docs/mcp-security.md).
 
 ## Plugins & marketplace
 
@@ -445,7 +495,7 @@ locally.
 
 Building your own is one Python file with one import
 (`tailcam.plugins.sdk`) — see the in-app **Docs → Plugins** authoring guide and
-[`marketplace/`](marketplace/) for the template + contribution process.
+[`marketplace/`](https://github.com/factshin/tailcam/blob/main/marketplace/) for the template + contribution process.
 Community plugins land in the registry via reviewed pull requests.
 
 ## Browser extension (optional)
@@ -466,7 +516,7 @@ servers, no analytics):
 The extension talks directly to the nodes you configure (over your tailnet), and
 host permission is requested per node at runtime. Source, build script, and
 per-browser install instructions live in
-[`browser-extensions/`](browser-extensions/).
+[`browser-extensions/`](https://github.com/factshin/tailcam/blob/main/browser-extensions/).
 
 ## CLI
 
@@ -476,7 +526,7 @@ per-browser install instructions live in
 | `tailcam status` | Cameras + tailnet nodes (Rich table) and the access URL |
 | `tailcam doctor` | Diagnostics: Python, OpenCV, cameras, Tailscale, fleet reachability |
 | `tailcam cameras` | List detected cameras |
-| `tailcam update [--check]` | Update to the latest version (and restart the service) |
+| `tailcam update [--check]` | Update from GitHub `main` (or only check); see [Updating](#updating) for PyPI |
 | `tailcam start` / `stop` / `restart` | Control the background service |
 | `tailcam install-service` / `uninstall-service` | Register/remove the background service |
 | `tailcam tailscale serve` / `serve-off` / `status` | Manage tailnet exposure |
@@ -526,7 +576,10 @@ over your tailnet, with no per-request login. On top of that, TailCam ships defe
   loopback, an IP literal, or your tailnet (`*.ts.net`); a rebound attacker hostname is rejected.
 - **Secrets** (MQTT password, HomeKit pin, Tailscale keys) live in `config.toml`, written
   `0600` in cleartext — secure your backups and support bundles accordingly.
-- No accounts, tokens, telemetry, or third-party calls (except checking GitHub for updates).
+- No TailCam account or hosted camera service. Update checks, package/plugin/model
+  downloads, and Tailscale setup contact their respective services. Optional
+  notification and AI-provider plugins can send events or frames to the endpoints
+  you configure; review those integrations before enabling them.
 
 Keep the default `127.0.0.1` bind — don't expose TailCam directly to a public network; let
 Tailscale handle access.
@@ -545,30 +598,55 @@ events live in SQLite.
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
+python -m pip install -e ".[dev,homekit,mqtt]"
 TAILCAM_SYNTHETIC=1 tailcam run    # run without a physical webcam
 pytest                             # tests use a synthetic camera, no hardware needed
-ruff check . && mypy src
+ruff check src tests && mypy src/tailcam
 ```
 
 Set `TAILCAM_SYNTHETIC=1` to use a built-in synthetic camera source — useful on
 headless servers, in containers, and in CI where no webcam exists.
 
-The dashboard front-end lives in [`web-ui/`](web-ui/) (React + Vite). Its build
+The dashboard front-end lives in [`web-ui/`](https://github.com/factshin/tailcam/blob/main/web-ui/) (React + Vite). Its build
 output is committed to `src/tailcam/web/spa/` and ships in the wheel, so end users
-never need Node. To change the UI: `cd web-ui && npm install && npm run build`,
+never need Node. To change the UI or in-app docs: `cd web-ui && npm ci && npm run typecheck && npm run build`,
 then commit both the source and the regenerated `src/tailcam/web/spa/`.
 
 **Releases:** bump `__version__` in `src/tailcam/__init__.py` **and** the
-`version` in `web-ui/package.json` (keep them identical) with every change
-merged to `main`; a test enforces they match. The version is shown by `tailcam
+`version` in `web-ui/package.json`, `web-ui/package-lock.json`, and all four
+`browser-extensions/*/manifest.json` files (keep them identical) with every change
+merged to `main`; tests enforce they match. Update the extension options-page
+version label too. The version is shown by `tailcam
 version` (and `tailcam --version`), `tailcam status`, `/api/system`, and the
 dashboard Settings page — it's how you confirm a node is actually running the
 build you think it is.
 
+### Publishing a release
+
+PyPI publishing uses GitHub Trusted Publishing through
+`.github/workflows/pypi-publish.yml` and the `pypi` environment; no PyPI API token
+is needed. The project already exists at [PyPI](https://pypi.org/project/tailcam/),
+so maintain its publisher under the project's publishing settings rather than
+creating another pending publisher.
+
+1. Bump the version, rebuild any changed dashboard/docs, and run the checks above.
+2. Build and validate the distributions: `python -m pip install build twine`,
+   then `python -m build` and `python -m twine check --strict dist/*` in a clean checkout.
+3. Merge the PR, then publish a GitHub Release whose `vX.Y.Z` tag points to that
+   merged commit. The tag must match the package version; the workflow does not
+   bump or validate the version for you. Alternatively, run **Publish to PyPI**
+   manually from `main` once for that version.
+4. Confirm the workflow succeeds and `python -m pip index versions tailcam`
+   shows the new version. Test installation in a fresh virtual environment.
+
+Merging alone does not publish to PyPI. Avoid uploading the same version via
+both triggers: PyPI rejects reusing distribution filenames. The PyPI description
+comes from the README packaged with each release; editing GitHub's README does
+not change an already uploaded distribution.
+
 ## License
 
-MIT
+[MIT](https://github.com/factshin/tailcam/blob/main/LICENSE)
 
 ---
 

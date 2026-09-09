@@ -9,13 +9,13 @@ TailCam plugs into the two big home-automation ecosystems: **Apple HomeKit**
 Your cameras appear in Apple's **Home** app as HomeKit cameras — live view,
 snapshots, and remote access through a Home Hub (HomePod / Apple TV).
 
-> **Why HAP, not Matter?** Apple Home consumes live camera video over **HAP**
-> (the HomeKit Accessory Protocol). Matter, as of this release, does **not**
-> carry camera streams to Apple Home — so TailCam pairs directly over HAP. No
-> Matter bridge or hub-side bridge software is required.
+> TailCam implements **HAP** (the HomeKit Accessory Protocol) using HAP-python.
+> Pair it as a HomeKit accessory; TailCam does not implement a Matter bridge.
 
 ### Requirements
-- Install the extra: `pip install 'tailcam[homekit]'`
+- Install `tailcam[homekit]` into the running server's environment; see
+  [Installation → Optional features](installation)
+  for pipx, venv, and OS-installer commands. Restart TailCam afterward.
 - **ffmpeg** on the TailCam host (for live video). Without it, snapshots and
   pairing still work, but live view won't. Install via your package manager
   (`apt install ffmpeg`, `brew install ffmpeg`, …).
@@ -51,18 +51,21 @@ built-in **MJPEG IP Camera** integration:
 camera:
   - platform: mjpeg
     name: "Front Door (TailCam)"
-    mjpeg_url: http://<tailscale-host>:8088/stream/front.mjpg
-    still_image_url: http://<tailscale-host>:8088/stream/front/snapshot.jpg
+    mjpeg_url: https://<host>.<tailnet>.ts.net:8443/stream/<camera-id>.mjpg
+    still_image_url: https://<host>.<tailnet>.ts.net:8443/stream/<camera-id>/snapshot.jpg
 ```
 
-The URLs use your Tailscale host so Home Assistant can reach TailCam from
-anywhere on your tailnet.
+Replace `<camera-id>` with the actual camera ID, or use the URLs generated
+by Settings. With Tailscale Serve enabled, these use the HTTPS tailnet address
+(default port 8443). The default loopback HTTP listener on 8088 is not directly
+reachable from another machine. Home Assistant must be able to reach your tailnet.
 
 ### Automations via MQTT (optional)
 Publish each camera's **motion** and **connectivity** to HA as auto-discovered
 `binary_sensor` entities, so automations can react to TailCam events.
 
-1. Install the extra: `pip install 'tailcam[mqtt]'`
+1. Install `tailcam[mqtt]` into TailCam's environment using the
+   [installation guide](installation), then restart TailCam.
 2. Under **Home Assistant → MQTT discovery**, set your broker **host/port** (the
    same broker HA uses) and credentials, then **Save MQTT**.
 3. HA auto-creates, per camera:
@@ -77,7 +80,7 @@ All entities are grouped under one **TailCam** device in HA.
 
 | Symptom | Fix |
 | --- | --- |
-| HomeKit toggle disabled | `pip install 'tailcam[homekit]'`, then restart. |
+| HomeKit toggle disabled | Install the HomeKit extra in the [correct environment](installation), then restart. |
 | "ffmpeg missing — snapshots only" | Install `ffmpeg` on the TailCam host. |
 | Accessory not found in Home app | Pair from the **same Wi-Fi/LAN**; check the host firewall allows port 51826 + mDNS. |
 | HA can't load the camera | Confirm the host can reach the stream URL (Tailscale up); try the snapshot URL in a browser. |

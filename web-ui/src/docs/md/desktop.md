@@ -1,14 +1,14 @@
 # Desktop app
 
-TailCam has a native desktop presence: a **menu-bar app on macOS** (tray on
-Linux/Windows — coming next) with an embedded dashboard window, service
+TailCam has a native desktop presence: a **menu-bar app on macOS** and **tray apps on
+Linux and Windows** with an embedded dashboard window, service
 controls, fleet-node switching, and update alerts. It's a thin shell over the
 same local server and REST API the browser uses — nothing new to configure.
 
 ## macOS
 
 The macOS installer sets everything up: after
-`curl -fsSL .../install-macos.sh | bash` you'll find **TailCam** in
+`curl -fsSL https://raw.githubusercontent.com/factshin/tailcam/main/install-macos.sh | bash` you'll find **TailCam** in
 Spotlight/Launchpad (`~/Applications/TailCam.app`). Launch it and the camera
 icon appears in the menu bar:
 
@@ -19,17 +19,20 @@ icon appears in the menu bar:
 - **Start / Stop / Restart Service** — drives the launchd agent. On a machine
   without the service, it becomes **Install & Start Service**.
 - **Update available — install** — appears when a newer TailCam exists;
-  one click upgrades the node and restarts it.
+  one click upgrades from GitHub main and restarts the node. For PyPI
+  releases, use the package-manager commands in [Installation](installation).
 
 If the service is stopped, the window shows a friendly "start the service"
 page instead of a connection error. If the embedded window backend isn't
 available, the dashboard opens in your default browser — every menu action
 still works.
 
-Manual setup (already done by the installer):
+Manual setup (already done by the installer): activate the TailCam virtual
+environment first, or use the explicit interpreter paths in
+[Installation](installation).
 
 ```bash
-pip install 'tailcam[desktop]'   # into the TailCam venv
+python -m pip install 'tailcam[desktop]'   # into the TailCam venv
 tailcam app install               # creates ~/Applications/TailCam.app
 tailcam app                       # or run it directly from a terminal
 ```
@@ -60,7 +63,7 @@ tailcam app --no-window    # tray only
 tailcam app --url <URL>    # client mode against a remote node
 tailcam app --check        # verify GUI backends; exit 0/1
 tailcam app --smoke        # headless self-test (used by CI)
-tailcam app install        # macOS: create ~/Applications/TailCam.app
+tailcam app install        # create the launcher for this OS
 tailcam app uninstall      # remove it
 ```
 
@@ -71,7 +74,7 @@ tailcam app uninstall      # remove it
 Opt-in at install time (most Linux nodes are headless servers):
 
 ```bash
-curl -fsSL .../install-linux.sh | bash -s -- --desktop
+curl -fsSL https://raw.githubusercontent.com/factshin/tailcam/main/install-linux.sh | bash -s -- --desktop
 ```
 
 That installs the GUI system libraries (GTK3, WebKit2GTK, AppIndicator),
@@ -80,11 +83,11 @@ app grid**, and the tray starts at login. Everything from the macOS app is
 here: tray menu with service controls, Nodes ▸ switching, update alerts,
 embedded dashboard window (or your browser when WebKit2GTK isn't available).
 
-Manual setup on an existing install:
+Manual setup on an existing install (activate its virtual environment first):
 
 ```bash
 sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0   gir1.2-ayatanaappindicator3-0.1 gir1.2-webkit2-4.1   # 22.04: gir1.2-webkit2gtk-4.1
-pip install 'tailcam[desktop]'      # into the TailCam venv
+python -m pip install 'tailcam[desktop]'      # into the TailCam venv
 tailcam app install --autostart     # launcher + start tray at login
 ```
 
@@ -119,7 +122,7 @@ everything else still works.
 Manual setup on an existing install:
 
 ```powershell
-& "$env:LOCALAPPDATA\TailCamenv\Scripts\python.exe" -m pip install "pywebview>=5" "pystray>=0.19" "pillow>=10"
+& "$env:LOCALAPPDATA\TailCam\venv\Scripts\python.exe" -m pip install "tailcam[desktop]"
 tailcam app install --autostart    # Start-menu shortcut + tray at login
 ```
 

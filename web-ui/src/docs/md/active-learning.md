@@ -1,5 +1,9 @@
 # Active learning (human-in-the-loop)
 
+Install TailCam extras into the same environment as the running server; see
+[Installation](installation) for pipx, virtual-environment, and installer paths.
+Keep the Label Studio server in a separate environment.
+
 Active learning turns model training from "label everything" into "label only
 what the model isn't sure about." A **labeling model** watches frames from your
 cameras (or a dataset), keeps its **confident** detections as machine labels,

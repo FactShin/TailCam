@@ -71,14 +71,15 @@ function HomeKitCard({ hk }: { hk: HomeKitStatus }) {
       </div>
       <p className="ais-intro">
         Add your cameras to Apple&apos;s Home app on iPhone, iPad &amp; Mac — and view them remotely
-        through a Home Hub (HomePod / Apple TV). Cameras pair over HAP, the native path Apple Home
-        uses for live video (Matter does not carry camera streams).
+        through a Home Hub (HomePod / Apple TV). TailCam pairs over HAP, the HomeKit Accessory
+        Protocol; no Matter bridge is needed.
       </p>
 
       {!hk.available && (
         <div className="intg-warn">
-          HomeKit support isn&apos;t installed. Run <code>pip install &apos;tailcam[homekit]&apos;</code> and
-          restart.
+          Install <code>tailcam[homekit]</code> in the same Python environment as this server,
+          then restart TailCam. See <a href="/docs/installation">installation instructions</a> for
+          pipx, virtual environments, and OS installers.
         </div>
       )}
 

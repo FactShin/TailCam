@@ -133,7 +133,7 @@ run normally.
 If your install failed:
 
 1. Make sure you're on **Windows 11** — Windows 10 on ARM cannot emulate x64.
-2. Re-run the installer (`irm .../install.ps1 | iex`). It skips any native
+2. Re-run the installer (`irm https://raw.githubusercontent.com/factshin/tailcam/main/install.ps1 | iex`). It skips any native
    ARM64 Python it finds and uses/installs an x64 build instead.
 3. Every run writes a full transcript to
    `%LOCALAPPDATA%\TailCam\install-<timestamp>.log` — if it still fails, the

@@ -67,9 +67,14 @@ See [Connecting agents](mcp-connect).
 
 | Command | What it does |
 | --- | --- |
-| `tailcam update` | Install the latest TailCam release. |
+| `tailcam update` | Install the latest build from GitHub main. |
 | `tailcam update --check` | Check for updates without installing. |
 | `tailcam migrate` | Migrate data from a pre-rename AnyCam install. |
+
+For published PyPI releases use `pipx upgrade tailcam` or, in TailCam's
+virtual environment, `python -m pip install --upgrade tailcam`, then restart
+the server. The dashboard updater uses GitHub main too. See
+[Installation](installation) for environment-specific commands.
 
 ## Environment variables
 

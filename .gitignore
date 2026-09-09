@@ -14,7 +14,7 @@ venv/
 *.db-shm
 .DS_Store
 
-# web-ui (Node). The BUILT dashboard at src/anycam/web/spa/ IS committed so
+# web-ui (Node). The BUILT dashboard at src/tailcam/web/spa/ IS committed so
 # pip installs ship it; only Node working dirs are ignored.
 web-ui/node_modules/
 web-ui/dist/

@@ -36,6 +36,7 @@ def isolated_env(tmp_path, monkeypatch):
     monkeypatch.setenv("TAILCAM_DATA_DIR", str(data))
     monkeypatch.setenv("TAILCAM_CONFIG_DIR", str(cfg))
     monkeypatch.delenv("TAILCAM_CONFIG", raising=False)
+    monkeypatch.delenv("TAILCAM_PEERS", raising=False)
     from tailcam import paths
 
     paths.ensure_dirs()
@@ -56,6 +57,10 @@ def context(isolated_env, store):
 
     config = AppConfig()
     config.tailscale.auto_serve = False
+    # A developer may have real Ollama and TailCam peers running. Tests must
+    # neither pull models into that server nor discover the developer's fleet.
+    config.ai.base_url = "http://127.0.0.1:1"
+    config.peers.auto_discover = False
     ctx = AppContext(config, store=store)
     ctx.manager.discover()
     yield ctx
