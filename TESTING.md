@@ -21,7 +21,7 @@ and jot anything weird in **Notes**.
 | # | Action | Expect | P/F |
 |---|--------|--------|-----|
 |0.1| On the same network as the TailCam host, open the Dashboard URL. | Dashboard loads; you see the camera grid. | |
-|0.2| Note the version: Settings → System → Version. | Shows `TailCam 0.99.x`. | |
+|0.2| Note the version: Settings → System → Version. | Matches `tailcam version` on that host and the release under test. | |
 |0.3| Confirm at least one camera tile shows live video. | Moving in front of it updates the picture. | |
 
 ---
@@ -69,7 +69,7 @@ and jot anything weird in **Notes**.
 
 ---
 
-## 5. Save location (NEW — the disk/folder for recordings)
+## 5. Save location (the disk/folder for recordings)
 
 > Settings → **Recording & storage**.
 
@@ -95,7 +95,7 @@ and jot anything weird in **Notes**.
 
 ---
 
-## 7. Record on motion (NEW — events save a video)
+## 7. Record on motion (events save a video)
 
 > Settings → Recording & storage → turn on **"Save a clip when motion is
 > detected."** Motion detection (test 6) must also be on for the camera.

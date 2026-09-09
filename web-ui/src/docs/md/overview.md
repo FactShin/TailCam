@@ -1,8 +1,8 @@
 # Welcome to TailCam
 
 TailCam turns any computer with a webcam into a private, self-hosted camera node
-you can view from anywhere on your [Tailscale](tailscale) network — no cloud, no
-accounts, no port forwarding. Run it on a laptop, a Raspberry Pi, a mini PC, or a
+you can view from anywhere on your [Tailscale](tailscale) network — no TailCam cloud or
+account, and no port forwarding. Run it on a laptop, a Raspberry Pi, a mini PC, or a
 whole fleet of them, and every camera shows up in one dashboard.
 
 This documentation lives **inside** TailCam. Everything you need is here — you
@@ -30,9 +30,10 @@ never have to leave the app.
 ## How it's built
 
 TailCam is a single Python application that serves a FastAPI backend and this
-React dashboard. Cameras are captured locally; streams and media never leave your
-devices. Tailscale provides the network layer and the identity used for access
-control. There is no external service in the loop.
+React dashboard. Capture and storage run on your devices. Tailscale provides
+the network and identity for remote access. Optional notification and
+AI-provider integrations can send events or frames to configured external
+services; see the [FAQ](faq).
 
 ## Where to go next
 

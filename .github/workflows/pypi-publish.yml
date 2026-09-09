@@ -2,14 +2,17 @@ name: Publish to PyPI
 
 # Trusted Publishing — no PyPI token in GitHub secrets.
 #
-# One-time setup (https://pypi.org/manage/account/publishing/):
+# tailcam is already published. Maintain this Trusted Publisher in the
+# existing PyPI project's publishing settings (no new pending publisher):
 #   PyPI project name:  tailcam
 #   Owner:              FactShin
 #   Repository:         TailCam
 #   Workflow name:      pypi-publish.yml
 #   Environment:        pypi
 #
-# Then create a GitHub Release (tag vX.Y.Z) or run this workflow manually.
+# Bump the package version first, then create a GitHub Release (tag vX.Y.Z)
+# at the merged commit OR run this workflow manually from main. Do not run
+# both for the same version; PyPI distribution filenames cannot be reused.
 
 on:
   release:

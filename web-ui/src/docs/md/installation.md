@@ -8,51 +8,136 @@ emulation because OpenCV has no native ARM64 wheels yet. It needs Python 3.10+ a
 > Prefer containers? TailCam has a dedicated Docker image that bundles Tailscale
 > and all media libraries — see [Running in Docker](docker).
 
-## Install
+## Install the published PyPI release
 
-TailCam is distributed as a Python package. Install it with `pip` (a virtual
-environment is recommended):
+TailCam is published on [PyPI](https://pypi.org/project/tailcam/). The wheel
+includes the dashboard and this manual; no Node.js or Git checkout is needed.
+Python 3.10+ and working camera/system libraries are still required.
 
-```bash
-python -m pip install tailcam
-```
-
-This installs the `tailcam` command-line tool. Verify it:
+With [pipx](https://pipx.pypa.io/) installed:
 
 ```bash
+pipx install tailcam
 tailcam version
+tailcam run
 ```
 
-## Optional features
-
-Some capabilities require extra packages, installed as "extras":
+Or create an isolated virtual environment on Linux/macOS:
 
 ```bash
-# WebRTC low-latency streaming
-python -m pip install "tailcam[webrtc]"
-
-# Faster JPEG encoding (TurboJPEG)
-python -m pip install "tailcam[turbojpeg]"
-
-# Model training (Ultralytics/PyTorch)
-python -m pip install "tailcam[training]"
-
-# Active learning: Label Studio SDK + optional VLM watchers
-python -m pip install "tailcam[activelearning]"
-python -m pip install "tailcam[florence2]"   # Florence-2 labeling/fine-tune
-python -m pip install "tailcam[qwen-vl]"     # Qwen2.5-VL labeling
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install tailcam
+tailcam version
+tailcam run
 ```
 
-- **AI analysis** needs a running [Ollama](ai-analysis) instance (separate
-  install). TailCam talks to it over HTTP.
-- **Model training** needs the Ultralytics/PyTorch engine. TailCam auto-detects
-  it; install it to enable the [Training](training) page.
-- **Active learning** additionally needs a running
-  [Label Studio](active-learning) server (`pip install label-studio`,
-  `label-studio start`) — see the [Active learning](active-learning) page for
-  Linux/macOS setup and Unsloth (CUDA-only) fine-tuning notes.
-- **Timelapse smoothing** uses `ffmpeg` (bundled or system) and optionally
-  `rife-ncnn-vulkan` for GPU frame interpolation. See [Timelapse](timelapse).
+On Windows PowerShell, explicit paths avoid activation-policy changes:
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install tailcam
+.\.venv\Scripts\tailcam.exe version
+.\.venv\Scripts\tailcam.exe run
+```
+
+Use x64 Python on Windows ARM. Open `http://localhost:8088/` once the server
+starts. Manual pip/pipx installs do not install Tailscale or register services.
+
+## OS installers (GitHub main)
+
+For automatic system dependencies, Tailscale setup, and a background user
+service, use the dedicated installer:
+
+```bash
+# Linux (Debian/Ubuntu/Raspberry Pi OS)
+curl -fsSL https://raw.githubusercontent.com/factshin/tailcam/main/install-linux.sh | bash
+# macOS
+curl -fsSL https://raw.githubusercontent.com/factshin/tailcam/main/install-macos.sh | bash
+```
+
+```powershell
+# Windows
+irm https://raw.githubusercontent.com/factshin/tailcam/main/install.ps1 | iex
+```
+
+These fetch **GitHub main**, which may be ahead of PyPI. Download the script
+and pass `--ref <tag>` (Windows: `-Ref <tag>`) to select a Git ref. The desktop
+shell is included on macOS/Windows; Linux opts in with `--desktop`.
+
+## Optional features: use TailCam's environment
+
+Install extras into the environment running TailCam, then restart the server.
+A bare `pip` outside that environment will not add features to an existing
+pipx or installer-managed server.
+
+For **pipx**, install extras initially with `pipx install 'tailcam[homekit,mqtt]'`,
+or add them to an existing install:
+
+```bash
+pipx inject tailcam 'tailcam[homekit,mqtt]'
+```
+
+For an **activated virtual environment**, use its Python:
+
+```bash
+python -m pip install 'tailcam[homekit,mqtt]'  # Apple HomeKit + MQTT discovery
+python -m pip install 'tailcam[desktop]'      # desktop shell; OS GUI libraries also needed
+python -m pip install 'tailcam[training]'     # Ultralytics/PyTorch
+python -m pip install 'tailcam[activelearning]' # Label Studio SDK
+python -m pip install 'tailcam[florence2]'     # Florence-2 labeling/fine-tune
+python -m pip install 'tailcam[qwen-vl]'       # Qwen2.5-VL labeling
+```
+
+Without activation, use `.venv/bin/python` on Linux/macOS or
+`.\.venv\Scripts\python.exe` on Windows in place of `python`.
+
+For an **OS installer-managed server**, use its interpreter:
+
+```bash
+# Linux / macOS
+~/.local/share/tailcam/venv/bin/python -m pip install 'tailcam[homekit,mqtt]'
+~/.local/share/tailcam/venv/bin/tailcam restart
+```
+
+```powershell
+# Windows
+& "$env:LOCALAPPDATA\TailCam\venv\Scripts\python.exe" -m pip install 'tailcam[homekit,mqtt]'
+& "$env:LOCALAPPDATA\TailCam\venv\Scripts\tailcam.exe" restart
+```
+
+- **HomeKit live video** needs system `ffmpeg`; pairing/snapshots work without it.
+  See [Home automation](home-automation).
+- **Ollama analysis** needs a separate running [Ollama](ai-analysis) instance.
+  Built-in object detection does not require Ollama.
+- **Training / VLM extras** can download large, platform-specific ML dependencies.
+- **Active learning** also needs a separate [Label Studio](active-learning)
+  server. Keep the server in its own environment.
+- **Timelapse smoothing** uses bundled or system `ffmpeg`, optionally
+  `rife-ncnn-vulkan`. See [Timelapse](timelapse).
+- The `webrtc` and `turbojpeg` dependency extras are reserved for future backend
+  work. Installing them does not enable a WebRTC stream or TurboJPEG encoder;
+  the current server streams MJPEG using OpenCV JPEG encoding.
+
+## Updating
+
+For published **PyPI releases**:
+
+```bash
+pipx upgrade tailcam
+# Or, in the activated TailCam virtual environment:
+python -m pip install --upgrade tailcam
+```
+
+Include the same extras (for example `'tailcam[homekit,mqtt]'`) when you want
+pip to upgrade their dependencies too. Restart the server afterward; use
+`tailcam restart` if it is registered as a service, then `tailcam version`.
+
+**`tailcam update` and the dashboard/desktop updater use GitHub main**, even
+when TailCam was installed from PyPI. `tailcam update --check` checks that
+channel without installing. Use pip/pipx to stay on published PyPI versions.
+Installer-based updates recreate the environment, so re-check optional extras
+and reinstall any missing ones using the environment paths above.
 
 ## Install Tailscale
 
@@ -99,7 +184,8 @@ tailcam migrate
 
 ## Tailscale is installed and signed in for you
 
-Since 1.8 every installer makes sure Tailscale is ready before it finishes:
+The OS installer scripts attempt to prepare Tailscale before finishing.
+This does not happen during a pip/pipx install:
 
 1. **Missing?** It is installed — the official script on Linux
    (`curl -fsSL https://tailscale.com/install.sh | sh`), `brew install tailscale`

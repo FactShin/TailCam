@@ -15,7 +15,7 @@ absent it falls back to the legacy Jinja pages.
 
 ```bash
 cd web-ui
-npm install
+npm ci
 npm run dev        # Vite dev server on :5173, proxies /api /stream /media /proxy -> :8088
 ```
 
@@ -26,11 +26,12 @@ TAILCAM_SYNTHETIC=1 tailcam run            # :8088
 # point the dev proxy elsewhere with TAILCAM_DEV_TARGET=http://host:port
 ```
 
-Then rebuild into the package and commit both the source and `src/tailcam/web/spa/`:
+The in-app manual lives in `src/docs/md/`; edits to those Markdown files also
+require a rebuild. Commit both the source and `src/tailcam/web/spa/`:
 
 ```bash
 npm run build
-npm run typecheck   # optional; CI-style type gate (build itself uses esbuild)
+npm run typecheck   # required before merging; build itself does not typecheck
 ```
 
 ## Structure

@@ -1,7 +1,9 @@
 # TailCam Web-UI — Porting the Design Prototype into a Functional Dashboard
 
-> **Status: NOT STARTED.** This is the saved plan for "Stage 2". Stage 1 (backend
-> multi-host aggregation) is **done and merged** (PR #4). Resume here.
+> **Historical design plan — superseded by the shipped dashboard.**
+> The React/TypeScript/PWA UI is implemented in `web-ui/` and bundled in the
+> Python package. See [current development instructions](../web-ui/README.md).
+> The original proposal below is retained for context, not as current status.
 
 ## Context
 

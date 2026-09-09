@@ -39,8 +39,10 @@ request look like loopback.
 
 - **Local requests** (localhost) are treated as a trusted local admin — the
   personal-computer model.
-- **Tailscale users** get roles from your tailnet ACL **grants** (app
-  capabilities). 
+- **Verified Tailscale users** default to admin when no TailCam capability
+  is supplied (personal mode). An explicit TailCam capability overrides that
+  default, including restricted or empty roles. Configure tailnet ACL
+  **grants** (app capabilities) when sharing access.
 - **Everything else** is unverified and denied privileged actions.
 
 ## App capability grants
