@@ -1,0 +1,47 @@
+name: Publish to PyPI
+
+# Trusted Publishing — no PyPI token in GitHub secrets.
+#
+# One-time setup (https://pypi.org/manage/account/publishing/):
+#   PyPI project name:  tailcam
+#   Owner:              FactShin
+#   Repository:         TailCam
+#   Workflow name:      pypi-publish.yml
+#   Environment:        pypi
+#
+# Then create a GitHub Release (tag vX.Y.Z) or run this workflow manually.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pypi:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/tailcam/
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist and wheel
+        run: |
+          pip install --upgrade build
+          python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
