@@ -2,7 +2,7 @@
 
 Prepared for Wayne Scire · 11 September 2026 · Document revision **r4**
 
-**Status:** 1.8.5 validated and merged in [PR #85](https://github.com/FactShin/TailCam/pull/85); 1.8.6 dependency-security patch in progress. **Last verified main baseline:** 1.8.5 at `324ba11e2fb7933830d5c438c5d4fef51abdd553`. **Publication:** PyPI remains 1.8.4; neither 1.8.5 nor 1.8.6 is published as of 2026-09-11. **Authoritative implementation roadmap:** this repository file, imported from the supplied r2 planning snapshot on 2026-09-11. Document revisions and application release versions are separate.
+**Status:** 1.8.5 validated and merged in [PR #85](https://github.com/FactShin/TailCam/pull/85); 1.8.6 dependency-security patch implemented with local and package checks passed; CI pending. **Last verified main baseline:** 1.8.5 at `324ba11e2fb7933830d5c438c5d4fef51abdd553`. **Publication:** PyPI remains 1.8.4; neither 1.8.5 nor 1.8.6 is published as of 2026-09-11. **Authoritative implementation roadmap:** this repository file, imported from the supplied r2 planning snapshot on 2026-09-11. Document revisions and application release versions are separate.
 
 **Purpose:** this file carries the product intent, engineering constraints, release scopes, completion gates, and working instructions into a new session. It consolidates the original feature attachment, architecture review, all nine later product suggestions, and the decision to add agent-supervised training. A fresh agent should not need the original chat to understand the work.
 
@@ -564,12 +564,12 @@ The product standard is simple: **every screen and every assistant should be abl
 
 ## 9. Progress ledger and handoff requirements
 
-**State as of document r4:** 1.8.5 is validated and merged in PR #85. The 1.8.6 dependency-security patch is in progress; feature releases remain planned. No roadmap release has been published: PyPI latest is 1.8.4 and the GitHub releases collection is empty as checked on 2026-09-11. The original 1.8.4 review below remains historical evidence. Reconcile this ledger against GitHub at the start of each future session.
+**State as of document r4:** 1.8.5 is validated and merged in PR #85. The 1.8.6 dependency-security patch is implemented and has passed local and package checks; CI remains pending. Feature releases remain planned. No roadmap release has been published: PyPI latest is 1.8.4 and the GitHub releases collection is empty as checked on 2026-09-11. The original 1.8.4 review below remains historical evidence. Reconcile this ledger against GitHub at the start of each future session.
 
 | Target | Workstream | Status | Evidence / next gate |
 |---|---|---|---|
 | 1.8.5 | Current routing fixes | Validated; merged [PR #85](https://github.com/FactShin/TailCam/pull/85) | Local checks and final CI passed; publication remains separate. See [release notes](releases/1.8.5.md) |
-| 1.8.6 | Dashboard dependency security | In progress | Explicit dependency upgrades, audit, navigation/PWA compatibility and bundle validation; see [release notes](releases/1.8.6.md) |
+| 1.8.6 | Dashboard dependency security | Implemented; local and package checks passed | [PR #86](https://github.com/FactShin/TailCam/pull/86), commit `730b2f836508b9b0a95e7d09c95f145e2a45243f`; see PR checks and [release notes](releases/1.8.6.md) |
 | 1.9.0 | Roles and installer | Planned | Dynamic capabilities and no-camera startup |
 | 1.10.0 | Unified storage | Planned | Isolated multi-process artifact-transfer tests |
 | 1.11.0 | Workload routing + Training Supervisor | Planned | Durable jobs, enforced budgets, no model activation |
@@ -596,16 +596,16 @@ Update this record in the authoritative file before handing work back. Replace o
 |---|---|
 | Document revision/date | r4 / 2026-09-11 |
 | Last verified code baseline | main / 324ba11e2fb7933830d5c438c5d4fef51abdd553 / 1.8.5 |
-| Active implementation branch/PR | `fix/frontend-dependencies-1.8.6`; PR not yet created |
-| Completed in this session | Verified PR #85 merged and reproduced the inherited dependency audit: six vulnerable package entries, one high and five moderate |
+| Active implementation branch/PR | `fix/frontend-dependencies-1.8.6`; [PR #86](https://github.com/FactShin/TailCam/pull/86) |
+| Completed in this session | Verified PR #85 merged; upgraded vulnerable dashboard dependencies; npm audit reduced from six vulnerable package entries to zero; Python, TypeScript, browser and reproducible-build checks passed |
 | Current implementation target | 1.8.6 dependency-security patch; version unused on PyPI as of 2026-09-11; latest published package remains 1.8.4 |
-| Implementation commit | Pending for 1.8.6; merged 1.8.5 baseline is 324ba11e2fb7933830d5c438c5d4fef51abdd553 |
+| Implementation commit | 730b2f836508b9b0a95e7d09c95f145e2a45243f |
 | Code changes in this roadmap session | Vite 6.4.3, React plugin 4.7.0, PWA plugin 1.3.0, React Router 7.18.3; React 18 retained; coherent version metadata and Node 22 build guidance |
-| Validation evidence | 1.8.6: npm audit reports zero known vulnerabilities; TypeScript/build and Ruff/mypy (125 files) pass. Python suite, browser/PWA, package and CI checks remain pending; see release notes. Prior 1.8.5: 563 local tests and final Linux/Windows/dashboard CI passed. Original 478-test result below remains historical. |
+| Validation evidence | Clean npm install/audit: zero known vulnerabilities. TypeScript app/config/tests, build, Ruff and mypy (125 files) passed; 563 Python tests passed with three existing warnings; five Chromium navigation/PWA tests passed; 18 bundle files byte-identical on rebuild and fresh wheel install/HTTP delivery. Clean wheel/sdist, installed-package routes, CLI and dependency validation passed. Current CI is recorded on PR #86; see release notes. Original 478-test result below remains historical. |
 | Outstanding environment checks | Actual camera, Pi, GPU, voice, cross-OS live fleet and long-duration capture validation remain separate hardware gates |
-| Exact next action | Finish the 1.8.6 audit, browser/PWA and packaging checks; open its focused PR and verify CI before beginning 1.9.0 roles/identity/installer work |
+| Exact next action | Review PR #86 and its current CI; after merge, begin the 1.9.0 roles/identity/installer slice from updated main |
 | Unresolved product decisions | Hardware capacity budgets, approved training datasets, task-specific model acceptance thresholds, current agent-host integration details |
-| Blockers | No implementation blocker. Dependency security and compatibility checks are in progress; hardware release gates remain open. |
+| Blockers | No implementation blocker. PR checks govern merge readiness; hardware release gates remain open. |
 
 ### Implementation-session completion checklist
 
