@@ -31,6 +31,20 @@ node instead: it pulls the camera's stream and keeps the frames and video on its
 disk; the row carries `source_host` (the camera's node) and `host` (where it is
 stored).
 
+Before starting, the screen shows **Camera**, **Capture/storage**, and the
+configured **Printer analyzer** endpoint on the execution node. Availability
+comes from that node, even when you opened another dashboard. A successful
+capability check confirms the TailCam node answered; it does not prove the AI
+endpoint/model is ready. Older peers show capabilities as unknown.
+
+A remote rejection (including disabled printer analysis) is returned to you
+without starting a local capture. If the request times out after it might have
+been accepted, check the storage node's timelapses before retrying. TailCam does
+not automatically retry or create a local duplicate. The existing local fallback
+applies only when the destination cannot be resolved or a connection cannot be
+established. Local fallback rechecks the local analyzer configuration; the
+success message names the actual storage owner.
+
 ## Encoding
 
 When you stop a capture (or it hits its duration), encode the frames into a video:
@@ -76,7 +90,10 @@ likely print failures (spaghetti, detachment). Enable with `analysis_enabled` an
 set `analysis_cadence_seconds` (default 60s). Results appear as analysis events on
 the timelapse (`GET /api/timelapse/<id>/analysis-events`) with a state of
 `healthy`, `possible_failure`, `failure`, or `uncertain`. This uses the same
-local [AI](ai-analysis) backend.
+Ollama endpoint configured under `[ai]` on the **capture/storage node**. That
+endpoint may itself run on another computer. Selecting a detection node does
+not select the printer analyzer. A custom motion-analysis provider does not
+replace the printer analyzer's Ollama contract.
 
 ## Frames and storage
 

@@ -102,6 +102,8 @@ export interface MotionEventInfo {
   end_ts: number | null;
   peak_score: number;
   recording_id: number | null;
+  recording_host?: string;
+  recording_proxy_prefix?: string | null;
   label: string | null;
   description: string | null;
   confidence: number | null;
@@ -645,6 +647,26 @@ export interface PostprocessInfo {
   default_engine: "ffmpeg" | "rife";
   default_target_fps: number;
   engines: EngineInfo[];
+}
+
+export interface TimelapseCapabilities {
+  host: string;
+  printer_analyzer: {
+    enabled: boolean;
+    endpoint: string;
+    model: string;
+    reachability: "unchecked";
+  };
+  postprocess: PostprocessInfo;
+}
+
+export interface TimelapsePreflight {
+  camera_host: string;
+  capture_host: string;
+  configured_storage: string;
+  route_status: "local" | "reachable" | "unreachable" | "unknown";
+  message: string;
+  capabilities: TimelapseCapabilities | null;
 }
 
 export interface SystemInfo {

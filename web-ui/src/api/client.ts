@@ -16,6 +16,7 @@ import type {
   TimelapseAnalysisEvent,
   TimelapseInfo,
   TimelapsePreset,
+  TimelapsePreflight,
   TimelapseSmoothParams,
   TimelapseStartParams,
   ViewParams,
@@ -371,6 +372,16 @@ export const getMedia = (params: { camera_id?: string; media_type?: string; limi
 export const deleteMedia = (prefix: string, mid: number) =>
   jsonFetch<{ ok: boolean }>(`${prefix}/api/media/${mid}`, { method: "DELETE" });
 
+export const getMediaItem = async (prefix: string, mid: number) => {
+  // Gallery links are URL input: permit only one known proxy route, never a
+  // different origin, arbitrary path, or a traversal into another API.
+  if ((prefix !== "" && !/^\/proxy\/[a-z0-9-]+$/.test(prefix)) || !Number.isSafeInteger(mid) || mid < 1) {
+    throw new Error("Invalid recording link");
+  }
+  const item = await jsonFetch<MediaInfo>(`${prefix}/api/media/${mid}`);
+  return { ...item, proxy_prefix: prefix };
+};
+
 export const getEvents = (params: { camera_id?: string; limit?: number }) =>
   jsonFetch<MotionEventInfo[]>(
     `/api/events${qs({ camera_id: params.camera_id, limit: params.limit ?? 50 })}`,
@@ -384,6 +395,9 @@ export const getTimelapses = (params: { camera_id?: string; limit?: number } = {
   );
 
 export const getTimelapsePresets = () => jsonFetch<TimelapsePreset[]>("/api/timelapse-presets");
+
+export const getTimelapsePreflight = (prefix: string, cameraId: string) =>
+  jsonFetch<TimelapsePreflight>(`${prefix}/api/cameras/${cameraId}/timelapse/preflight`);
 
 export const getTimelapseAnalysisEvents = (prefix: string, tlId: number) =>
   jsonFetch<TimelapseAnalysisEvent[]>(`${prefix}/api/timelapse/${tlId}/analysis-events`);
@@ -409,7 +423,7 @@ export const smoothTimelapse = (prefix: string, tlId: number, body: TimelapseSmo
     body: JSON.stringify(body),
   });
 
-export const getPostprocess = () => jsonFetch<PostprocessInfo>("/api/postprocess");
+export const getPostprocess = (prefix = "") => jsonFetch<PostprocessInfo>(`${prefix}/api/postprocess`);
 
 export const setPostprocess = (body: { default_engine?: string }) =>
   jsonFetch<PostprocessInfo>("/api/postprocess", { method: "POST", body: JSON.stringify(body) });

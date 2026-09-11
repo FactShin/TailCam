@@ -7,13 +7,16 @@ node that owns it, so the browser only ever talks to the node it opened.
 
 from __future__ import annotations
 
+from urllib.parse import unquote
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.background import BackgroundTask
 
 from tailcam.web.context import AppContext
 from tailcam.web.deps import get_context
+from tailcam.web.schemas import TimelapseInfo
 
 router = APIRouter()
 
@@ -50,14 +53,35 @@ def _management_path(path: str) -> bool:
     return normalized.startswith("api/v1/node") or normalized.startswith("api/v1/fleet")
 
 
+def _validate_proxy_path(path: str) -> None:
+    # Validate the path the peer will interpret, including another decoding
+    # pass at its HTTP boundary. Never let normalization change the endpoint
+    # after the management guard has run. Device paths may contain empty
+    # segments (e.g. stream//dev/video0.mjpg), but never dot segments.
+    decoded = unquote(path)
+    if (
+        any(segment in {".", ".."} for segment in decoded.split("/"))
+        or any(char in decoded for char in ("\\", "%", "?", "#"))
+        or any(ord(char) < 32 for char in decoded)
+    ):
+        raise HTTPException(status_code=400, detail="invalid proxy path")
+    if _management_path(decoded):
+        raise HTTPException(status_code=403, detail="management API cannot use generic proxy")
+    # The generic proxy does not preserve the caller's authenticated role.
+    # MCP must be reached directly, and nested proxies must not turn this
+    # check into a multi-hop authorization bypass.
+    root = decoded.lstrip("/").split("/", 1)[0]
+    if root in {"mcp", "proxy"}:
+        raise HTTPException(status_code=403, detail="endpoint cannot use generic proxy")
+
+
 @router.api_route(
     "/proxy/{key}/{path:path}", methods=["GET", "POST", "PATCH", "DELETE", "PUT"]
 )
 async def proxy(
     key: str, path: str, request: Request, ctx: AppContext = Depends(get_context)
-) -> StreamingResponse:
-    if _management_path(path):
-        raise HTTPException(status_code=403, detail="management API cannot use generic proxy")
+) -> Response:
+    _validate_proxy_path(path)
 
     await ctx.cluster.peers()  # ensure discovery has run at least once
     base = ctx.cluster.peer_base(key)
@@ -77,6 +101,34 @@ async def proxy(
         resp = await client.send(upstream, stream=True)
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"peer unreachable: {exc}") from exc
+
+    if (
+        resp.status_code == 200 and request.method == "POST"
+        and path.startswith("api/cameras/") and path.endswith("/timelapse/start")
+    ):
+        # This response was authored for the source dashboard. Rebase its
+        # artifact route for the current dashboard, which might itself be the
+        # storage owner. Otherwise its next action can point back at itself as
+        # an unknown peer instead of the timelapse that just started.
+        try:
+            await resp.aread()
+            info = TimelapseInfo.model_validate(resp.json())
+            if not info.host.strip() or info.id < 1:
+                raise ValueError("missing storage owner")
+            data = info.model_dump()
+            owner, prefix = ctx.cluster.media_owner_reference(data["host"])
+            if prefix is None:
+                raise ValueError("unknown storage owner")
+            data["host"], data["proxy_prefix"] = owner, prefix
+            return JSONResponse(data)
+        except (ValueError, httpx.HTTPError) as exc:
+            raise HTTPException(
+                status_code=502,
+                detail="Timelapse may have started, but its storage owner could not be resolved. "
+                "Check the storage node before retrying.",
+            ) from exc
+        finally:
+            await resp.aclose()
 
     headers = {k: v for k, v in resp.headers.items() if k.lower() not in _HOP_BY_HOP}
     return StreamingResponse(

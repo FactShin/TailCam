@@ -667,6 +667,16 @@ export function useTimelapsePresets() {
   return useQuery({ queryKey: ["timelapse-presets"], queryFn: api.getTimelapsePresets });
 }
 
+export function useTimelapsePreflight(prefix: string, cameraId: string | null) {
+  return useQuery({
+    queryKey: ["timelapse-preflight", prefix, cameraId],
+    queryFn: () => api.getTimelapsePreflight(prefix, cameraId as string),
+    enabled: cameraId !== null,
+    refetchInterval: 15_000,
+    retry: false,
+  });
+}
+
 export function useTimelapseAnalysisEvents(
   prefix: string,
   tlId: number | null,
@@ -728,8 +738,12 @@ export function useSmoothTimelapse() {
   });
 }
 
-export function usePostprocess() {
-  return useQuery({ queryKey: ["postprocess"], queryFn: api.getPostprocess, refetchInterval: 60_000 });
+export function usePostprocess(prefix = "") {
+  return useQuery({
+    queryKey: ["postprocess", prefix],
+    queryFn: () => api.getPostprocess(prefix),
+    refetchInterval: 60_000,
+  });
 }
 
 export function useSetPostprocess() {

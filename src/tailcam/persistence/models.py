@@ -41,6 +41,8 @@ class MotionEventRecord:
     description: str | None = None
     confidence: float | None = None
     thumb_path: str | None = None
+    # Node owning recording_id ("" = the event's own node, including legacy rows).
+    recording_host: str = ""
 
 
 @dataclass

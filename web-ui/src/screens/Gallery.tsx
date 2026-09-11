@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 
-import { mediaFileUrl, mediaThumbUrl } from "../api/client";
+import { getMediaItem, mediaFileUrl, mediaThumbUrl } from "../api/client";
 import { useCameras, useDeleteMedia, useMedia } from "../api/hooks";
 import { useToast } from "../components/toast";
 import { Button, ConfirmDialog, Segmented, Spinner } from "../components/ui";
@@ -50,6 +52,20 @@ function CamFilter({
 
 export function Gallery() {
   const toast = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const linkedId = searchParams.get("media");
+  const linkedPrefix = searchParams.get("owner") ?? "";
+  const linkedMedia = useQuery({
+    queryKey: ["media-item", linkedPrefix, linkedId],
+    queryFn: () => getMediaItem(linkedPrefix, Number(linkedId)),
+    enabled: linkedId !== null,
+    retry: false,
+  });
+  const closeLinkedMedia = () => setSearchParams((params) => {
+    params.delete("media");
+    params.delete("owner");
+    return params;
+  }, { replace: true });
   const cameras = useCameras().data ?? [];
   // Media is aggregated across every tailnet node; filter chips show all cameras.
   // Camera ids repeat across nodes (/dev/video0 on every Pi): match host too.
@@ -93,6 +109,7 @@ export function Gallery() {
       await del.mutateAsync({ prefix: m.proxy_prefix, id: m.id });
       toast.ok("Deleted");
       setLight(null);
+      if (linkedId !== null) closeLinkedMedia();
     } catch {
       toast.err("Delete failed");
     }
@@ -114,6 +131,16 @@ export function Gallery() {
         />
       </div>
       <CamFilter cameras={cameras} value={cam} onChange={setCam} />
+
+      {linkedId !== null && linkedMedia.isPending && (
+        <div className="load-more" role="status"><Spinner size={16} /> Opening recording…</div>
+      )}
+      {linkedId !== null && linkedMedia.isError && (
+        <div className="panel" role="alert">
+          <p>Could not open this recording: {linkedMedia.error.message}. Its storage node may be offline or the clip may have been deleted.</p>
+          <Button variant="outline" size="sm" onClick={closeLinkedMedia}>Dismiss</Button>
+        </div>
+      )}
 
       {rows.length === 0 ? (
         <div className="empty">
@@ -145,7 +172,19 @@ export function Gallery() {
         </>
       )}
 
-      {light != null && rows[light] && (
+      {linkedId !== null && linkedMedia.data && !linkedMedia.isError && (
+        <Lightbox
+          row={linkedMedia.data}
+          camName={camName(linkedMedia.data)}
+          hasPrev={false}
+          hasNext={false}
+          onPrev={() => {}}
+          onNext={() => {}}
+          onClose={closeLinkedMedia}
+          onDelete={() => setConfirm(linkedMedia.data!)}
+        />
+      )}
+      {linkedId === null && light != null && rows[light] && (
         <Lightbox
           row={rows[light]}
           camName={camName(rows[light])}

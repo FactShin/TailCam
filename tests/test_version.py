@@ -33,3 +33,11 @@ def test_version_is_release_string():
     """
     parts = tailcam.__version__.split(".")
     assert len(parts) in (3, 4) and all(p.isdigit() for p in parts), tailcam.__version__
+
+
+def test_lock_metadata_and_extension_label_match_app_version():
+    lock = json.loads((_REPO_ROOT / "web-ui/package-lock.json").read_text())
+    assert lock["version"] == tailcam.__version__
+    assert lock["packages"][""]["version"] == tailcam.__version__
+    label = (_REPO_ROOT / "browser-extensions/shared/options/options.html").read_text()
+    assert f"TailCam Companion v{tailcam.__version__}" in label

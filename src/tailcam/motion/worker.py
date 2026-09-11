@@ -167,15 +167,19 @@ class MotionWorker:
                 elif self.active and (now - last_motion_ts) > self.config.cooldown_seconds:
                     self.active = False
                     recording_id = None
+                    recording_host = ""
                     if recording_triggered and self._recorder:
                         # Let the tail finish, then close the recording (a stop
                         # request cuts the tail short instead of blocking it).
                         self._stop.wait(self.config.record_tail_seconds)
                         record = self._recorder.stop(self.camera_id)
                         recording_id = record.id if record else None
+                        recording_host = getattr(record, "host", "") if record else ""
                         recording_triggered = False
                     if event_id is not None:
-                        self._event_log.close_event(event_id, now, peak_score, recording_id)
+                        self._event_log.close_event(
+                            event_id, now, peak_score, recording_id, recording_host
+                        )
                     event_id = None
                     peak_score = 0.0
 
@@ -186,8 +190,12 @@ class MotionWorker:
             self.active = False
             if event_id is not None:
                 recording_id = None
+                recording_host = ""
                 if recording_triggered and self._recorder:
                     record = self._recorder.stop(self.camera_id)
                     recording_id = record.id if record else None
+                    recording_host = getattr(record, "host", "") if record else ""
                 end_ts = last_motion_ts or time.time()
-                self._event_log.close_event(event_id, end_ts, peak_score, recording_id)
+                self._event_log.close_event(
+                    event_id, end_ts, peak_score, recording_id, recording_host
+                )

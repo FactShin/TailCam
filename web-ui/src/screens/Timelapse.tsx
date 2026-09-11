@@ -7,7 +7,6 @@ import {
   timelapseThumbUrl,
 } from "../api/client";
 import {
-  useAi,
   useCameras,
   useDeleteTimelapse,
   useEncodeTimelapse,
@@ -17,6 +16,7 @@ import {
   useStopTimelapse,
   useTimelapseAnalysisEvents,
   useTimelapsePresets,
+  useTimelapsePreflight,
   useTimelapses,
 } from "../api/hooks";
 import { LiveViewer } from "../components/LiveViewer";
@@ -75,18 +75,42 @@ const HEALTH_BADGE: Record<string, { cls: string; label: string }> = {
   uncertain: { cls: "badge-warn", label: "Analysis uncertain" },
 };
 
+function SmoothAction({ t, pending, onSmooth }: {
+  t: TimelapseInfo;
+  pending: boolean;
+  onSmooth: (t: TimelapseInfo) => void;
+}) {
+  // Artifacts execute on their owner, independently of the selected camera
+  // and the node serving this dashboard.
+  const status = usePostprocess(t.proxy_prefix);
+  const available = status.isError ? undefined
+    : status.data?.engines.find((engine) => engine.id === "ffmpeg")?.available;
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      icon={<IconSparkle size={14} />}
+      disabled={pending || status.isPending || available === false}
+      title={available === false ? `FFmpeg is missing on ${t.host}`
+        : available ? `Smooth on ${t.host}` : `Smoothing availability on ${t.host} is unknown`}
+      onClick={() => onSmooth(t)}
+    >
+      {status.isPending ? "Checking smoothing…" : available === false ? "FFmpeg missing"
+        : t.has_smooth ? "Re-smooth" : t.smooth_state === "error" ? "Retry smooth" : "Smooth"}
+    </Button>
+  );
+}
+
 export function Timelapse() {
   const toast = useToast();
   const cameras = useCameras().data ?? [];
   const rows = useTimelapses().data ?? [];
   const presets = useTimelapsePresets().data ?? [];
-  const ai = useAi().data;
   const start = useStartTimelapse();
   const stop = useStopTimelapse();
   const encode = useEncodeTimelapse();
   const smooth = useSmoothTimelapse();
   const del = useDeleteTimelapse();
-  const postprocess = usePostprocess().data;
 
   // Cameras are keyed by host + id: the same /dev/video0 exists on every Pi.
   const [camKey, setCamKey] = useState("");
@@ -130,6 +154,12 @@ export function Timelapse() {
     return t.source_host ? `${t.camera_id} · ${t.source_host}` : t.camera_id;
   };
   const selected = cameras.find((c) => keyOf(c) === camKey);
+  const preflightQuery = useTimelapsePreflight(selected?.proxy_prefix ?? "", selected?.id ?? null);
+  const preflight = preflightQuery.isError ? undefined : preflightQuery.data;
+  const analyzer = preflight?.capabilities?.printer_analyzer;
+  const postprocess = preflight?.capabilities?.postprocess;
+  const analysisUnavailable = settings.analysis_enabled && analyzer?.enabled === false;
+  const smoothingUnavailable = settings.auto_smooth && postprocess?.available === false;
 
   const active = rows.filter((r) => r.state === "capturing" || r.state === "encoding");
   const done = rows.filter((r) => r.state !== "capturing" && r.state !== "encoding");
@@ -143,12 +173,12 @@ export function Timelapse() {
   const onStart = async () => {
     if (!selected) return;
     try {
-      await start.mutateAsync({
+      const created = await start.mutateAsync({
         prefix: selected.proxy_prefix,
         id: selected.id,
         params: { ...settings, name: name.trim() || undefined },
       });
-      toast.ok("Timelapse started");
+      toast.ok(`Timelapse started · saving on ${created.host}`);
       setName("");
     } catch (e) {
       // The backend's 409 detail says why (e.g. already capturing on this camera).
@@ -188,8 +218,8 @@ export function Timelapse() {
         },
       });
       toast.ok("Smoothing — interpolating frames…");
-    } catch {
-      toast.err("Could not start smoothing");
+    } catch (e) {
+      toast.err(e instanceof Error && e.message ? e.message : "Could not start smoothing");
     }
   };
 
@@ -273,13 +303,40 @@ export function Timelapse() {
             <Button
               variant="primary"
               icon={<IconBolt size={15} />}
-              disabled={!selected || start.isPending}
+              disabled={!selected || start.isPending || preflightQuery.isPending || analysisUnavailable || smoothingUnavailable}
               onClick={onStart}
             >
               Start capture
             </Button>
           </div>
         </div>
+        {selected && (
+          <div className="tl-routing" aria-live="polite">
+            <div>
+              Camera: <strong>{preflight?.camera_host ?? selected.host}</strong>
+              {" · "}Capture/storage: <strong>{preflight?.capture_host ?? "Unknown"}</strong>
+            </div>
+            <div>
+              Printer analyzer: {analyzer ? (
+                <>{analyzer.endpoint} · {analyzer.model} · {analyzer.enabled ? "configured" : "disabled"}
+                  {" "}on {preflight?.capture_host}. Endpoint and model not checked.</>
+              ) : "Unknown until the execution node's configuration is available."}
+            </div>
+            <div>
+              {preflightQuery.isPending ? "Checking capture destination…"
+                : preflightQuery.isError ? "Destination check unavailable. Starting will check the route; the result will show the actual storage host."
+                  : preflight?.message}
+              {preflight?.configured_storage && preflight.route_status !== "reachable"
+                && ` Configured storage: ${preflight.configured_storage}.`}
+            </div>
+            {postprocess && (
+              <div>Smoothing on {preflight?.capture_host}: {postprocess.available ? "FFmpeg installed" : "FFmpeg missing"}
+                {postprocess.engines.find((engine) => engine.id === "rife")?.available ? " · RIFE installed" : " · RIFE unavailable; FFmpeg fallback"}.</div>
+            )}
+            {analysisUnavailable && <div className="tl-routing-warning">Disable printer analysis below or enable Ollama on {preflight?.capture_host} before starting.</div>}
+            {smoothingUnavailable && <div className="tl-routing-warning">Turn off automatic smoothing below or install FFmpeg on {preflight?.capture_host} before starting.</div>}
+          </div>
+        )}
         <div className="tl-advanced-toggle">
           <Button variant="ghost" size="sm" onClick={() => setAdvanced(!advanced)}>
             {advanced ? "Hide advanced settings" : "Configure capture, smoothing & analysis"}
@@ -343,10 +400,10 @@ export function Timelapse() {
                 onChange={(e) => setSettings({ ...settings, smooth_deflicker: e.target.checked })} />
               <span>Normalize exposure flicker</span>
             </label>
-            <label className={`tl-check ${!ai?.enabled ? "is-disabled" : ""}`}>
-              <input type="checkbox" checked={settings.analysis_enabled} disabled={!ai?.enabled}
+            <label className={`tl-check ${analyzer?.enabled === false && !settings.analysis_enabled ? "is-disabled" : ""}`}>
+              <input type="checkbox" checked={settings.analysis_enabled} disabled={analyzer?.enabled === false && !settings.analysis_enabled}
                 onChange={(e) => setSettings({ ...settings, analysis_enabled: e.target.checked })} />
-              <span>Analyze printer health with local Ollama</span>
+              <span>Analyze printer health with the configured Ollama endpoint</span>
             </label>
             <label className="tl-field">
               <span className="microlabel">Analysis cadence (seconds)</span>
@@ -357,7 +414,8 @@ export function Timelapse() {
           </div>
         )}
         <p className="help-foot mono">
-          Raw frames are retained. Manual Smooth uses the settings above. {!ai?.enabled && "Enable Ollama on Models to turn on printer-health analysis."}
+          Raw frames are retained. Manual Smooth uses the settings above on each capture's storage host.
+          {analyzer?.enabled === false && ` Enable Ollama in Models on ${preflight?.capture_host} to turn on printer-health analysis.`}
         </p>
       </div>
 
@@ -478,16 +536,8 @@ export function Timelapse() {
                   {playable && t.smooth_state === "processing" && (
                     <span className="tl-encoding mono"><Spinner size={13} /> smoothing…</span>
                   )}
-                  {playable && postprocess?.available && t.smooth_state !== "processing" && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      icon={<IconSparkle size={14} />}
-                      title="Interpolate frames into smooth motion"
-                      onClick={() => onSmooth(t)}
-                    >
-                      {t.smooth_state === "complete" ? "Re-smooth" : t.smooth_state === "error" ? "Retry smooth" : "Smooth"}
-                    </Button>
+                  {playable && t.smooth_state !== "processing" && (
+                    <SmoothAction t={t} pending={smooth.isPending} onSmooth={onSmooth} />
                   )}
                   <Button variant="danger" size="sm" icon={<IconTrash size={14} />} onClick={() => setConfirm(t)}>
                     Delete

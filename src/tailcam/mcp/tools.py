@@ -68,6 +68,18 @@ def _media_url(prefix: str, kind: str, ident: Any, *, thumb: bool = False) -> st
     return f"{prefix}/media/{ident}/{leaf}"
 
 
+def _event_recording_url(event: dict[str, Any]) -> str | None:
+    if event.get("recording_id") is None:
+        return None
+    prefix = event.get("recording_proxy_prefix")
+    if prefix is None:
+        if event.get("recording_host"):
+            return None  # known owner cannot currently be resolved
+        # Legacy nodes do not send the additive clip route.
+        prefix = event.get("proxy_prefix", "")
+    return _media_url(prefix, "media", event["recording_id"])
+
+
 def _require_confirm(args: dict[str, Any], enabled: bool) -> None:
     if enabled and args.get("confirm") is not True:
         raise TailcamMcpError(
@@ -192,6 +204,9 @@ async def _list_recent_events(ctx: ToolContext, args: dict[str, Any]) -> ToolRes
             ev["thumbnail_url"] = _media_url(
                 ev.get("proxy_prefix", ""), "event", ev.get("id")
             )
+        recording_url = _event_recording_url(ev)
+        if recording_url is not None:
+            ev["recording_url"] = recording_url
     lines = [
         f"- #{ev.get('id')} {ev.get('camera_id')}: "
         f"{ev.get('label') or 'motion'} ({ev.get('confidence') or ev.get('peak_score')})"
@@ -776,10 +791,26 @@ async def _find_offline_cameras(ctx: ToolContext, args: dict[str, Any]) -> ToolR
 
 
 async def _investigate_motion_event(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    from tailcam.cluster.service import _key_for
+
     event_id = _int_arg(args, "event_id")
     scope = args.get("scope", "all")
     recent = await ctx.client.events(limit=ctx.config.max_events, scope=scope)
-    event = next((e for e in recent if e.get("id") == event_id), None)
+    matches = [e for e in recent if e.get("id") == event_id]
+    node_key = args.get("node_key")
+    if node_key:
+        matches = [
+            e for e in matches
+            if (node_key == "local" and not e.get("proxy_prefix"))
+            or node_key in (e.get("host"), _key_for(e.get("host") or ""))
+        ]
+    if len(matches) > 1:
+        raise TailcamMcpError(
+            errors.INVALID_REQUEST,
+            f"Event #{event_id} exists on multiple nodes; specify its node_key.",
+            status_code=409,
+        )
+    event = matches[0] if matches else None
     if event is None:
         raise TailcamMcpError(
             errors.INVALID_REQUEST, f"Event #{event_id} not in recent window.",
@@ -787,16 +818,18 @@ async def _investigate_motion_event(ctx: ToolContext, args: dict[str, Any]) -> T
         )
     camera_id = event.get("camera_id")
     nearby = [
-        e for e in recent if e.get("camera_id") == camera_id and e.get("id") != event_id
+        e for e in recent if e.get("camera_id") == camera_id
+        and e.get("host") == event.get("host") and e.get("id") != event_id
     ][:5]
     prefix = event.get("proxy_prefix", "")
     links: dict[str, Any] = {}
     if event.get("has_thumb"):
         links["thumbnail_url"] = _media_url(prefix, "event", event_id)
-    if event.get("recording_id"):
-        links["recording_url"] = _media_url(prefix, "media", event.get("recording_id"))
+    recording_url = _event_recording_url(event)
+    if recording_url is not None:
+        links["recording_url"] = recording_url
     try:
-        camera = await ctx.client.camera(str(camera_id))
+        camera = await ctx.client.camera(str(camera_id), prefix=prefix)
     except TailcamMcpError:
         camera = {}
     follow_up = (
@@ -1135,6 +1168,8 @@ def build_tools() -> list[Tool]:
         Tool("investigate_motion_event", "Investigate motion event",
              "Event detail, nearby events, camera state, media links, and follow-up.",
              _obj({"event_id": {"type": "integer"},
+                   "node_key": {"type": "string", "description":
+                                "Event owner's node key or hostname; required for duplicate ids."},
                    "scope": {"type": "string", "enum": ["all", "local"], "default": "all"}},
                   ["event_id"]),
              _investigate_motion_event),

@@ -7,8 +7,8 @@ disk (see ``cluster.remote_feed`` and ``web.routes_remote``). The API, the
 motion worker, and the UI all go through this router, so "Record" on a
 Raspberry Pi camera lands on the NAS box without anyone caring.
 
-Failure mode is always *local*: if the peer is unknown or down at the moment
-a capture starts, the job runs here and the storage panel says so.
+Timelapses fall back locally only when the peer cannot be resolved or connected
+to. A rejection or an uncertain reply must never create a second local capture.
 """
 
 from __future__ import annotations
@@ -30,6 +30,15 @@ _TIMEOUT = 8.0
 # the file; give it room instead of declaring the node down.
 _STOP_TIMEOUT = 90.0
 _DOWN_BACKOFF = 20.0
+
+
+class CaptureRoutingError(Exception):
+    """A remote refusal or uncertain outcome that must reach the caller."""
+
+    def __init__(self, status_code: int, detail: str) -> None:
+        super().__init__(detail)
+        self.status_code = status_code
+        self.detail = detail
 
 
 @dataclass
@@ -106,7 +115,8 @@ class CaptureRouter:
         return self._client
 
     def _post(
-        self, base: str, path: str, body: dict[str, Any], timeout: float | None = None
+        self, base: str, path: str, body: dict[str, Any], timeout: float | None = None,
+        *, strict_start: bool = False,
     ) -> tuple[int, dict[str, Any] | None]:
         """POST to the storage node → (status, json). Status 0 = unreachable.
 
@@ -114,9 +124,22 @@ class CaptureRouter:
         for a while). A 4xx is an answer — e.g. 409 "already recording" means
         the session exists there and must be adopted, not duplicated locally.
         """
+        import httpx
+
         try:
             resp = self._http().post(f"{base}{path}", json=body, timeout=timeout or _TIMEOUT)
         except Exception as exc:
+            if strict_start and not isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
+                # After any bytes might have been sent, the destination can
+                # already be capturing. Do not mark it down: the next request
+                # must not bypass it through the local-fallback backoff either.
+                detail = (
+                    "Storage node did not confirm the timelapse; it may have started there. "
+                    "Check that node's timelapses before retrying. No local capture was started."
+                )
+                raise CaptureRoutingError(
+                    504 if isinstance(exc, httpx.TimeoutException) else 502, detail,
+                ) from exc
             self.last_error = str(exc)
             self._down_until = time.monotonic() + _DOWN_BACKOFF
             log.warning("storage node request %s failed: %s — falling back to local", path, exc)
@@ -125,6 +148,12 @@ class CaptureRouter:
             data = resp.json()
         except ValueError:
             data = None
+        if strict_start and resp.status_code >= 300:
+            detail = str(data.get("detail", "")) if isinstance(data, dict) else ""
+            detail = detail or f"Storage node returned HTTP {resp.status_code}"
+            raise CaptureRoutingError(
+                resp.status_code if resp.status_code >= 400 else 502, detail,
+            )
         if resp.status_code >= 500:
             detail = str(data.get("detail", "")) if isinstance(data, dict) else resp.text[:200]
             self.last_error = f"HTTP {resp.status_code} {detail}".strip()
@@ -270,10 +299,46 @@ class CaptureRouter:
                 }
             )
             status, data = self._post(
-                base, f"/api/remote/{self.local_key}/cameras/{camera_id}/timelapse/start", body
+                base, f"/api/remote/{self.local_key}/cameras/{camera_id}/timelapse/start", body,
+                strict_start=True,
             )
-            if status == 200 and data is not None and "id" in data:
+            if status != 0:
+                if key.startswith(("http://", "https://")):
+                    raise CaptureRoutingError(
+                        502, "Timelapse may have started, but the storage node's identity "
+                        "could not be resolved. Check that node before retrying. "
+                        "No local capture was started.",
+                    )
+                from pydantic import ValidationError
+
+                from tailcam.web.schemas import TimelapseInfo
+
+                try:
+                    info = TimelapseInfo.model_validate(data)
+                    if status != 200 or info.id < 1 or info.camera_id != camera_id:
+                        raise ValueError("invalid capture identity")
+                except (ValidationError, ValueError) as exc:
+                    raise CaptureRoutingError(
+                        502,
+                        "Storage node returned an invalid timelapse response; it may have "
+                        "started there. Check that node before retrying. "
+                        "No local capture was started.",
+                    ) from exc
+                data = info.model_dump()
+                data["host"] = next(
+                    (p.host for p in self._ctx.cluster.cached_peers() if p.key == key),
+                    info.host or key,
+                )
+                data["source_host"] = self._ctx.local_host
                 data["proxy_prefix"] = f"/proxy/{key}"
                 log.info("timelapse for %s started on storage node %s", camera_id, key)
                 return data
+        analysis_enabled = params.get("analysis_enabled")
+        if analysis_enabled is None:
+            analysis_enabled = self._ctx.config.timelapse.analysis_enabled
+        if analysis_enabled and not self._ctx.printer_analyzer.config.enabled:
+            raise CaptureRoutingError(
+                409, "Enable and configure Ollama on the capture node's Models page "
+                "before printer analysis",
+            )
         return self._ctx.timelapse.start(camera_id, **params)

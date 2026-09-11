@@ -25,6 +25,10 @@ where, and with what roles. Roles are hierarchical:
 A principal also records its `source`: `local`, `tailscale-user`,
 `tailscale-node`, or `unverified`.
 
+These roles are enforced by the management and MCP APIs. Ordinary camera/media
+REST operations still rely on the network perimeter and request guards; a
+restricted MCP role is not a general read-only account for the entire dashboard.
+
 ## Where identity is trusted
 
 Tailscale Serve terminates TLS and forwards identity headers (the user's login,
@@ -78,7 +82,12 @@ too, tagged with the transport (`stdio` / `streamable_http`) and client name.
 - No public-internet exposure by default.
 - No management actions tunneled through the generic camera proxy — the proxy
   strips `tailscale-*` headers and refuses the `/api/v1/node` and `/api/v1/fleet`
-  paths.
+  paths, `/mcp`, and nested proxy requests. Encoded/dot-segment paths are checked
+  before forwarding.
+
+The Host allowlist also covers reads (footage and configuration), protecting
+against DNS rebinding. Use localhost, a numeric loopback/LAN/tailnet IP, or a
+full `*.ts.net` hostname. Arbitrary custom DNS aliases are not accepted.
 
 ## MCP specifics
 

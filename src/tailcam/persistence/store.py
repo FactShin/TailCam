@@ -237,7 +237,7 @@ _SCHEMA = [
     CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_events (created_ts DESC);
     """,
 ]
-_CURRENT_VERSION = 11
+_CURRENT_VERSION = 12
 
 # Columns added after v1 — applied to existing DBs via ALTER TABLE on migrate().
 _EVENT_COLUMNS = {
@@ -245,6 +245,7 @@ _EVENT_COLUMNS = {
     "description": "TEXT",
     "confidence": "REAL",
     "thumb_path": "TEXT",
+    "recording_host": "TEXT NOT NULL DEFAULT ''",
 }
 
 # Smoothing columns added after the v3 timelapses table (applied to older DBs).
@@ -448,21 +449,24 @@ class Store:
         with conn:
             cur = conn.execute(
                 """
-                INSERT INTO motion_events (camera_id, start_ts, end_ts, peak_score, recording_id)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO motion_events
+                    (camera_id, start_ts, end_ts, peak_score, recording_id, recording_host)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (record.camera_id, record.start_ts, record.end_ts, record.peak_score,
-                 record.recording_id),
+                 record.recording_id, record.recording_host),
             )
             return int(cur.lastrowid or 0)
 
     def update_motion_event(
-        self, event_id: int, end_ts: float, peak_score: float, recording_id: int | None
+        self, event_id: int, end_ts: float, peak_score: float, recording_id: int | None,
+        recording_host: str = "",
     ) -> None:
         with self._conn() as conn:
             conn.execute(
-                "UPDATE motion_events SET end_ts=?, peak_score=?, recording_id=? WHERE id=?",
-                (end_ts, peak_score, recording_id, event_id),
+                "UPDATE motion_events SET end_ts=?, peak_score=?, recording_id=?, "
+                "recording_host=? WHERE id=?",
+                (end_ts, peak_score, recording_id, recording_host, event_id),
             )
 
     def set_event_thumb(self, event_id: int, thumb_path: str) -> None:
@@ -1073,6 +1077,7 @@ def _event_from_row(row: sqlite3.Row) -> MotionEventRecord:
         description=row["description"],
         confidence=row["confidence"],
         thumb_path=row["thumb_path"],
+        recording_host=row["recording_host"],
     )
 
 
