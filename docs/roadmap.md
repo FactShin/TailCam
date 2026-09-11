@@ -2,7 +2,7 @@
 
 Prepared for Wayne Scire · 11 September 2026 · Document revision **r5**
 
-**Status:** 1.8.5 and 1.8.6 are validated and merged in [PR #85](https://github.com/FactShin/TailCam/pull/85) and [PR #86](https://github.com/FactShin/TailCam/pull/86). The 1.9.0 node identity/roles foundation is in progress; role-aware installers and richer readiness checks remain separate slices. **Last verified main baseline:** 1.8.6 at `d3c75f81572cb9661103fd3c916e4921ab7051ca`. **Publication:** PyPI remains 1.8.4 as checked on 2026-09-11. **Authoritative implementation roadmap:** this repository file, imported from the supplied r2 planning snapshot on 2026-09-11. Document revisions and application release versions are separate.
+**Status:** 1.8.5 and 1.8.6 are validated and merged in [PR #85](https://github.com/FactShin/TailCam/pull/85) and [PR #86](https://github.com/FactShin/TailCam/pull/86). The 1.9.0 node identity/roles foundation is implemented in [PR #87](https://github.com/FactShin/TailCam/pull/87); role-aware installers and richer readiness checks remain separate slices. **Last verified main baseline:** 1.8.6 at `d3c75f81572cb9661103fd3c916e4921ab7051ca`. **Publication:** PyPI remains 1.8.4 as checked on 2026-09-11. **Authoritative implementation roadmap:** this repository file, imported from the supplied r2 planning snapshot on 2026-09-11. Document revisions and application release versions are separate.
 
 **Purpose:** this file carries the product intent, engineering constraints, release scopes, completion gates, and working instructions into a new session. It consolidates the original feature attachment, architecture review, all nine later product suggestions, and the decision to add agent-supervised training. A fresh agent should not need the original chat to understand the work.
 
@@ -570,7 +570,7 @@ The product standard is simple: **every screen and every assistant should be abl
 |---|---|---|---|
 | 1.8.5 | Current routing fixes | Validated; merged [PR #85](https://github.com/FactShin/TailCam/pull/85) | Local checks and final CI passed; publication remains separate. See [release notes](releases/1.8.5.md) |
 | 1.8.6 | Dashboard dependency security | Validated; merged [PR #86](https://github.com/FactShin/TailCam/pull/86) | Local, package, and [final CI](https://github.com/FactShin/TailCam/actions/runs/34625628441) passed; [release notes](releases/1.8.6.md) |
-| 1.9.0 | Roles and installer | In progress; identity/roles foundation under validation | Role-aware lifecycle, CLI/settings, and additive peer metadata implemented; installer/shared setup and richer readiness discovery remain open. See [release notes](releases/1.9.0.md) |
+| 1.9.0 | Roles and installer | In progress; identity/roles foundation validated locally | [PR #87](https://github.com/FactShin/TailCam/pull/87): role-aware lifecycle, CLI/settings, and additive peer metadata implemented; installer/shared setup and richer readiness discovery remain open. See [release notes](releases/1.9.0.md) |
 | 1.10.0 | Unified storage | Planned | Isolated multi-process artifact-transfer tests |
 | 1.11.0 | Workload routing + Training Supervisor | Planned | Durable jobs, enforced budgets, no model activation |
 | 1.12.0 | Timelapse projects | Planned | Long capture/re-render recovery |
@@ -596,12 +596,12 @@ Update this record in the authoritative file before handing work back. Replace o
 |---|---|
 | Document revision/date | r5 / 2026-09-11 |
 | Last verified code baseline | main / d3c75f81572cb9661103fd3c916e4921ab7051ca / 1.8.6 |
-| Active implementation branch/PR | `feat/node-roles-1.9.0`; PR follows final local/package checks |
+| Active implementation branch/PR | `feat/node-roles-1.9.0`; [PR #87](https://github.com/FactShin/TailCam/pull/87) |
 | Completed in this session | Merged PR #86 after all checks passed; implemented first 1.9.0 roles/identity slice with parallel backend, interface, and lifecycle review |
 | Current implementation target | 1.9.0 foundation only; OS installer/setup and readiness gates remain open; latest published PyPI package is 1.8.4 |
-| Implementation commit | Recorded after final local checks |
+| Implementation commit | `9dc1dd6d869fc37a44ecd7be92dfed6458d94296` |
 | Code changes in this roadmap session | Persistent UUID/schema 13; strict node configuration; admin-audited role changes applied on restart; guarded services and HTTP operations; role-aware CLI/dashboard/peer metadata; remote refusal propagation and no disabled local fallback |
-| Validation evidence | 642 Python tests passed; Ruff and mypy (126 files) passed; TypeScript/build, nine browser tests, zero-vulnerability npm audit, 18-file reproducible bundle and mobile/desktop visual checks passed. Package and current PR checks recorded in release notes before handoff. |
+| Validation evidence | 642 Python tests passed; Ruff and mypy (126 files) passed; TypeScript/build, nine browser tests, zero-vulnerability npm audit, 18-file reproducible bundle and mobile/desktop visual checks passed. Clean wheel/sdist, fresh-install dependency checks, 18-file source/install/HTTP parity, hub startup and persistent-identity checks passed. Current CI is recorded on the PR; see release notes. |
 | Outstanding environment checks | Actual camera, Pi, GPU, voice, cross-OS live fleet and long-duration capture validation remain separate hardware gates |
 | Exact next action | Review the roles/identity PR and current CI; after merge, implement shared role-aware OS installer and container setup without camera mounts on hubs |
 | Unresolved product decisions | Hardware capacity budgets, approved training datasets, task-specific model acceptance thresholds, current agent-host integration details |

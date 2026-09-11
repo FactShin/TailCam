@@ -94,3 +94,4 @@ jobs:
           tests/test_service_control.py tests/test_update.py
           tests/test_hostinfo.py tests/test_version.py tests/test_api.py
           tests/test_storage.py tests/test_cluster.py tests/test_mcp.py
+          tests/test_node_config.py tests/test_node_lifecycle.py
