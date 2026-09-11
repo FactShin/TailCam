@@ -145,7 +145,11 @@ class AppContext:
             self.training, self.local_host,
         )
         self.cluster = ClusterService(
-            config.peers, self.tailscale, self.local_host, config.tailscale.serve_port
+            config.peers, self.tailscale, self.local_host, config.tailscale.serve_port,
+            # Explicit storage URLs need discovery too: media routes use the
+            # destination's node key, never the URL itself as a proxy key.
+            extra_urls=lambda: [config.storage.node.strip()]
+            if config.storage.node.strip().startswith(("http://", "https://")) else [],
         )
         # Detection node: when [detection] node points at a peer, boxes and
         # motion labels come from that node's /api/detect-image.

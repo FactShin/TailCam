@@ -703,6 +703,9 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .tl-input, .tl-select { background: var(--bg2); border: 1px solid var(--border); color: var(--text); border-radius: 12px; padding: 10px 12px; font: inherit; font-size: 13.5px; width: 100%; }
 .tl-input:focus, .tl-select:focus { outline: none; border-color: var(--accent); }
 .tl-field-action .btn { width: 100%; justify-content: center; }
+.tl-routing { display: grid; gap: 5px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.tl-routing strong { color: var(--text); }
+.tl-routing-warning { color: var(--warn); }
 .tl-advanced-toggle { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 .tl-advanced-grid { display: grid; grid-template-columns: 1fr; gap: 12px; padding: 14px; margin-top: 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg0); }
 @container appframe (min-width: 720px) { .tl-advanced-grid { grid-template-columns: repeat(3, 1fr); } }

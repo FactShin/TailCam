@@ -124,8 +124,13 @@ async def remote_timelapse_start(
     body: RemoteTimelapseStart,
     ctx: AppContext = Depends(get_context),
 ) -> TimelapseInfo:
+    _check_camera_id(camera_id)
     await _source_base(ctx, source_key)
-    if body.analysis_enabled and not ctx.analyzer.enabled:
+    analysis_enabled = (
+        ctx.config.timelapse.analysis_enabled
+        if body.analysis_enabled is None else body.analysis_enabled
+    )
+    if analysis_enabled and not ctx.printer_analyzer.config.enabled:
         raise HTTPException(
             status_code=409,
             detail="printer analysis needs Ollama enabled on the storage node",

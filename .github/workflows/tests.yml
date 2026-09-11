@@ -15,6 +15,25 @@ env:
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
 jobs:
+  dashboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web-ui/package-lock.json
+      - run: npm ci
+        working-directory: web-ui
+      - run: npm run typecheck && npm run build
+        working-directory: web-ui
+      - name: Check committed dashboard matches source
+        run: |
+          git diff --exit-code -- src/tailcam/web/spa
+          test -z "$(git ls-files --others --exclude-standard src/tailcam/web/spa)"
+
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 15

@@ -65,7 +65,7 @@ def _is_ip_literal(host: str) -> bool:
 
 
 def _host_allowed(value: str) -> bool:
-    """Whether a Host/Origin host is legitimate for a mutating request.
+    """Whether a Host/Origin host is legitimate for a request.
 
     A DNS-rebinding attack needs a *hostname* (e.g. evil.com) that the attacker
     rebinds to 127.0.0.1, so we reject any hostname that isn't localhost or the
@@ -104,17 +104,17 @@ def _origin_allowed(origin: str, host_value: str) -> bool:
 
 class SecurityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
+        # Read responses contain private camera footage and configuration too.
+        # A rebound hostname must not be allowed to read these as same-origin.
+        host = request.headers.get("host", "")
+        if not _host_allowed(host):
+            return JSONResponse({"detail": "untrusted host blocked"}, status_code=403)
         if request.method in _MUTATING:
             # Reject on the Host header first: this catches DNS rebinding even
             # when the page sends no Origin (a rebound hostname reaches us as
             # the Host). Then reject a foreign Origin (CSRF / drive-by). Tools
             # with an IP Host and no Origin (curl, the CLI) pass, matching the
             # prior behavior.
-            host = request.headers.get("host", "")
-            if not _host_allowed(host):
-                return JSONResponse(
-                    {"detail": "cross-origin request blocked"}, status_code=403
-                )
             origin = request.headers.get("origin")
             if origin and not _origin_allowed(origin, host):
                 return JSONResponse(

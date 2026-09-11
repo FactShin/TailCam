@@ -17,7 +17,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def test_web_ui_version_matches_app_version():
-    pkg = json.loads((_REPO_ROOT / "web-ui" / "package.json").read_text())
+    pkg = json.loads((_REPO_ROOT / "web-ui" / "package.json").read_text(encoding="utf-8"))
     assert pkg["version"] == tailcam.__version__, (
         f"web-ui/package.json is {pkg['version']} but tailcam.__version__ is "
         f"{tailcam.__version__}; bump them together."
@@ -33,3 +33,13 @@ def test_version_is_release_string():
     """
     parts = tailcam.__version__.split(".")
     assert len(parts) in (3, 4) and all(p.isdigit() for p in parts), tailcam.__version__
+
+
+def test_lock_metadata_and_extension_label_match_app_version():
+    lock = json.loads((_REPO_ROOT / "web-ui/package-lock.json").read_text(encoding="utf-8"))
+    assert lock["version"] == tailcam.__version__
+    assert lock["packages"][""]["version"] == tailcam.__version__
+    label = (_REPO_ROOT / "browser-extensions/shared/options/options.html").read_text(
+        encoding="utf-8",
+    )
+    assert f"TailCam Companion v{tailcam.__version__}" in label

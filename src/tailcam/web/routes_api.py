@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from tailcam import __version__
 from tailcam.camera.manager import ManagedCamera
+from tailcam.media.capture_router import CaptureRoutingError
 from tailcam.timelapse.presets import printer_presets
 from tailcam.web.context import AppContext
 from tailcam.web.deps import get_context
@@ -76,7 +77,9 @@ from tailcam.web.schemas import (
     StreamSettingsModel,
     SystemInfo,
     TimelapseAnalysisEventInfo,
+    TimelapseCapabilities,
     TimelapseInfo,
+    TimelapsePreflight,
     TimelapseSmoothRequest,
     TimelapseStartRequest,
     TrainingInfo,
@@ -202,6 +205,17 @@ async def list_hosts(ctx: AppContext = Depends(get_context)) -> list[HostInfo]:
             )
         )
     return hosts
+
+
+@router.get("/cameras/{camera_id:path}/timelapse/preflight", response_model=TimelapsePreflight)
+async def timelapse_preflight(
+    camera_id: str, ctx: AppContext = Depends(get_context)
+) -> TimelapsePreflight:
+    from tailcam.web.timelapse_preflight import camera_preflight
+
+    if ctx.manager.get(camera_id) is None:
+        raise HTTPException(status_code=404, detail="camera not found")
+    return await camera_preflight(ctx)
 
 
 @router.get("/cameras/{camera_id:path}", response_model=CameraInfo)
@@ -477,6 +491,15 @@ async def list_media(
     return merged[offset : offset + limit]
 
 
+@router.get("/media/{media_id}", response_model=MediaInfo)
+def get_media(media_id: int, ctx: AppContext = Depends(get_context)) -> MediaInfo:
+    """Fetch one local catalog entry, including clips outside the recent page."""
+    record = ctx.store.get_media(media_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="media not found")
+    return _media_info(ctx, record)
+
+
 @router.delete("/media/{media_id}", response_model=OkResponse)
 def delete_media(media_id: int, ctx: AppContext = Depends(get_context)) -> OkResponse:
     if not ctx.gallery.delete(media_id):
@@ -485,6 +508,7 @@ def delete_media(media_id: int, ctx: AppContext = Depends(get_context)) -> OkRes
 
 
 def _event_info(ctx: AppContext, e) -> MotionEventInfo:
+    owner, prefix = ctx.cluster.media_owner_reference(e.recording_host)
     return MotionEventInfo(
         id=e.id,
         camera_id=e.camera_id,
@@ -492,6 +516,8 @@ def _event_info(ctx: AppContext, e) -> MotionEventInfo:
         end_ts=e.end_ts,
         peak_score=e.peak_score,
         recording_id=e.recording_id,
+        recording_host=owner if e.recording_id is not None else "",
+        recording_proxy_prefix=prefix if e.recording_id is not None else None,
         label=e.label,
         description=e.description,
         confidence=e.confidence,
@@ -509,11 +535,14 @@ async def list_events(
     scope: str = Query("all", pattern="^(all|local)$"),
     ctx: AppContext = Depends(get_context),
 ) -> list[MotionEventInfo]:
-    local = [_event_info(ctx, e) for e in ctx.event_log.list(camera_id, limit + offset)]
     if scope == "local":
+        local = [_event_info(ctx, e) for e in ctx.event_log.list(camera_id, limit + offset)]
         return local[offset:]
     params = {"camera_id": camera_id, "limit": limit + offset}
     remote = [MotionEventInfo.model_validate(e) for e in await ctx.cluster.remote_events(params)]
+    # remote_events refreshes discovery; resolve local clip owners afterwards
+    # so the first dashboard request can link a newly discovered storage node.
+    local = [_event_info(ctx, e) for e in ctx.event_log.list(camera_id, limit + offset)]
     merged = sorted(local + remote, key=lambda e: e.start_ts, reverse=True)
     return merged[offset : offset + limit]
 
@@ -572,6 +601,14 @@ def list_timelapse_presets() -> list[dict[str, object]]:
     return printer_presets()
 
 
+@router.get("/timelapse-capabilities", response_model=TimelapseCapabilities)
+def timelapse_capabilities(ctx: AppContext = Depends(get_context)) -> TimelapseCapabilities:
+    """Configuration on this execution node only; never follow storage routing."""
+    from tailcam.web.timelapse_preflight import local_capabilities
+
+    return local_capabilities(ctx)
+
+
 @router.get("/timelapse", response_model=list[TimelapseInfo])
 async def list_timelapses(
     camera_id: str | None = None,
@@ -606,22 +643,16 @@ async def list_timelapses(
 
 
 @router.post("/cameras/{camera_id:path}/timelapse/start", response_model=TimelapseInfo)
-def start_timelapse(
+async def start_timelapse(
     camera_id: str,
     req: TimelapseStartRequest | None = None,
     ctx: AppContext = Depends(get_context),
 ) -> TimelapseInfo:
+    import anyio
+
+    if ctx.capture.configured_node.startswith(("http://", "https://")):
+        await ctx.cluster.refresh(force=True)
     req = req or TimelapseStartRequest()
-    analysis_enabled = (
-        ctx.config.timelapse.analysis_enabled
-        if req.analysis_enabled is None
-        else req.analysis_enabled
-    )
-    if analysis_enabled and not ctx.analyzer.enabled and not ctx.capture.target():
-        raise HTTPException(
-            status_code=409,
-            detail="Enable and configure Ollama on the Models page before printer analysis",
-        )
     params = dict(
         name=req.name,
         interval_seconds=req.interval_seconds,
@@ -639,7 +670,10 @@ def start_timelapse(
         analysis_cadence_seconds=req.analysis_cadence_seconds,
     )
     # Runs here, or on the storage node (which pulls this camera's stream).
-    record = ctx.capture.start_timelapse(camera_id, params)
+    try:
+        record = await anyio.to_thread.run_sync(ctx.capture.start_timelapse, camera_id, params)
+    except CaptureRoutingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     if record is None:
         raise HTTPException(status_code=503, detail="camera unavailable")
     if isinstance(record, dict):

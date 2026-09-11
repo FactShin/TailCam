@@ -59,6 +59,7 @@ dashboard you're reading this in is built entirely on these endpoints.
 | Method | Path | Notes |
 | --- | --- | --- |
 | GET | `/api/events` | Motion events (`camera_id`, `limit`, `offset`, `scope`). |
+| GET | `/api/media/{id}` | One media record on its owning node. |
 | GET | `/api/media` | Media (`camera_id`, `media_type`, `limit`, `offset`, `scope`). |
 | DELETE | `/api/media/{id}` | Delete media. |
 
@@ -68,6 +69,16 @@ dashboard you're reading this in is built entirely on these endpoints.
 read analysis events. `GET /api/timelapse` merges every node (`scope=local` for
 one node); rows carry `host`, `proxy_prefix`, and `source_host`. See
 [Timelapse](timelapse).
+
+`GET /api/timelapse-capabilities` describes only the responding node's configured
+printer analyzer and installed postprocessors; it does not probe or load a model.
+`GET /api/cameras/{id}/timelapse/preflight` resolves that source camera's current
+storage route and reads its execution node's capabilities in one hop. The route
+status distinguishes `local`, `reachable`, `unreachable`, and `unknown`.
+
+Event results add `recording_host` and `recording_proxy_prefix` for linked clips.
+An empty prefix means this node; `null` with a known owner means unavailable.
+Use the recording's prefix, not the event's prefix, when requesting clip media.
 
 ## AI
 

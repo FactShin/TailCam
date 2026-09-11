@@ -23,9 +23,12 @@ class EventLog:
         )
 
     def close_event(
-        self, event_id: int, end_ts: float, peak_score: float, recording_id: int | None
+        self, event_id: int, end_ts: float, peak_score: float, recording_id: int | None,
+        recording_host: str = "",
     ) -> None:
-        self._store.update_motion_event(event_id, end_ts, peak_score, recording_id)
+        self._store.update_motion_event(
+            event_id, end_ts, peak_score, recording_id, recording_host
+        )
 
     def set_thumb(self, event_id: int, thumb_path: str) -> None:
         self._store.set_event_thumb(event_id, thumb_path)

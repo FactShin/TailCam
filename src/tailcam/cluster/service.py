@@ -15,6 +15,7 @@ import os
 import re
 import socket
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import httpx
@@ -73,11 +74,13 @@ class ClusterService:
         tailscale: TailscaleClient,
         local_host: str,
         serve_port: int = 8443,
+        extra_urls: Callable[[], list[str]] | None = None,
     ) -> None:
         self._config = config
         self._tailscale = tailscale
         self.local_host = local_host
         self._serve_port = serve_port
+        self._extra_urls = extra_urls
         self._client: httpx.AsyncClient | None = None
         self._peers: list[Peer] = []
         self._by_key: dict[str, Peer] = {}
@@ -102,6 +105,8 @@ class ClusterService:
     # -- discovery ---------------------------------------------------------
     def _candidate_urls(self) -> list[str]:
         urls: list[str] = list(self._config.static) + _env_static_peers()
+        if self._extra_urls is not None:
+            urls.extend(self._extra_urls())
         if self._config.auto_discover:
             try:
                 for peer in self._tailscale.peers():
@@ -170,6 +175,21 @@ class ClusterService:
         peer = self._by_key.get(key)
         return peer.base_url if peer else None
 
+    def media_owner_reference(self, host: str) -> tuple[str, str | None]:
+        """Resolve a media owner to a host and a prefix relative to this node.
+
+        A missing peer must never make a remote id point at the local catalog
+        or a different peer with the same shortened hostname. None means the
+        owner cannot currently be resolved, while "" means local storage.
+        Persistent node UUIDs will replace these legacy host aliases separately.
+        """
+        if not host or host in (self.local_host, _key_for(self.local_host)):
+            return self.local_host, ""
+        for peer in self._peers:
+            if host in (peer.host, peer.key):
+                return peer.host, f"/proxy/{peer.key}"
+        return host, None
+
     # -- aggregation -------------------------------------------------------
     async def _remote_items(self, path: str, params: dict | None = None) -> list[dict]:
         """Fetch a list endpoint from every peer (scope=local) and tag each item
@@ -196,6 +216,14 @@ class ClusterService:
             for it in items:
                 it["host"] = peer.host
                 it["proxy_prefix"] = prefix
+                if path == "/api/events" and it.get("recording_id") is not None:
+                    # The event and its clip may belong to different nodes.
+                    # Rebase the clip route for this viewer, including when we
+                    # are its storage owner. Older peers omit recording_host.
+                    owner = str(it.get("recording_host") or peer.host)
+                    it["recording_host"], it["recording_proxy_prefix"] = (
+                        self.media_owner_reference(owner)
+                    )
             if path == "/api/cameras":
                 peer.camera_count = len(items)
             return items

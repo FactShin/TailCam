@@ -125,6 +125,9 @@ class MotionEventInfo(BaseModel):
     end_ts: float | None
     peak_score: float
     recording_id: int | None
+    # The clip's owner and viewer-relative route, independent of event ownership.
+    recording_host: str = ""
+    recording_proxy_prefix: str | None = None
     label: str | None = None  # AI: person/animal/vehicle/… (None = not analyzed)
     description: str | None = None
     confidence: float | None = None
@@ -529,6 +532,29 @@ class PostprocessInfo(BaseModel):
 
 class PostprocessSettings(BaseModel):
     default_engine: str | None = None  # ffmpeg | rife
+
+
+class PrinterAnalyzerInfo(BaseModel):
+    enabled: bool
+    endpoint: str
+    model: str
+    # Configuration is not a successful model call or a model-presence check.
+    reachability: Literal["unchecked"] = "unchecked"
+
+
+class TimelapseCapabilities(BaseModel):
+    host: str
+    printer_analyzer: PrinterAnalyzerInfo
+    postprocess: PostprocessInfo
+
+
+class TimelapsePreflight(BaseModel):
+    camera_host: str
+    capture_host: str
+    configured_storage: str = ""
+    route_status: Literal["local", "reachable", "unreachable", "unknown"]
+    message: str = ""
+    capabilities: TimelapseCapabilities | None = None
 
 
 # -- model training --------------------------------------------------------

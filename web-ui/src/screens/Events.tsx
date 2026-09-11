@@ -117,8 +117,13 @@ export function Events() {
                   {e.description && <div className="event-desc">{e.description}</div>}
                 </div>
                 <div className="event-actions">
-                  {e.recording_id != null ? (
-                    <Button variant="outline" size="sm" icon={<IconPlay size={14} />} onClick={() => navigate("/gallery")}>View clip</Button>
+                  {e.recording_id != null && e.recording_host && e.recording_proxy_prefix == null ? (
+                    <span className="event-noclip mono" title={`Recording is on ${e.recording_host}, which is not currently available`}>storage unavailable</span>
+                  ) : e.recording_id != null ? (
+                    <Button variant="outline" size="sm" icon={<IconPlay size={14} />} onClick={() => navigate(`/gallery?${new URLSearchParams({
+                      media: String(e.recording_id),
+                      owner: e.recording_proxy_prefix ?? e.proxy_prefix,
+                    })}`)}>View clip</Button>
                   ) : (
                     <span className="event-noclip mono" title="Clips save automatically when “Save a clip for motion events” is on (Settings → Recording & storage)">no clip</span>
                   )}

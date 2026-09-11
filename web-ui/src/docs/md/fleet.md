@@ -72,8 +72,10 @@ for a node that shouldn't.
   if it restarts while the storage node is still recording one of its cameras it
   adopts that session (a `409 already recording` answer) instead of starting a
   second, local clip.
-- A `4xx` answer from the storage node is treated as an answer; only connection
-  failures and `5xx` mark it down (local fallback for 20 s).
+- Timelapse starts return remote rejections, including `4xx` and `5xx`, without
+  creating local captures. Uncertain timeouts require checking the storage node
+  before retrying. Only an unresolved destination or failed connection permits
+  the existing local fallback. Recording fallback behavior is unchanged.
 - Actions proxied to a peer (record, stop a timelapse) no longer forward the
   browser's `Origin`, so they work when the dashboard was opened by IP address
   as well as by MagicDNS name.
@@ -81,10 +83,16 @@ for a node that shouldn't.
 ## The reverse proxy
 
 Cross-node streaming and media use a constrained reverse proxy at
-`/proxy/<node_key>/...`. It forwards only safe view/media paths to the named peer.
+`/proxy/<node_key>/...`. It forwards ordinary camera/media API paths to the named peer.
 For security it **strips inbound `tailscale-*` identity headers** and **refuses to
-proxy the `/api/v1/node` and `/api/v1/fleet` management paths** — management is
+proxy the `/api/v1/node`, `/api/v1/fleet`, `/mcp`, and nested `/proxy` paths**.
+Ambiguous/encoded traversal paths are rejected before contacting a peer. Management is
 never tunneled through the generic proxy. See [Security](security).
+
+Motion events include `recording_host` and `recording_proxy_prefix` separately
+from the event's own host. **View clip** opens that exact recording, so two nodes
+with recording ID 1 cannot be confused. Unresolved owners show unavailable;
+legacy events without an owner still refer to their event node.
 
 ## Node & fleet management API
 

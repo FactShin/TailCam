@@ -215,11 +215,29 @@ const AnyCam = (() => {
       empty.classList.toggle("hidden", events.length > 0);
       for (const e of events) {
         const dur = e.end_ts ? e.end_ts - e.start_ts : null;
-        const rec = e.recording_id
-          ? `<a href="/media/${e.recording_id}/file" target="_blank">▶ View</a>` : "—";
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td>${fmtTime(e.start_ts)}</td><td>${e.camera_id}</td>
-          <td>${fmtDuration(dur)}</td><td>${(e.peak_score * 100).toFixed(1)}%</td><td>${rec}</td>`;
+        for (const value of [fmtTime(e.start_ts), e.camera_id, fmtDuration(dur),
+          `${(e.peak_score * 100).toFixed(1)}%`]) {
+          const td = document.createElement("td");
+          td.textContent = value;
+          tr.appendChild(td);
+        }
+        const clip = document.createElement("td");
+        const prefix = e.recording_proxy_prefix ?? e.proxy_prefix ?? "";
+        const unavailable = e.recording_host && e.recording_proxy_prefix == null;
+        if (unavailable) {
+          clip.textContent = "storage unavailable";
+        } else if (e.recording_id != null && (prefix === "" || /^\/proxy\/[a-z0-9-]+$/.test(prefix))) {
+          const link = document.createElement("a");
+          link.href = `${prefix}/media/${encodeURIComponent(e.recording_id)}/file`;
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.textContent = "▶ View";
+          clip.appendChild(link);
+        } else {
+          clip.textContent = "—";
+        }
+        tr.appendChild(clip);
         body.appendChild(tr);
       }
     }
