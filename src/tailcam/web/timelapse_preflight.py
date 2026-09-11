@@ -47,21 +47,26 @@ def local_capabilities(ctx: AppContext) -> TimelapseCapabilities:
     config = ctx.printer_analyzer.config
     tl = ctx.config.timelapse
     ff_source = ffmpeg_source()
-    rife_ok = rife_available(tl.rife_path)
+    storage = ctx.has_role("storage")
+    analysis = ctx.has_role("analysis")
+    rife_ok = analysis and storage and rife_available(tl.rife_path)
     return TimelapseCapabilities(
         host=ctx.local_host,
+        capture_enabled=storage,
+        capture_reason="" if storage else "Storage role is disabled on this device.",
         printer_analyzer=PrinterAnalyzerInfo(
-            enabled=config.enabled,
+            enabled=config.enabled and analysis,
             endpoint=display_endpoint(config.base_url),
             model=config.model,
         ),
         postprocess=PostprocessInfo(
             # Both smoothing paths need FFmpeg to produce the final video.
-            available=ff_source != "missing",
+            available=storage and ff_source != "missing",
             default_engine=tl.smooth_engine,
             default_target_fps=tl.smooth_target_fps,
             engines=[
-                EngineInfo(id="ffmpeg", label="FFmpeg", available=ff_source != "missing",
+                EngineInfo(id="ffmpeg", label="FFmpeg",
+                           available=storage and ff_source != "missing",
                            source=ff_source),
                 EngineInfo(id="rife", label="RIFE", available=rife_ok,
                            source="system" if rife_ok else "missing"),

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -18,11 +19,17 @@ _THUMB_WIDTH = 320
 
 
 class SnapshotService:
-    def __init__(self, manager: CameraManager, store: Store) -> None:
+    def __init__(
+        self, manager: CameraManager, store: Store,
+        role_check: Callable[[], None] | None = None,
+    ) -> None:
         self._manager = manager
         self._store = store
+        self._role_check = role_check
 
     def capture(self, camera_id: str, trigger: str = "manual") -> MediaRecord | None:
+        if self._role_check is not None:
+            self._role_check()
         buffer = self._manager.get_buffer(camera_id)
         if buffer is None:
             return None

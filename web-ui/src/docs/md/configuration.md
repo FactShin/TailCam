@@ -10,8 +10,55 @@ in SQLite instead.
   the resolved path with `tailcam doctor`.
 - Edit it directly, or use `tailcam config --edit`. After editing the running
   service, `tailcam restart`.
-- A malformed file never bricks TailCam: the bad file is backed up to `*.bad` and
-  defaults are used until you fix it.
+- An unreadable or invalid existing file stops startup and stays intact. Fix it
+  with `tailcam config --edit`, then restart. TailCam never replaces a broken
+  hub configuration with defaults that could enable cameras or AI.
+
+## `[node]`
+
+Choose **Settings → Node purpose**, or configure roles before the first run:
+
+```bash
+tailcam config --init --preset hub --node-name "Workshop hub"
+tailcam run
+```
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `name` | `""` | Friendly name, up to 64 characters; blank uses the hostname. |
+| `roles` | `["capture", "storage", "analysis", "training"]` | Workloads this process may run; `[]` is a hub. |
+
+| Preset | Active workloads |
+| --- | --- |
+| `all-in-one` | Capture, storage, analysis, training |
+| `camera` | Capture and storage; no local analysis or training |
+| `hub` | Fleet dashboard and control only |
+| `storage` | Incoming recordings, timelapses, and FFmpeg processing |
+| `compute` | Local analysis and training |
+
+For a camera that only streams and sends recordings to another node, use
+`tailcam config --roles capture`. Set its storage destination separately. A
+capture-only node cannot save local snapshots, motion thumbnails, recordings,
+or timelapse frames. Existing history remains readable with roles disabled.
+RIFE processing and printer analysis require analysis as well as storage;
+active learning requires training and analysis.
+
+Role changes are saved for the **next server restart**. The dashboard shows
+both saved and active roles when they differ. Use `tailcam restart` for an
+installed service, restart the container, or stop and rerun a foreground
+server. Saving roles does not interrupt an in-progress capture. Settings such
+as detection or collection still have their own enable switches.
+
+Valid older configurations without `[node]` keep all four roles. The persistent
+node UUID is generated in the local database; renaming the node, editing its
+config, and restarting do not change it. It is read-only in Settings. Peer
+links continue using their existing keys; older peers show “Roles not reported.”
+Workload roles do not change viewer/operator/admin permissions.
+
+A hub still needs its local runtime database and logs. This version retains
+the base OpenCV dependency; selecting a role does not install or remove packages.
+Training datasets and models remain on their current local paths until the
+unified-storage milestone.
 
 ## `[server]`
 
@@ -58,7 +105,7 @@ See [Motion detection](motion-detection).
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `media_dir` | `""` | Folder for recordings, snapshots, thumbnails **and timelapses**. Blank = `<data-dir>/media`. Set to an external drive/NAS path — pick it with the folder browser in Settings → Recording & storage. |
-| `node` | `""` | **Storage node**: record and timelapse this node's cameras *on another TailCam node* (peer key, hostname, or base URL). That node pulls the camera stream over the tailnet and writes the files to its own disk. Blank = save here. Falls back to local if the node is unreachable when a capture starts. See [Fleet](fleet#storage-node). |
+| `node` | `""` | **Storage node**: record and timelapse this node's cameras *on another TailCam node* (peer key, hostname, or base URL). That node pulls the camera stream and writes files. Blank = save here. Connectivity fallback requires this node's storage role; a destination's disabled-role refusal never falls back. See [Fleet](fleet#storage-node). |
 
 ## `[tailscale]`
 

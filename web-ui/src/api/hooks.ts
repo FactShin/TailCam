@@ -290,6 +290,25 @@ export function useSystem() {
   return useQuery({ queryKey: ["system"], queryFn: api.getSystem, refetchInterval: 15000 });
 }
 
+export function useNodeConfig() {
+  return useQuery({
+    queryKey: ["node-config"], queryFn: api.getNodeConfig,
+    refetchInterval: 15000, retry: false,
+  });
+}
+
+export function useUpdateNodeConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.updateNodeConfig,
+    onSuccess: (data) => {
+      qc.setQueryData(["node-config"], data);
+      qc.invalidateQueries({ queryKey: ["system"] });
+      qc.invalidateQueries({ queryKey: ["hosts"] });
+    },
+  });
+}
+
 export function useMedia(params: { camera_id?: string; media_type?: string; limit?: number }) {
   return useQuery({
     queryKey: ["media", params],

@@ -17,11 +17,13 @@ import socket
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from uuid import UUID
 
 import httpx
 
 from tailcam.config import PeersConfig
 from tailcam.logging_setup import get_logger
+from tailcam.node import NodeConfigError, validate_node_name, validate_roles
 from tailcam.tailscale.client import TailscaleClient
 
 log = get_logger(__name__)
@@ -39,6 +41,30 @@ class Peer:
     online: bool = False
     version: str | None = None
     camera_count: int = 0
+    # None means a legacy peer or invalid advertised metadata; never infer roles.
+    node_id: str | None = None
+    node_name: str | None = None
+    node_roles: list[str] | None = None
+
+
+def _node_metadata(data: dict) -> dict:
+    result: dict = {"node_id": None, "node_name": None, "node_roles": None}
+    try:
+        if isinstance(data.get("node_id"), str):
+            result["node_id"] = str(UUID(data["node_id"]))
+    except ValueError:
+        pass
+    try:
+        if "node_name" in data:
+            result["node_name"] = validate_node_name(data["node_name"])
+    except NodeConfigError:
+        pass
+    try:
+        if "node_roles" in data:
+            result["node_roles"] = validate_roles(data["node_roles"])
+    except NodeConfigError:
+        pass
+    return result
 
 
 def resolve_local_host(tailscale: TailscaleClient) -> str:
@@ -135,7 +161,16 @@ class ClusterService:
         # be any web app: only a TailCam-shaped object counts.
         if not isinstance(data, dict) or "version" not in data:
             return None
-        host = data.get("host") or httpx.URL(base_url).host or base_url
+        advertised_host = data.get("host")
+        if advertised_host is not None and not isinstance(advertised_host, str):
+            return None
+        host = advertised_host or httpx.URL(base_url).host or base_url
+        if not isinstance(host, str) or not host or len(host) > 253:
+            return None
+        if any(ord(char) < 32 or ord(char) == 127 for char in host):
+            return None
+        if not isinstance(data["version"], str) or len(data["version"]) > 64:
+            return None
         if host == self.local_host:
             return None  # that's us
         return Peer(
@@ -144,6 +179,7 @@ class ClusterService:
             base_url=base_url,
             online=True,
             version=data.get("version"),
+            **_node_metadata(data),
         )
 
     async def refresh(self, force: bool = False) -> list[Peer]:

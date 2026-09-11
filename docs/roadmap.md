@@ -1,8 +1,8 @@
 # TailCam: source-of-truth update roadmap and implementation handoff
 
-Prepared for Wayne Scire · 11 September 2026 · Document revision **r4**
+Prepared for Wayne Scire · 11 September 2026 · Document revision **r5**
 
-**Status:** 1.8.5 validated and merged in [PR #85](https://github.com/FactShin/TailCam/pull/85); 1.8.6 dependency-security patch implemented with local and package checks passed in [PR #86](https://github.com/FactShin/TailCam/pull/86), which records current CI status. **Last verified main baseline:** 1.8.5 at `324ba11e2fb7933830d5c438c5d4fef51abdd553`. **Publication:** PyPI remains 1.8.4; neither 1.8.5 nor 1.8.6 is published as of 2026-09-11. **Authoritative implementation roadmap:** this repository file, imported from the supplied r2 planning snapshot on 2026-09-11. Document revisions and application release versions are separate.
+**Status:** 1.8.5 and 1.8.6 are validated and merged in [PR #85](https://github.com/FactShin/TailCam/pull/85) and [PR #86](https://github.com/FactShin/TailCam/pull/86). The 1.9.0 node identity/roles foundation is in progress; role-aware installers and richer readiness checks remain separate slices. **Last verified main baseline:** 1.8.6 at `d3c75f81572cb9661103fd3c916e4921ab7051ca`. **Publication:** PyPI remains 1.8.4 as checked on 2026-09-11. **Authoritative implementation roadmap:** this repository file, imported from the supplied r2 planning snapshot on 2026-09-11. Document revisions and application release versions are separate.
 
 **Purpose:** this file carries the product intent, engineering constraints, release scopes, completion gates, and working instructions into a new session. It consolidates the original feature attachment, architecture review, all nine later product suggestions, and the decision to add agent-supervised training. A fresh agent should not need the original chat to understand the work.
 
@@ -12,7 +12,7 @@ Read this section, the release table, and the selected release's detail before m
 
 1. **Establish the checkout.** Use `https://github.com/FactShin/TailCam`. Read applicable `AGENTS.md` and repository development instructions. Record branch, full HEAD SHA, working-tree changes, current runtime/dashboard/extension versions, recent releases, and relevant open PRs. Preserve unrelated work. Use an isolated branch/worktree when needed.
 2. **Reconcile progress.** Compare current code, merged PRs, and tests with this document's release ledger. Distinguish already shipped, partially implemented, unimplemented, and superseded work. Do not repeat an existing feature or label an old test result as a fresh run.
-3. **Choose the next bounded slice.** Start with the earliest unmet dependency. Unless the user directs otherwise, finish the 1.8.6 dependency-security patch before beginning the 1.9.0 role/identity/installer foundation. Do not implement the entire roadmap in one branch.
+3. **Choose the next bounded slice.** Start with the earliest unmet dependency. The 1.8.6 patch is merged. Complete the bounded 1.9.0 roles/identity and installer slices before starting unified storage. Do not implement the entire roadmap in one branch.
 4. **Make a small implementation brief.** State the user's outcome, affected services/interfaces, existing behavior, proposed behavior, migration needs, acceptance checks, and expected version bump. Resolve ordinary implementation choices from this document and repository evidence. Ask only when a missing decision materially changes scope or introduces an irreversible action.
 5. **Implement vertically.** Complete the service/API behavior, persistence, UI or MCP path, documentation, and relevant tests together. Keep existing single-machine operation and optional-dependency behavior working.
 6. **Validate with evidence.** Run targeted regression tests for the changed behavior; satisfy current repository CI gates. Use separate processes and independent media roots for fleet/storage tests. Run platform/hardware checks when the release claims depend on them, or record them as outstanding and do not claim the release is ready.
@@ -188,7 +188,7 @@ Keep live frames latest-only. Persist recording/transfer/export jobs. Keep SQLit
 
 ## 4. Exact proposed release sequence
 
-This sequence began from the reviewed 1.8.4 baseline. The 1.8.5 fixes are merged; the added 1.8.6 patch handles dependency security before feature work. Later versions remain proposed and must be reconciled with published releases before implementation. A release can contain several related features; each subtask does not need its own version.
+This sequence began from the reviewed 1.8.4 baseline. The 1.8.5 fixes and 1.8.6 dependency-security patch are merged; 1.9.0 feature work has begun. Later versions remain proposed and must be reconciled with published releases before implementation. A release can contain several related features; each subtask does not need its own version.
 
 | Release | Deliverable | Why this bump | Dependency |
 |---|---|---|---|
@@ -552,9 +552,9 @@ Start with one camera, then two, then the actual intended maximum. Separate idle
 
 ## 8. What to build first and what to postpone
 
-The implementation order is **1.8.5 (merged) → 1.8.6 → 1.9.0 → 1.10.0 → 1.11.0**. After the dependency-security patch, that sequence delivers the essential promise: a small camera computer, a chosen storage computer, and a separately chosen AI computer working together.
+The implementation order is **1.8.5 (merged) → 1.8.6 (merged) → 1.9.0 (in progress) → 1.10.0 → 1.11.0**. After the dependency-security patch, that sequence delivers the essential promise: a small camera computer, a chosen storage computer, and a separately chosen AI computer working together.
 
-PR #85 covers remote timelapse rejection, execution-node UI checks, and destination/owner reporting from both dashboards. Finish the 1.8.6 compatibility checks next. Then define node identity and artifact/job contracts before adding more per-screen settings.
+PR #85 covers remote timelapse rejection, execution-node UI checks, and destination/owner reporting from both dashboards. PR #86 completes dependency security and compatibility checks. The next bounded PR establishes node identity and enforced workload roles; finish role-aware setup before artifact/job contracts and more per-screen settings.
 
 Treat 1.12–1.15 as the next product stage, 1.16–1.17 as intelligence/reliability milestones, and 1.18–1.22 as the complete product experiences requested in the follow-up. These later milestones need prototypes and hardware measurements before calendar commitments. Missions and Replay Lab are the highest-priority product experience pair; Scene Memory follows. The workshop companion is a strong early demonstration after bookmark/artifact foundations exist. Prototype work can happen earlier, but a release cannot ship before its dependencies and acceptance gates are met. Storage durability, job orchestration, authorization, and reliable audio are substantial engineering projects; this whole roadmap is not a single feature sprint.
 
@@ -564,13 +564,13 @@ The product standard is simple: **every screen and every assistant should be abl
 
 ## 9. Progress ledger and handoff requirements
 
-**State as of document r4:** 1.8.5 is validated and merged in PR #85. The 1.8.6 dependency-security patch is implemented and has passed local and package checks; current CI is recorded on PR #86. Feature releases remain planned. No roadmap release has been published: PyPI latest is 1.8.4 and the GitHub releases collection is empty as checked on 2026-09-11. The original 1.8.4 review below remains historical evidence. Reconcile this ledger against GitHub at the start of each future session.
+**State as of document r5:** 1.8.5 and 1.8.6 are validated and merged. PR #86 final head `3d0665788f6dc5d2c4392c8bdf67179e3443dbd1` passed all four CI jobs before merge. The first 1.9.0 slice implements persistent identity, enforced workload roles, and CLI/dashboard controls; installers and full readiness discovery remain open. No roadmap release has been published: PyPI latest is 1.8.4 as checked on 2026-09-11. The original 1.8.4 review below remains historical evidence. Reconcile this ledger against GitHub at the start of each future session.
 
 | Target | Workstream | Status | Evidence / next gate |
 |---|---|---|---|
 | 1.8.5 | Current routing fixes | Validated; merged [PR #85](https://github.com/FactShin/TailCam/pull/85) | Local checks and final CI passed; publication remains separate. See [release notes](releases/1.8.5.md) |
-| 1.8.6 | Dashboard dependency security | Implemented; local and package checks passed | [PR #86](https://github.com/FactShin/TailCam/pull/86), commit `730b2f836508b9b0a95e7d09c95f145e2a45243f`; see PR checks and [release notes](releases/1.8.6.md) |
-| 1.9.0 | Roles and installer | Planned | Dynamic capabilities and no-camera startup |
+| 1.8.6 | Dashboard dependency security | Validated; merged [PR #86](https://github.com/FactShin/TailCam/pull/86) | Local, package, and [final CI](https://github.com/FactShin/TailCam/actions/runs/34625628441) passed; [release notes](releases/1.8.6.md) |
+| 1.9.0 | Roles and installer | In progress; identity/roles foundation under validation | Role-aware lifecycle, CLI/settings, and additive peer metadata implemented; installer/shared setup and richer readiness discovery remain open. See [release notes](releases/1.9.0.md) |
 | 1.10.0 | Unified storage | Planned | Isolated multi-process artifact-transfer tests |
 | 1.11.0 | Workload routing + Training Supervisor | Planned | Durable jobs, enforced budgets, no model activation |
 | 1.12.0 | Timelapse projects | Planned | Long capture/re-render recovery |
@@ -594,18 +594,18 @@ Update this record in the authoritative file before handing work back. Replace o
 
 | Field | Current value |
 |---|---|
-| Document revision/date | r4 / 2026-09-11 |
-| Last verified code baseline | main / 324ba11e2fb7933830d5c438c5d4fef51abdd553 / 1.8.5 |
-| Active implementation branch/PR | `fix/frontend-dependencies-1.8.6`; [PR #86](https://github.com/FactShin/TailCam/pull/86) |
-| Completed in this session | Verified PR #85 merged; upgraded vulnerable dashboard dependencies; npm audit reduced from six vulnerable package entries to zero; Python, TypeScript, browser and reproducible-build checks passed |
-| Current implementation target | 1.8.6 dependency-security patch; version unused on PyPI as of 2026-09-11; latest published package remains 1.8.4 |
-| Implementation commit | 730b2f836508b9b0a95e7d09c95f145e2a45243f |
-| Code changes in this roadmap session | Vite 6.4.3, React plugin 4.7.0, PWA plugin 1.3.0, React Router 7.18.3; React 18 retained; coherent version metadata and Node 22 build guidance |
-| Validation evidence | Clean npm install/audit: zero known vulnerabilities. TypeScript app/config/tests, build, Ruff and mypy (125 files) passed; 563 Python tests passed with three existing warnings; five Chromium navigation/PWA tests passed; 18 bundle files byte-identical on rebuild and fresh wheel install/HTTP delivery. Clean wheel/sdist, installed-package routes, CLI and dependency validation passed. Current CI is recorded on PR #86; see release notes. Original 478-test result below remains historical. |
+| Document revision/date | r5 / 2026-09-11 |
+| Last verified code baseline | main / d3c75f81572cb9661103fd3c916e4921ab7051ca / 1.8.6 |
+| Active implementation branch/PR | `feat/node-roles-1.9.0`; PR follows final local/package checks |
+| Completed in this session | Merged PR #86 after all checks passed; implemented first 1.9.0 roles/identity slice with parallel backend, interface, and lifecycle review |
+| Current implementation target | 1.9.0 foundation only; OS installer/setup and readiness gates remain open; latest published PyPI package is 1.8.4 |
+| Implementation commit | Recorded after final local checks |
+| Code changes in this roadmap session | Persistent UUID/schema 13; strict node configuration; admin-audited role changes applied on restart; guarded services and HTTP operations; role-aware CLI/dashboard/peer metadata; remote refusal propagation and no disabled local fallback |
+| Validation evidence | 642 Python tests passed; Ruff and mypy (126 files) passed; TypeScript/build, nine browser tests, zero-vulnerability npm audit, 18-file reproducible bundle and mobile/desktop visual checks passed. Package and current PR checks recorded in release notes before handoff. |
 | Outstanding environment checks | Actual camera, Pi, GPU, voice, cross-OS live fleet and long-duration capture validation remain separate hardware gates |
-| Exact next action | Review PR #86 and its current CI; after merge, begin the 1.9.0 roles/identity/installer slice from updated main |
+| Exact next action | Review the roles/identity PR and current CI; after merge, implement shared role-aware OS installer and container setup without camera mounts on hubs |
 | Unresolved product decisions | Hardware capacity budgets, approved training datasets, task-specific model acceptance thresholds, current agent-host integration details |
-| Blockers | No implementation blocker. PR checks govern merge readiness; hardware release gates remain open. |
+| Blockers | No implementation blocker. PR checks govern merge readiness; installer and hardware milestone gates remain open. |
 
 ### Implementation-session completion checklist
 
@@ -630,6 +630,7 @@ Measure and record numeric Pi memory/CPU targets, maximum camera modes/counts, s
 | r2 | Adds the Training Supervisor across 1.11/1.14/1.16; includes all nine product suggestions with delivery targets through 1.22; adds source-of-truth rules, session prompt, ledger, and completion instructions |
 | r3 | Imports roadmap into the repository and begins 1.8.5 implementation with current validation, compatibility limits, security follow-up, and PR checkpoint |
 | r4 | Records merged PR #85 and its final CI, corrects the canonical roadmap location and historical review scope, and adds the 1.8.6 dependency-security patch before 1.9.0 |
+| r5 | Records merged PR #86 and begins the 1.9.0 identity/roles foundation, explicitly separating installer, readiness, lean-package, and hardware gates |
 
 ## Validation recorded for the original architecture review
 

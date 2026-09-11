@@ -8,6 +8,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Any
+from uuid import UUID, uuid4
 
 from tailcam import paths
 from tailcam.persistence.models import (
@@ -26,6 +27,12 @@ from tailcam.persistence.models import (
 )
 
 _SCHEMA = [
+    """
+    CREATE TABLE IF NOT EXISTS node_identity (
+        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+        node_id TEXT NOT NULL UNIQUE
+    );
+    """,
     """
     CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
     """,
@@ -237,7 +244,7 @@ _SCHEMA = [
     CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_events (created_ts DESC);
     """,
 ]
-_CURRENT_VERSION = 12
+_CURRENT_VERSION = 13
 
 # Columns added after v1 — applied to existing DBs via ALTER TABLE on migrate().
 _EVENT_COLUMNS = {
@@ -334,6 +341,19 @@ class Store:
                 conn.execute("INSERT INTO schema_version (version) VALUES (?)", (_CURRENT_VERSION,))
             else:
                 conn.execute("UPDATE schema_version SET version=?", (_CURRENT_VERSION,))
+
+    def get_node_id(self) -> str:
+        """Stable per-database identity, safe for concurrent process startup."""
+        conn = self._conn()
+        with conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO node_identity (singleton, node_id) VALUES (1, ?)",
+                (str(uuid4()),),
+            )
+            row = conn.execute("SELECT node_id FROM node_identity WHERE singleton=1").fetchone()
+        # Never silently replace a corrupted identity: ownership references
+        # must remain stable even when a database needs repair.
+        return str(UUID(row["node_id"]))
 
     # -- cameras -----------------------------------------------------------
     def upsert_camera(self, record: CameraRecord) -> None:

@@ -5,13 +5,15 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from tailcam import paths
 from tailcam.config import AppConfig
+from tailcam.media.capture_router import CaptureRoutingError
+from tailcam.node import RoleDisabledError
 from tailcam.web.context import AppContext
 
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -45,6 +47,24 @@ def create_app(config: AppConfig | None = None, context: AppContext | None = Non
     )
     app.state.ctx = ctx
     app.state.templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+
+    @app.exception_handler(RoleDisabledError)
+    async def role_disabled(_request: Request, exc: RoleDisabledError) -> JSONResponse:
+        # 409 means "already recording" to legacy capture clients. A disabled
+        # destination must be rejected, never adopted as a successful session.
+        return JSONResponse(
+            status_code=503,
+            content={"detail": str(exc), "code": "role_disabled", "role": exc.role},
+        )
+
+    @app.exception_handler(CaptureRoutingError)
+    async def capture_rejected(_request: Request, exc: CaptureRoutingError) -> JSONResponse:
+        payload = {"detail": exc.detail}
+        if exc.code is not None:
+            payload["code"] = exc.code
+        if exc.role is not None:
+            payload["role"] = exc.role
+        return JSONResponse(status_code=exc.status_code, content=payload)
 
     from tailcam.web.security import SecurityMiddleware
 

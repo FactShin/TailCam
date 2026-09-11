@@ -158,6 +158,7 @@ export function Timelapse() {
   const preflight = preflightQuery.isError ? undefined : preflightQuery.data;
   const analyzer = preflight?.capabilities?.printer_analyzer;
   const postprocess = preflight?.capabilities?.postprocess;
+  const captureUnavailable = preflight?.capabilities?.capture_enabled === false;
   const analysisUnavailable = settings.analysis_enabled && analyzer?.enabled === false;
   const smoothingUnavailable = settings.auto_smooth && postprocess?.available === false;
 
@@ -303,7 +304,7 @@ export function Timelapse() {
             <Button
               variant="primary"
               icon={<IconBolt size={15} />}
-              disabled={!selected || start.isPending || preflightQuery.isPending || analysisUnavailable || smoothingUnavailable}
+              disabled={!selected || start.isPending || preflightQuery.isPending || captureUnavailable || analysisUnavailable || smoothingUnavailable}
               onClick={onStart}
             >
               Start capture
@@ -333,7 +334,8 @@ export function Timelapse() {
               <div>Smoothing on {preflight?.capture_host}: {postprocess.available ? "FFmpeg installed" : "FFmpeg missing"}
                 {postprocess.engines.find((engine) => engine.id === "rife")?.available ? " · RIFE installed" : " · RIFE unavailable; FFmpeg fallback"}.</div>
             )}
-            {analysisUnavailable && <div className="tl-routing-warning">Disable printer analysis below or enable Ollama on {preflight?.capture_host} before starting.</div>}
+            {captureUnavailable && <div className="tl-routing-warning">{preflight?.capabilities?.capture_reason} Choose a device with the storage role enabled.</div>}
+            {analysisUnavailable && <div className="tl-routing-warning">Disable printer analysis below or enable the analysis role and Ollama on {preflight?.capture_host} before starting.</div>}
             {smoothingUnavailable && <div className="tl-routing-warning">Turn off automatic smoothing below or install FFmpeg on {preflight?.capture_host} before starting.</div>}
           </div>
         )}

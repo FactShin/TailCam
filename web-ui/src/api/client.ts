@@ -22,6 +22,13 @@ import type {
   ViewParams,
 } from "../types";
 
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
@@ -35,7 +42,7 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
     } catch {
       /* ignore */
     }
-    throw new Error(detail);
+    throw new ApiError(detail, res.status);
   }
   return res.json() as Promise<T>;
 }
@@ -84,6 +91,12 @@ export const refreshCameras = () =>
   jsonFetch<CameraInfo[]>("/api/cameras/refresh", { method: "POST" });
 export const getHosts = () => jsonFetch<HostInfo[]>("/api/hosts");
 export const getSystem = () => jsonFetch<SystemInfo>("/api/system");
+export const getNodeConfig = () => jsonFetch<import("../types").NodeConfig>("/api/v1/node/config");
+export const updateNodeConfig = (body: import("../types").NodeConfigUpdate) =>
+  jsonFetch<import("../types").NodeConfig>("/api/v1/node/config", {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
 export const getUpdate = () =>
   jsonFetch<{ current: string; latest: string | null; available: boolean }>("/api/update");
 export const getAi = () => jsonFetch<import("../types").AIInfo>("/api/ai");

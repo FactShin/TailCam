@@ -18,6 +18,7 @@ import json
 import shutil
 import threading
 import time
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -53,6 +54,9 @@ class TrainingService:
         analyzer,
         host: str,
         notifier=None,
+        *,
+        role_check: Callable[[], None] | None = None,
+        analysis_check: Callable[[], None] | None = None,
     ) -> None:
         self._manager = manager
         self._store = store
@@ -60,6 +64,8 @@ class TrainingService:
         self._analyzer = analyzer
         self._host = host
         self._notifier = notifier
+        self._role_check = role_check or (lambda: None)
+        self._analysis_check = analysis_check or self._role_check
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
@@ -68,6 +74,7 @@ class TrainingService:
 
     # -- startup -----------------------------------------------------------
     def startup(self) -> None:
+        self._role_check()
         self._seed_base_model()
         if self._config.collect_enabled:
             self.start_collection()
@@ -91,6 +98,7 @@ class TrainingService:
 
     # -- collection --------------------------------------------------------
     def start_collection(self) -> None:
+        self._role_check()
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 return
@@ -158,6 +166,7 @@ class TrainingService:
         label: str | None = None,
         confidence: float | None = None,
     ) -> int:
+        self._role_check()
         ts = time.time()
         stamp = datetime.fromtimestamp(ts).strftime("%Y%m%d-%H%M%S-%f")[:-3]
         safe = camera_id.replace("/", "_") or "cam"
@@ -187,6 +196,7 @@ class TrainingService:
     def create_dataset(
         self, name: str, note: str = "", task: str = "classification"
     ) -> DatasetRecord:
+        self._role_check()
         ts = time.time()
         if task not in ("classification", "detection"):
             task = "classification"
@@ -199,6 +209,7 @@ class TrainingService:
         return record
 
     def delete_dataset(self, dataset_id: int) -> bool:
+        self._role_check()
         if self._store.get_dataset(dataset_id) is None:
             return False
         self._store.delete_dataset(dataset_id)
@@ -209,6 +220,7 @@ class TrainingService:
         return True
 
     def delete_sample(self, sample_id: int) -> bool:
+        self._role_check()
         rec = self._store.get_sample(sample_id)
         if rec is None:
             return False
@@ -228,6 +240,7 @@ class TrainingService:
         ``{"label", "cx", "cy", "w", "h"}`` with coordinates normalized 0..1;
         they're clamped defensively so a bad drag can't store out-of-range geometry.
         Returns the stored boxes, or None if the sample doesn't exist."""
+        self._role_check()
         if self._store.get_sample(sample_id) is None:
             return None
         ts = time.time()
@@ -256,6 +269,7 @@ class TrainingService:
 
         Idempotent: an event whose frame is already in the dataset is skipped,
         so clicking "Import" repeatedly never duplicates samples."""
+        self._role_check()
         if self._store.get_dataset(dataset_id) is None:
             return 0
         frames_dir = paths.datasets_dir() / str(dataset_id) / "frames"
@@ -298,6 +312,7 @@ class TrainingService:
     def register_byo(
         self, name: str, path: str, task: str = "classification"
     ) -> ModelRecord | None:
+        self._analysis_check()
         p = Path(path).expanduser()
         if not p.exists():
             return None
@@ -316,10 +331,12 @@ class TrainingService:
         return record
 
     def activate_model(self, model_id: int | None) -> None:
+        self._analysis_check()
         self._store.set_active_model(model_id)
         self._config.active_model_id = model_id or 0
 
     def delete_model(self, model_id: int) -> bool:
+        self._role_check()
         rec = self._store.get_model(model_id)
         if rec is None or rec.kind == "base":
             return False  # never delete the base entry
@@ -345,6 +362,7 @@ class TrainingService:
         epochs: int | None = None,
         image_size: int | None = None,
     ) -> TrainingRunRecord | None:
+        self._role_check()
         dataset = self._store.get_dataset(dataset_id)
         if dataset is None:
             return None

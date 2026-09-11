@@ -35,10 +35,15 @@ _DOWN_BACKOFF = 20.0
 class CaptureRoutingError(Exception):
     """A remote refusal or uncertain outcome that must reach the caller."""
 
-    def __init__(self, status_code: int, detail: str) -> None:
+    def __init__(
+        self, status_code: int, detail: str, *,
+        code: str | None = None, role: str | None = None,
+    ) -> None:
         super().__init__(detail)
         self.status_code = status_code
         self.detail = detail
+        self.code = code
+        self.role = role
 
 
 @dataclass
@@ -148,6 +153,16 @@ class CaptureRouter:
             data = resp.json()
         except ValueError:
             data = None
+        if (resp.status_code >= 400 and isinstance(data, dict)
+                and data.get("code") == "role_disabled"):
+            # An explicit placement refusal is not a connectivity failure.
+            # In particular, never treat it as an existing remote recording
+            # or start an unexpected local copy.
+            raise CaptureRoutingError(
+                resp.status_code, str(data.get("detail") or "Role disabled"),
+                code="role_disabled", role=data.get("role")
+                if isinstance(data.get("role"), str) else None,
+            )
         if strict_start and resp.status_code >= 300:
             detail = str(data.get("detail", "")) if isinstance(data, dict) else ""
             detail = detail or f"Storage node returned HTTP {resp.status_code}"
@@ -333,9 +348,12 @@ class CaptureRouter:
                 data["proxy_prefix"] = f"/proxy/{key}"
                 log.info("timelapse for %s started on storage node %s", camera_id, key)
                 return data
+        self._ctx.require_role("storage")
         analysis_enabled = params.get("analysis_enabled")
         if analysis_enabled is None:
             analysis_enabled = self._ctx.config.timelapse.analysis_enabled
+        if analysis_enabled:
+            self._ctx.require_role("analysis")
         if analysis_enabled and not self._ctx.printer_analyzer.config.enabled:
             raise CaptureRoutingError(
                 409, "Enable and configure Ollama on the capture node's Models page "

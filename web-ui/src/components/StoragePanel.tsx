@@ -40,6 +40,7 @@ export function StoragePanel() {
 
   const setAutoRecord = (v: boolean) => update.mutate({ auto_record: v });
   const storageNode = data.nodes.find((n) => n.node_key === data.node || n.host === data.node);
+  const localStorageDisabled = data.storage_enabled === false;
   const setNode = async (key: string) => {
     try {
       const res = await update.mutateAsync({ node: key === "local" ? "" : key });
@@ -129,17 +130,17 @@ export function StoragePanel() {
             return (
               <button
                 key={n.node_key}
-                className={`stor-node ${selected ? "is-on" : ""} ${n.online ? "" : "is-off"}`}
-                disabled={!n.online || update.isPending}
+                className={`stor-node ${selected ? "is-on" : ""} ${n.online && n.storage_enabled !== false ? "" : "is-off"}`}
+                disabled={!n.online || n.storage_enabled === false || update.isPending}
                 onClick={() => setNode(n.node_key)}
-                title={n.media_dir}
+                title={n.storage_enabled === false ? "The Storage role is disabled on this device" : n.media_dir}
               >
                 <IconServer size={14} />
                 <span className="stor-node-host">{n.host}{n.node_key === "local" ? " (this device)" : ""}</span>
                 <span className="stor-node-free mono">
-                  {n.online ? `${fmtBytes(n.disk_free)} free` : "offline"}
+                  {n.online ? (n.storage_enabled === false ? "Storage role off" : `${fmtBytes(n.disk_free)} free`) : "offline"}
                 </span>
-                {n.online && n.node_key !== "local" && (
+                {n.online && n.storage_enabled !== false && n.node_key !== "local" && (
                   <span
                     className="stor-node-browse"
                     role="button"
@@ -154,10 +155,17 @@ export function StoragePanel() {
         </div>
         {data.node && !data.node_online && (
           <p className="stor-note" style={{ color: "var(--warn)" }}>
-            {data.node} is unreachable ({data.node_error || "offline"}) — captures fall back to this device until it's back.
+            {data.node} is unavailable ({data.node_error || "offline"}) — {localStorageDisabled
+              ? "local fallback is disabled on this device."
+              : "captures can fall back to this device while the destination is unreachable."}
           </p>
         )}
-        {data.node && data.node_online && storageNode && (
+        {data.node && data.node_online && storageNode?.storage_enabled === false && (
+          <p className="stor-note" style={{ color: "var(--warn)" }}>
+            The Storage role is off on {storageNode.host}. Choose an enabled storage node or enable its Storage role and restart it.
+          </p>
+        )}
+        {data.node && data.node_online && storageNode && storageNode.storage_enabled !== false && (
           <p className="stor-note">
             {storageNode.host} pulls this device's camera streams over the tailnet and writes the files to{" "}
             <span className="mono">{storageNode.media_dir}</span>. Snapshots stay local.
@@ -173,6 +181,12 @@ export function StoragePanel() {
       {/* save location */}
       <div className="notif-row">
         <span className="microlabel">Save location</span>
+        {localStorageDisabled && (
+          <p className="stor-note" style={{ color: "var(--warn)" }}>
+            The Storage role is disabled here. This device cannot save new snapshots, recordings, or timelapses locally.
+            Enable Storage in Node purpose and restart TailCam to use this location.
+          </p>
+        )}
         <div className="stor-path">
           <span className="mono">{data.media_dir}</span>
           <span className={`ais-badge ${data.is_default ? "rec" : "active"}`}>

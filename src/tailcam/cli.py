@@ -11,8 +11,9 @@ from rich.console import Console
 from rich.table import Table
 
 from tailcam import __version__, paths
-from tailcam.config import AppConfig
+from tailcam.config import AppConfig, NodeConfig
 from tailcam.logging_setup import setup_logging
+from tailcam.node import ROLE_PRESETS, NodeConfigError, validate_node_name, validate_roles
 
 app = typer.Typer(
     help="TailCam — view any webcam from anywhere over Tailscale.",
@@ -197,7 +198,10 @@ def status() -> None:
     from tailcam.tailscale.client import TailscaleClient
 
     console.print(f"[bold]TailCam {__version__}[/bold]")
-    _fleet_tables(config, cam_enumerate.discover())
+    local = cam_enumerate.discover() if "capture" in config.node.roles else []
+    if "capture" not in config.node.roles:
+        console.print("Local camera discovery disabled by node roles.")
+    _fleet_tables(config, local)
 
     ts = TailscaleClient()
     st = ts.status()
@@ -235,7 +239,7 @@ def doctor() -> None:
         f"{prof.model or 'generic'} · {prof.total_ram_gb} GB RAM · {prof.cpu_count} CPU · "
         + ("low-power profile" if prof.low_power else "standard profile"),
     )
-    if prof.is_raspberry_pi:
+    if prof.is_raspberry_pi and "capture" in config.node.roles:
         from tailcam.camera.source import uvc_bandwidth_quirk_active
 
         if uvc_bandwidth_quirk_active():
@@ -289,11 +293,14 @@ def doctor() -> None:
 
     from tailcam.camera import enumerate as cam_enumerate
 
-    descriptors = cam_enumerate.discover()
+    descriptors = cam_enumerate.discover() if "capture" in config.node.roles else []
     real = [d for d in descriptors if d.backend != "synthetic"]
     cam_detail = f"{len(real)} device(s)" if real else "none (synthetic only)"
-    (ok if real else bad)("Cameras detected", cam_detail)
-    if not real and sys.platform == "darwin":
+    if "capture" in config.node.roles:
+        (ok if real else bad)("Cameras detected", cam_detail)
+    else:
+        ok("Camera discovery skipped", "capture role disabled")
+    if "capture" in config.node.roles and not real and sys.platform == "darwin":
         console.print(
             "  [dim]macOS: if you see 'not authorized to capture video' above, grant camera "
             "access in[/dim]\n"
@@ -341,7 +348,10 @@ def doctor() -> None:
 
 @app.command()
 def cameras() -> None:
-    """List detected cameras."""
+    """List detected cameras when this node has the capture role."""
+    if "capture" not in AppConfig.load().node.roles:
+        typer.echo("Local camera discovery disabled by node roles.")
+        return
     from tailcam.camera import enumerate as cam_enumerate
 
     for desc in cam_enumerate.discover():
@@ -501,35 +511,76 @@ def config(
         None, "--serve-port", help="Set the tailnet HTTPS port and save."
     ),
     host: str | None = typer.Option(None, "--host", help="Set the bind address and save."),
+    roles: str | None = typer.Option(
+        None, "--roles", help="Comma-separated workload roles; empty means hub. Requires restart."
+    ),
+    preset: str | None = typer.Option(
+        None, "--preset", help="Node preset: hub, camera, storage, compute, all-in-one."
+    ),
+    node_name: str | None = typer.Option(
+        None, "--node-name", help="Display name (up to 64 characters)."
+    ),
     reset: bool = typer.Option(False, "--reset", help="Overwrite config.toml with clean defaults."),
     edit: bool = typer.Option(False, "--edit", help="Open config.toml in your $EDITOR."),
 ) -> None:
-    """Show the config file path and values; --port/--serve-port/--host persist changes."""
+    """Show or configure this node. Workload role changes take effect after restart."""
+    if roles is not None and preset is not None:
+        raise typer.BadParameter("Use either --roles or --preset, not both")
+    selected_roles = None
+    try:
+        if preset is not None:
+            if preset not in ROLE_PRESETS:
+                raise NodeConfigError("Unknown preset; choose " + ", ".join(ROLE_PRESETS))
+            selected_roles = list(ROLE_PRESETS[preset])
+        elif roles is not None:
+            selected_roles = validate_roles(
+                [part.strip() for part in roles.split(",")] if roles else []
+            )
+        if node_name is not None:
+            node_name = validate_node_name(node_name)
+    except NodeConfigError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     paths.ensure_dirs()
     cfg_path = paths.config_file()
-    if reset:
-        AppConfig().save()
-        typer.echo(f"Reset config to defaults at {cfg_path}")
-    if init and not cfg_path.exists():
-        AppConfig().save()
-        typer.echo(f"Wrote default config to {cfg_path}")
+    existed = cfg_path.exists()
+    has_values = any(
+        value is not None for value in (port, host, serve_port, selected_roles, node_name)
+    )
+
+    def apply_values(cfg: AppConfig) -> None:
+        if port is not None:
+            cfg.server.port = port
+        if host is not None:
+            cfg.server.host = host
+        if serve_port is not None:
+            cfg.tailscale.serve_port = serve_port
+        if selected_roles is not None or node_name is not None:
+            cfg.node = NodeConfig(
+                name=cfg.node.name if node_name is None else node_name,
+                roles=cfg.node.roles if selected_roles is None else selected_roles,
+            )
+
+    # A fresh/editable file must contain the requested roles on its FIRST
+    # write. Publishing defaults first could enable all workloads if startup
+    # races initialization or the final write fails.
+    prepared_for_editor = edit and (reset or not existed)
+    if prepared_for_editor:
+        draft = AppConfig() if reset else AppConfig.load()
+        apply_values(draft)
+        draft.save()
     if edit:
-        if not cfg_path.exists():
-            AppConfig().save()
+        # Existing malformed files can be repaired without loading them first.
         editor = os.environ.get("EDITOR") or ("notepad" if sys.platform == "win32" else "nano")
         subprocess.run([editor, str(cfg_path)], check=False)
-    cfg = AppConfig.load()
-    if port is not None:
-        cfg.server.port = port
-    if host is not None:
-        cfg.server.host = host
-    if serve_port is not None:
-        cfg.tailscale.serve_port = serve_port
-    if port is not None or host is not None or serve_port is not None:
+    cfg = AppConfig() if reset and not edit else AppConfig.load()
+    apply_values(cfg)
+    if has_values or (not prepared_for_editor and (reset or (init and not existed))):
         cfg.save()
-        typer.echo("Saved config.")
+        typer.echo("Saved config. Restart TailCam to apply changes.")
 
     typer.echo(f"Config file: {cfg_path}  (exists={cfg_path.exists()})")
+    typer.echo(f"  node.name            = {cfg.node.name}")
+    typer.echo(f"  node.roles           = {cfg.node.roles}  # [] = hub")
     typer.echo(f"  server.host          = {cfg.server.host}")
     typer.echo(f"  server.port          = {cfg.server.port}        # local web UI port")
     typer.echo(f"  tailscale.auto_serve = {cfg.tailscale.auto_serve}")

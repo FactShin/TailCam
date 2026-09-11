@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import httpx
@@ -39,8 +40,11 @@ class PullState:
 class ModelPuller:
     """One concurrent pull, tracked so the UI can show a progress bar."""
 
-    def __init__(self, config: AIConfig) -> None:
+    def __init__(
+        self, config: AIConfig, *, role_check: Callable[[], None] | None = None
+    ) -> None:
         self._config = config
+        self._role_check = role_check or (lambda: None)
         self._lock = threading.Lock()
         self._state = PullState()
 
@@ -54,6 +58,7 @@ class ModelPuller:
 
     def start(self, model: str) -> PullState:
         """Begin a pull if one isn't already running; returns the current state."""
+        self._role_check()
         with self._lock:
             if self._state.active:
                 return self._snapshot()

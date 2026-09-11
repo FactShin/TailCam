@@ -142,11 +142,13 @@ class InferenceRouter:
         ollama: OllamaAnalyzer,
         builtin: BuiltinDetector | None = None,
         remote: Callable[[], RemoteDetector | None] | None = None,
+        role_enabled: Callable[[], bool] | None = None,
     ) -> None:
         self._store = store
         self._config = config
         self._ollama = ollama
         self._builtin = builtin
+        self._role_enabled = role_enabled or (lambda: True)
         # Returns the peer detector when [detection] node routes work elsewhere.
         self._remote = remote or (lambda: None)
         self._lock = threading.Lock()
@@ -160,6 +162,15 @@ class InferenceRouter:
         """Load (and cache) the active model as a classifier or detector, by task.
         Caller holds ``self._lock``. Records why a model ISN'T running in
         ``_load_error`` so the UI can say so instead of silently falling back."""
+        # Even status endpoints call this method. Disabled analysis must not
+        # load an old selected model just because someone opens the dashboard.
+        if not self._role_enabled():
+            self._cached_id = None
+            self._classifier = None
+            self._detector = None
+            self._active_name = ""
+            self._load_error = "analysis role disabled"
+            return
         mid = self._config.active_model_id
         if self._cached_id == mid:
             return
@@ -212,8 +223,10 @@ class InferenceRouter:
         with self._lock:
             self._refresh_active()
             local = self._classifier is not None or self._detector is not None
-        return local or self._ollama.enabled or self._remote() is not None or (
-            self._builtin is not None and self._builtin.enabled
+        return local or (self._role_enabled() and self._ollama.enabled) or (
+            self._remote() is not None
+        ) or (
+            self._role_enabled() and self._builtin is not None and self._builtin.enabled
         )
 
     @property
@@ -224,7 +237,7 @@ class InferenceRouter:
             return True
         if self._remote() is not None:
             return True
-        return self._builtin is not None and self._builtin.enabled
+        return self._role_enabled() and self._builtin is not None and self._builtin.enabled
 
     def detection_note(self) -> str:
         """Status line for the overlay badge while the built-in detector is
@@ -236,7 +249,7 @@ class InferenceRouter:
             if not remote.available:
                 return f"detection node unreachable: {remote.last_error or remote.label}"
             return ""
-        if self._builtin is None:
+        if not self._role_enabled() or self._builtin is None:
             return ""
         s = self._builtin.status()
         if s.status == "downloading":
@@ -264,7 +277,7 @@ class InferenceRouter:
                 "task": "detection" if det is not None else "classification",
                 "error": "",
             }
-        if self._ollama.enabled:
+        if self._role_enabled() and self._ollama.enabled:
             return {
                 "mode": "ollama",
                 "model_name": self._ollama.config.model,
@@ -277,9 +290,11 @@ class InferenceRouter:
                 "mode": "remote",
                 "model_name": remote.model_name(),
                 "task": "detection",
-                "error": err or ("" if remote.available else remote.last_error),
+                "error": (err if self._role_enabled() else "") or (
+                    "" if remote.available else remote.last_error
+                ),
             }
-        if self._builtin is not None and self._builtin.enabled:
+        if self._role_enabled() and self._builtin is not None and self._builtin.enabled:
             s = self._builtin.status()
             return {
                 "mode": "builtin",
@@ -310,7 +325,7 @@ class InferenceRouter:
                 )
             if detections is not None:  # ran cleanly, just saw nothing
                 return Analysis(label="nothing", description="no objects", confidence=0.0)
-        if self._ollama.enabled:
+        if self._role_enabled() and self._ollama.enabled:
             return self._ollama.analyze(image)
         # A detection node labels for us (its own full pipeline runs there).
         remote = self._remote()
@@ -320,7 +335,7 @@ class InferenceRouter:
                 return result
         # Zero-config fallback: label motion events with the built-in detector's
         # best box, so event badges (PERSON, CUP, DOG …) work with no setup.
-        if self._builtin is not None and self._builtin.enabled:
+        if self._role_enabled() and self._builtin is not None and self._builtin.enabled:
             detections = self._builtin.detect(image)
             if detections:
                 top = max(detections, key=lambda d: d.confidence)
@@ -346,6 +361,6 @@ class InferenceRouter:
         if remote is not None:
             boxes = remote.detect(image)
             return boxes if boxes is not None else []
-        if self._builtin is not None and self._builtin.enabled:
+        if self._role_enabled() and self._builtin is not None and self._builtin.enabled:
             return self._builtin.detect(image)
         return None

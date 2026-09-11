@@ -378,15 +378,40 @@ How it works:
   `TAILCAM_HOST=garage-pi`.
 - `GET /api/hosts` lists every node (local + peers) and their camera counts.
 
+### Choose what runs on each node
+
+The 1.9.0 source builds add **Settings → Node purpose** and CLI presets. For a
+manual install, configure a hub before its first startup:
+
+```bash
+tailcam config --init --preset hub --node-name "Workshop hub"
+tailcam run
+```
+
+Presets: `all-in-one` (default), `camera` (capture + storage), `hub` (fleet
+dashboard/control), `storage`, and `compute` (analysis + training). For custom
+combinations, use `--roles capture,storage` or the independent Settings switches.
+Use `--roles capture` when a camera should stream and send recordings elsewhere.
+
+Roles take effect on server restart; Settings shows saved and active roles.
+Valid older configs keep all four roles. The node UUID survives config changes
+and restarts, while existing host/proxy links keep working. These are workload
+roles, separate from viewer/operator/admin permissions. Hub startup skips camera
+scans and local models; the base package still includes OpenCV. Role-aware OS
+installer prompts and lean packaging remain follow-up work. The current OS
+installers start all-in-one on a fresh install; use manual setup for a hub's
+first startup.
+
 ### Storage node: record on the machine with the disk
 
 Every node can send its own cameras' **recordings, motion clips, and timelapses** to a
 different node. Pick it in **Settings → Recording & storage** (each node's free space is
 shown) or set `[storage] node = "nas-box"`. The storage node pulls the camera's MJPEG
 stream over the tailnet and runs the recorder/timelapse worker itself, so the files land
-on its disk and a Raspberry Pi never encodes video. If the storage node is down when a
-capture starts, the capture runs locally and the settings panel says so. The storage
-node's save folder can be browsed and set from any dashboard.
+on its disk and a Raspberry Pi never encodes video. Connectivity fallback can save
+locally only with the source's storage role enabled. A destination's disabled-role
+refusal never falls back. The picker marks nodes whose storage role is off. The
+storage node's save folder can be browsed and set from any dashboard.
 
 ### Detection node: run the models where the CPU is
 

@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 from functools import partial
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from tailcam import paths
 from tailcam.activelearning.service import ActiveLearningService
-from tailcam.ai.analyzer import OllamaAnalyzer
+from tailcam.ai.analyzer import Analysis, OllamaAnalyzer
 from tailcam.ai.detector import BuiltinDetector
 from tailcam.ai.pull import ModelPuller
 from tailcam.ai.remote import RemoteDetector
@@ -17,7 +18,7 @@ from tailcam.camera.manager import CameraManager
 from tailcam.camera.source import use_synthetic
 from tailcam.cluster.remote_feed import RemoteFeedRegistry
 from tailcam.cluster.service import ClusterService, resolve_local_host
-from tailcam.config import AppConfig
+from tailcam.config import AIConfig, AppConfig
 from tailcam.integrations.homeassistant import MqttPublisher
 from tailcam.integrations.homekit import HomeKitBridge
 from tailcam.logging_setup import get_logger
@@ -27,6 +28,7 @@ from tailcam.media.recorder import RecordingService
 from tailcam.media.snapshot import SnapshotService
 from tailcam.motion.events import EventLog
 from tailcam.motion.worker import MotionWorker
+from tailcam.node import RoleDisabledError, validate_roles
 from tailcam.notify.service import NotificationService
 from tailcam.persistence.store import Store
 from tailcam.plugins import sdk
@@ -40,7 +42,47 @@ from tailcam.timelapse.service import TimelapseService
 from tailcam.training.inference import InferenceRouter
 from tailcam.training.service import TrainingService
 
+if TYPE_CHECKING:
+    import numpy as np
+
 log = get_logger(__name__)
+
+
+class _DisabledAnalyzer(OllamaAnalyzer):
+    """Inert analyzer for nodes that do not execute analysis.
+
+    Do not construct a plugin provider or even an HTTP pool. Read APIs remain
+    useful without contacting a saved Ollama endpoint; work requests fail at
+    the role boundary rather than silently enabling analysis.
+    """
+
+    def __init__(self, config: AIConfig, role_check: Callable[[], None]) -> None:
+        self.config = config
+        self._role_check = role_check
+
+    @property
+    def enabled(self) -> bool:
+        return False
+
+    def analyze(self, image: np.ndarray) -> Analysis | None:
+        return None
+
+    def health(self) -> tuple[bool, str | None]:
+        return False, None
+
+    def installed_models(self) -> tuple[bool, list[str]]:
+        return False, []
+
+    def pull(self, model: str) -> tuple[bool, str]:
+        self._role_check()
+        return False, "analysis role disabled"
+
+    def load(self, model: str) -> bool:
+        self._role_check()
+        return False
+
+    def close(self) -> None:
+        pass
 
 
 class _MotionFanout:
@@ -86,13 +128,19 @@ class _MotionFanout:
 class AppContext:
     def __init__(self, config: AppConfig, store: Store | None = None) -> None:
         self.config = config
+        self.active_roles = frozenset(validate_roles(config.node.roles))
         # Send recordings/snapshots to a custom drive if configured (before any
         # service computes a media path).
         paths.set_media_override(config.storage.media_dir)
         self.store = store or Store()
+        self.node_id = self.store.get_node_id()
         self.manager = CameraManager(self.store, config)
-        self.snapshots = SnapshotService(self.manager, self.store)
-        self.recorder = RecordingService(self.manager, self.store)
+        storage_check = partial(self.require_role, "storage")
+        analysis_check = partial(self.require_role, "analysis")
+        training_check = partial(self.require_role, "training")
+        analysis_enabled = partial(self.has_role, "analysis")
+        self.snapshots = SnapshotService(self.manager, self.store, role_check=storage_check)
+        self.recorder = RecordingService(self.manager, self.store, role_check=storage_check)
         self.gallery = MediaGallery(self.store)
         self.event_log = EventLog(self.store)
         # Plugins extend AI providers, notification channels, and event hooks
@@ -103,18 +151,26 @@ class AppContext:
             disabled=config.plugins.disabled, load_dropins=config.plugins.load_dropins
         )
         self.market = PluginMarket(config.plugins)
-        provider = self.plugins.analyzer_provider(config.ai.provider)
-        if provider is None:
-            provider = self.plugins.analyzer_provider("ollama")
-        self.analyzer = provider.build(config.ai) if provider else OllamaAnalyzer(config.ai)
-        self.pulls = ModelPuller(config.ai)
-        self.printer_analyzer = PrinterAnalyzer(config.ai)
-        self.timelapse_analysis = TimelapseAnalysisQueue(self.store, self.printer_analyzer)
+        self.analyzer: OllamaAnalyzer
+        if self.has_role("analysis"):
+            provider = self.plugins.analyzer_provider(config.ai.provider)
+            if provider is None:
+                provider = self.plugins.analyzer_provider("ollama")
+            self.analyzer = provider.build(config.ai) if provider else OllamaAnalyzer(config.ai)
+        else:
+            self.analyzer = _DisabledAnalyzer(config.ai, analysis_check)
+        self.pulls = ModelPuller(config.ai, role_check=analysis_check)
+        self.printer_analyzer = PrinterAnalyzer(config.ai, role_enabled=analysis_enabled)
+        self.timelapse_analysis = TimelapseAnalysisQueue(
+            self.store, self.printer_analyzer, role_check=analysis_check
+        )
         self.timelapse = TimelapseService(
             self.manager,
             self.store,
             config.timelapse,
             analysis_queue=self.timelapse_analysis,
+            role_check=storage_check,
+            analysis_role_check=analysis_check,
         )
         self.tailscale = TailscaleClient()
         self.mjpeg = MJPEGBackend()
@@ -127,22 +183,25 @@ class AppContext:
         # startup() only when enabled.
         self.homekit = HomeKitBridge(self)
         self.ha_mqtt: MqttPublisher | None = (
-            MqttPublisher(self) if config.homeassistant.enabled else None
+            MqttPublisher(self)
+            if self.has_role("capture") and config.homeassistant.enabled else None
         )
         self._ha_mqtt_lock = threading.Lock()
         self._motion_fanout = _MotionFanout(self.notifications, self)
         self.training = TrainingService(
             self.manager, self.store, config.training, self.analyzer, self.local_host,
             notifier=self.notifications,
+            role_check=training_check, analysis_check=analysis_check,
         )
         # Built-in plug-and-play object detection (boxes + labels, zero setup).
         # Provisions itself in the background on first use.
-        self.detector = BuiltinDetector(config.detection)
+        self.detector = BuiltinDetector(config.detection, role_enabled=analysis_enabled)
         # Human-in-the-loop active learning: watch frames, auto-label confident
         # detections, send uncertain ones to Label Studio for review.
         self.active_learning = ActiveLearningService(
             self.manager, self.store, config, self.detector, self.analyzer,
             self.training, self.local_host,
+            role_check=training_check, analysis_check=analysis_check,
         )
         self.cluster = ClusterService(
             config.peers, self.tailscale, self.local_host, config.tailscale.serve_port,
@@ -160,6 +219,7 @@ class AppContext:
         self.inference = InferenceRouter(
             self.store, config.training, self.analyzer, builtin=self.detector,
             remote=self.remote_detector,
+            role_enabled=analysis_enabled,
         )
         # Per-camera detection result cache: N open viewers of one camera share
         # a single inference per second instead of each running their own.
@@ -180,6 +240,14 @@ class AppContext:
         self._peer_online: dict[str, bool] = {}
         self._last_prune = 0.0
         self._last_rediscover = 0.0
+
+    def has_role(self, role: str) -> bool:
+        """Whether this running process was started with a local work role."""
+        return role in self.active_roles
+
+    def require_role(self, role: str) -> None:
+        if not self.has_role(role):
+            raise RoleDisabledError(role)
 
     def startup(self) -> None:
         from tailcam import hostinfo
@@ -205,7 +273,7 @@ class AppContext:
         # the first real detect request instead of hitting the network per run
         # — and when detection is off or routed to another node (a Pi that
         # ships frames elsewhere never loads a model into its 1 GB).
-        if not use_synthetic() and self.detector.enabled:
+        if self.has_role("analysis") and not use_synthetic() and self.detector.enabled:
             self.detector.ensure_ready()
         stale = self.store.close_stale_motion_events()
         if stale:
@@ -216,11 +284,13 @@ class AppContext:
         interrupted_runs = self.store.interrupt_active_runs()
         if interrupted_runs:
             log.info("Marked %d training run(s) interrupted (re-run to finish)", interrupted_runs)
-        self.training.startup()
-        self.manager.discover()
-        # Eager-start workers so status reflects reality from the first poll
-        # (the UI only streams cameras that report online).
-        self.manager.start_all()
+        if self.has_role("training"):
+            self.training.startup()
+        if self.has_role("capture"):
+            self.manager.discover()
+            # Eager-start workers so status reflects reality from the first
+            # poll (the UI only streams cameras that report online).
+            self.manager.start_all()
         # Re-arm motion detection on the cameras it was enabled for.
         restored = 0
         for camera_id in self.manager.motion_enabled_ids():
@@ -230,7 +300,7 @@ class AppContext:
             log.info("Motion detection restored on %d camera(s)", restored)
         self._prune_media()  # enforce the retention budget on boot
         self._start_notify_monitor()
-        if self.config.homekit.enabled:
+        if self.has_role("capture") and self.config.homekit.enabled:
             self.homekit.start()
         if self.ha_mqtt is not None:
             self.ha_mqtt.start()
@@ -350,7 +420,7 @@ class AppContext:
         so it shows up without a manual re-scan."""
         import sys
 
-        if not sys.platform.startswith("linux") or use_synthetic():
+        if not self.has_role("capture") or not sys.platform.startswith("linux") or use_synthetic():
             return
         now = time.monotonic()
         if now - self._last_rediscover < self._REDISCOVER_EVERY:
@@ -370,7 +440,7 @@ class AppContext:
         """Delete media beyond the retention budget (size + age). Opt-in: never
         deletes anything unless the user enabled auto-cleanup."""
         self._last_prune = time.monotonic()
-        if not self.config.retention.enabled:
+        if not self.has_role("storage") or not self.config.retention.enabled:
             return
         try:
             removed = self.gallery.prune(self.config.retention)
@@ -407,7 +477,7 @@ class AppContext:
             self.ha_mqtt = None
             if old is not None:
                 old.stop()
-            if self.config.homeassistant.enabled:
+            if self.has_role("capture") and self.config.homeassistant.enabled:
                 publisher = MqttPublisher(self)
                 publisher.start()  # no-ops when no broker host / paho missing
                 self.ha_mqtt = publisher
@@ -434,7 +504,10 @@ class AppContext:
         """The detection-node client when [detection] routes elsewhere and the
         global switch is on; None means detect locally."""
         node = (self.config.detection.node or "").strip()
-        if not node or not self.config.detection.enabled:
+        if (
+            not (self.has_role("capture") or self.has_role("analysis"))
+            or not node or not self.config.detection.enabled
+        ):
             self._remote_detector = None
             self._remote_detector_for = ""
             return None
@@ -466,6 +539,7 @@ class AppContext:
         return camera_id in self._motion_workers
 
     def enable_motion(self, camera_id: str, persist: bool = True) -> bool:
+        self.require_role("capture")
         if persist:
             self.manager.set_motion_enabled(camera_id, True)
         with self._lock:
@@ -479,6 +553,7 @@ class AppContext:
                 analyzer=self.inference,
                 notifier=cast("NotificationService", self._motion_fanout),
                 reacquire=partial(self.manager.get_buffer, camera_id),
+                storage_enabled=partial(self.has_role, "storage"),
             )
             worker.start()
             self._motion_workers[camera_id] = worker

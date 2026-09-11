@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 import threading
 import time
+from collections.abc import Callable
 from datetime import datetime
 from functools import partial
 from pathlib import Path
@@ -153,9 +154,13 @@ class _RecordingSession:
 
 
 class RecordingService:
-    def __init__(self, manager: CameraManager, store: Store) -> None:
+    def __init__(
+        self, manager: CameraManager, store: Store,
+        role_check: Callable[[], None] | None = None,
+    ) -> None:
         self._manager = manager
         self._store = store
+        self._role_check = role_check
         self._sessions: dict[str, _RecordingSession] = {}
         self._lock = threading.Lock()
 
@@ -187,6 +192,8 @@ class RecordingService:
         recording a peer's camera passes the pulled ``buffer`` + ``reacquire``
         under a composite session key, plus the real camera id and owner
         (``source_host``) for the media record."""
+        if self._role_check is not None:
+            self._role_check()
         with self._lock:
             if camera_id in self._sessions:
                 return False

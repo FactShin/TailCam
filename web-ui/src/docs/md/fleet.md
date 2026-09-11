@@ -22,6 +22,11 @@ static = ["https://garage-pi.your-tailnet.ts.net:8443"]
 (`local` for this node, a short key for peers), `host`, `version`, online status,
 and camera count.
 
+Updated peers also report persistent `node_id`, friendly `node_name`, and active
+`node_roles`. Older peers remain usable with role metadata shown as unknown.
+Renaming a node does not change its UUID; existing host keys and proxy links are
+preserved. Choose workloads in [Node configuration](configuration).
+
 ## Aggregated cameras
 
 Set a camera list's `scope` to `all` (the default) and TailCam merges local
@@ -55,9 +60,11 @@ How it works:
 3. Pulled feeds close themselves after ~30 s with nobody reading.
 
 The storage node only ever pulls from **discovered tailnet peers** — never an
-arbitrary URL. If the storage node is unreachable when a capture starts, the
-capture runs locally and the storage panel says so. Snapshots always stay
-local. The storage node's own save folder can be browsed and set from here
+arbitrary URL. Connectivity fallback can run locally only when the source has
+its storage role enabled. A destination's disabled-role refusal stops the
+request without fallback. The picker disables destinations that report storage
+off; older peers with unknown roles are still selectable. Snapshots stay local
+and require local capture and storage roles. The storage node's own save folder can be browsed and set from here
 (the *folder…* link next to the node).
 
 The same idea exists for AI: a [detection node](ai-analysis) runs the models
@@ -75,7 +82,8 @@ for a node that shouldn't.
 - Timelapse starts return remote rejections, including `4xx` and `5xx`, without
   creating local captures. Uncertain timeouts require checking the storage node
   before retrying. Only an unresolved destination or failed connection permits
-  the existing local fallback. Recording fallback behavior is unchanged.
+  the existing local fallback, and only with local storage enabled. Both capture
+  paths preserve a destination's structured disabled-role refusal without fallback.
 - Actions proxied to a peer (record, stop a timelapse) no longer forward the
   browser's `Origin`, so they work when the dashboard was opened by IP address
   as well as by MagicDNS name.
@@ -103,6 +111,8 @@ TailCam exposes a versioned management API:
 - `GET /api/v1/node/capabilities` — what the node supports + the caller's
   principal/roles.
 - `GET /api/v1/node/audit` — audit log (admin only).
+- `GET/PATCH /api/v1/node/config` — read or save node name and workload roles
+  (saving requires admin); role changes require a server restart. The UUID is read-only.
 - `POST /api/v1/node/actions/reload` — restart workers and rediscover (admin).
 
 The fleet equivalents address any node by key and relay to it:

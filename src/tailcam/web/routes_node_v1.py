@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import threading
+from copy import deepcopy
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
+from tailcam.config import NodeConfig
 from tailcam.management.audit import AuditLog
 from tailcam.management.capabilities import NodeCapabilityService, NodeCapabilitySet
 from tailcam.management.health import NodeHealthService, NodeHealthSnapshot
+from tailcam.node import ROLE_NAMES
 from tailcam.persistence.models import AuditRecord
 from tailcam.security.principal import RequestPrincipal, TailCamRole, principal_from_request
 from tailcam.web.context import AppContext
@@ -17,12 +21,15 @@ from tailcam.web.schemas import (
     AuditEventInfo,
     NodeActionResponse,
     NodeCapabilitiesInfo,
+    NodeConfigInfo,
+    NodeConfigUpdate,
     NodeHealthInfo,
     NodeIssueInfo,
     PrincipalInfo,
 )
 
 router = APIRouter(prefix="/api/v1/node")
+_NODE_CONFIG_LOCK = threading.Lock()
 
 
 def get_principal(request: Request) -> RequestPrincipal:
@@ -40,8 +47,59 @@ def require_admin(
 @router.get("/capabilities", response_model=NodeCapabilitiesInfo)
 def capabilities(
     principal: RequestPrincipal = Depends(get_principal),
+    ctx: AppContext = Depends(get_context),
 ) -> NodeCapabilitiesInfo:
-    return _capabilities_info(NodeCapabilityService().snapshot(principal), principal)
+    return _capabilities_info(NodeCapabilityService(ctx).snapshot(principal), principal)
+
+
+@router.get("/config", response_model=NodeConfigInfo)
+def node_config(ctx: AppContext = Depends(get_context)) -> NodeConfigInfo:
+    return NodeConfigInfo(
+        node_id=ctx.node_id,
+        name=ctx.config.node.name,
+        configured_roles=list(ctx.config.node.roles),
+        active_roles=[role for role in ROLE_NAMES if role in ctx.active_roles],
+        restart_required=set(ctx.config.node.roles) != ctx.active_roles,
+    )
+
+
+@router.patch("/config", response_model=NodeConfigInfo)
+def update_node_config(
+    body: NodeConfigUpdate,
+    ctx: AppContext = Depends(get_context),
+    principal: RequestPrincipal = Depends(require_admin),
+) -> NodeConfigInfo:
+    with _NODE_CONFIG_LOCK:
+        previous = ctx.config.node
+        candidate = deepcopy(ctx.config)
+        candidate.node = NodeConfig(
+            name=body.name if "name" in body.model_fields_set else previous.name,
+            roles=body.roles if "roles" in body.model_fields_set else previous.roles,
+        )
+        audit_log = AuditLog(ctx.store)
+        try:
+            candidate.save()
+        except OSError as exc:
+            audit_log.record(
+                actor=principal.actor, source=principal.source, action="node.config",
+                target=ctx.node_id, result="failure", detail="configuration could not be saved",
+                metadata={},
+            )
+            raise HTTPException(
+                status_code=503, detail="Could not save node configuration; settings are unchanged"
+            ) from exc
+        # Service objects hold references to other configuration sections.
+        # Publish only the persisted node section; active roles remain frozen.
+        ctx.config.node = candidate.node
+        audit_log.record(
+            actor=principal.actor, source=principal.source, action="node.config",
+            target=ctx.node_id, result="success", detail="node configuration saved",
+            metadata={
+                "configured_roles": list(candidate.node.roles),
+                "restart_required": set(candidate.node.roles) != ctx.active_roles,
+            },
+        )
+        return node_config(ctx)
 
 
 @router.get("/health", response_model=NodeHealthInfo)
@@ -73,11 +131,16 @@ async def reload_current_node(
 ) -> NodeActionResponse:
     audit_log = AuditLog(ctx.store)
     action = "node.reload"
+    detail = (
+        "capture workers reloaded" if ctx.has_role("capture")
+        else "node status refreshed; capture role disabled"
+    )
     try:
-        for cam in ctx.manager.list():
-            ctx.manager.restart(cam.descriptor.id)
-        ctx.manager.discover()
-        ctx.manager.start_all()
+        if ctx.has_role("capture"):
+            for cam in ctx.manager.list():
+                ctx.manager.restart(cam.descriptor.id)
+            ctx.manager.discover()
+            ctx.manager.start_all()
         health_snapshot = NodeHealthService(ctx).snapshot()
     except Exception as exc:
         audit_log.record(
@@ -97,14 +160,14 @@ async def reload_current_node(
         action=action,
         target=ctx.local_host,
         result="success",
-        detail="capture workers reloaded",
+        detail=detail,
         metadata={"camera_count": len(ctx.manager.list())},
     )
     return NodeActionResponse(
         action=action,
         target=ctx.local_host,
         result="success",
-        detail="capture workers reloaded",
+        detail=detail,
         health=_health_info(health_snapshot),
     )
 
@@ -128,6 +191,9 @@ def _capabilities_info(
         capabilities=sorted(capabilities.capabilities),
         actions=sorted(capabilities.actions),
         principal=_principal_info(principal),
+        node_id=capabilities.node_id,
+        node_name=capabilities.node_name,
+        node_roles=list(capabilities.node_roles) if capabilities.node_roles is not None else None,
     )
 
 
