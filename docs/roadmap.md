@@ -2,7 +2,7 @@
 
 Prepared for Wayne Scire · 11 September 2026 · Document revision **r3**
 
-**Status:** 1.8.5 implementation prepared on `fix/timelapse-routing-1.8.5`; no merge or release. **Last verified main baseline:** 1.8.4 at `3f2d5fd3785fd2ee498cf56ac90fee10d5f1f415`. **Authoritative implementation roadmap:** this repository file, imported from the supplied r2 planning snapshot on 2026-09-11. Document revisions and application release versions are separate.
+**Status:** 1.8.5 implemented and locally validated in [PR #85](https://github.com/FactShin/TailCam/pull/85); no merge or release. **Last verified main baseline:** 1.8.4 at `3f2d5fd3785fd2ee498cf56ac90fee10d5f1f415`. **Authoritative implementation roadmap:** this repository file, imported from the supplied r2 planning snapshot on 2026-09-11. Document revisions and application release versions are separate.
 
 **Purpose:** this file carries the product intent, engineering constraints, release scopes, completion gates, and working instructions into a new session. It consolidates the original feature attachment, architecture review, all nine later product suggestions, and the decision to add agent-supervised training. A fresh agent should not need the original chat to understand the work.
 
@@ -555,11 +555,11 @@ The product standard is simple: **every screen and every assistant should be abl
 
 ## 9. Progress ledger and handoff requirements
 
-**State as of document r3:** 1.8.5 is being implemented and validated in the first PR; later releases remain planned. No roadmap release has been published by this work. The existing 1.8.4 baseline already includes substantial related functionality, as recorded above. Reconcile this ledger against GitHub at the start of each future session.
+**State as of document r3:** 1.8.5 is implemented and locally validated in PR #85; later releases remain planned. No roadmap release has been published by this work. The existing 1.8.4 baseline already includes substantial related functionality, as recorded above. Reconcile this ledger against GitHub at the start of each future session.
 
 | Target | Workstream | Status | Evidence / next gate |
 |---|---|---|---|
-| 1.8.5 | Current routing fixes | Implemented; locally validated, PR pending | Remote error semantics, execution-node UI, remote recording ownership, request-boundary hardening; see [release notes](releases/1.8.5.md) |
+| 1.8.5 | Current routing fixes | Implemented; locally validated, [PR #85](https://github.com/FactShin/TailCam/pull/85) | Remote error semantics, execution-node UI, remote recording ownership, request-boundary hardening; see [release notes](releases/1.8.5.md) |
 | 1.9.0 | Roles and installer | Planned | Dynamic capabilities and no-camera startup |
 | 1.10.0 | Unified storage | Planned | Isolated multi-process artifact-transfer tests |
 | 1.11.0 | Workload routing + Training Supervisor | Planned | Durable jobs, enforced budgets, no model activation |
@@ -586,13 +586,14 @@ Update this record in the authoritative file before handing work back. Replace o
 |---|---|
 | Document revision/date | r3 / 2026-09-11 |
 | Last verified code baseline | main / 3f2d5fd3785fd2ee498cf56ac90fee10d5f1f415 / 1.8.4 |
-| Active implementation branch/PR | `fix/timelapse-routing-1.8.5`; PR pending final validation |
+| Active implementation branch/PR | `fix/timelapse-routing-1.8.5`; [PR #85](https://github.com/FactShin/TailCam/pull/85) |
 | Completed in this session | Implemented the first 1.8.5 slice; 563 tests, lint/typechecks, reproducible dashboard build, process integration and timelapse browser checks passed; no merge/release |
 | Current implementation target | 1.8.5, based on unchanged main 1.8.4; PyPI 1.8.5 unused as of 2026-09-11 |
+| Implementation commit | `727824b8fdcc8b93cbb0f867d7ec9b4556055ab7`; PR head also contains this documentation checkpoint |
 | Code changes in this roadmap session | Strict timelapse routing, execution preflight/UI, owner-qualified event recordings, schema v12, proxy/read guards, legacy event rendering, frontend CI |
 | Validation evidence | 563 tests passed; Ruff/mypy/frontend checks passed; see release notes. New regression tests fail against 1.8.4; isolated source/storage/mock-AI processes verify physical file destination. Original 478-test result below remains historical. |
 | Outstanding environment checks | Actual camera, Pi, GPU, voice, cross-OS and live fleet validation |
-| Exact next action | Finish validation and submit the 1.8.5 PR, then address six dependency-audit advisories in a separate compatibility-tested PR before role/installer work |
+| Exact next action | Review PR #85 and its current CI checks; next implementation PR addresses six dependency-audit advisories with compatibility tests before role/installer work |
 | Unresolved product decisions | Hardware capacity budgets, approved training datasets, task-specific model acceptance thresholds, current agent-host integration details |
 | Blockers | No implementation blocker. Hardware release gates remain open; existing npm audit reports 1 high and 5 moderate advisories requiring broader dependency upgrades. |
 
