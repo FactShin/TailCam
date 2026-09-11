@@ -19,6 +19,8 @@ venv/
 web-ui/node_modules/
 web-ui/dist/
 web-ui/.vite/
+web-ui/playwright-report/
+web-ui/test-results/
 
 # browser extensions — assembled packages and Safari converter output
 browser-extensions/safari/.build/

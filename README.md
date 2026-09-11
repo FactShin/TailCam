@@ -609,8 +609,11 @@ headless servers, in containers, and in CI where no webcam exists.
 
 The dashboard front-end lives in [`web-ui/`](https://github.com/factshin/tailcam/blob/main/web-ui/) (React + Vite). Its build
 output is committed to `src/tailcam/web/spa/` and ships in the wheel, so end users
-never need Node. To change the UI or in-app docs: `cd web-ui && npm ci && npm run typecheck && npm run build`,
-then commit both the source and the regenerated `src/tailcam/web/spa/`.
+never need Node. Dashboard development requires **Node.js 22 or newer**; CI and the
+Docker build use Node 22. To change the UI or in-app docs:
+`cd web-ui && npm ci && npm run typecheck && npm run build`, then commit both the
+source and the regenerated `src/tailcam/web/spa/`. Run `npm audit` after dependency
+changes and follow the [dashboard development guide](web-ui/README.md) for browser checks.
 
 **Releases:** bump `__version__` in `src/tailcam/__init__.py` **and** the
 `version` in `web-ui/package.json`, `web-ui/package-lock.json`, and all four

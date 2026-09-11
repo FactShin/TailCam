@@ -79,6 +79,8 @@ export default defineConfig({
     }),
   ],
   build: {
+    // Preserve the dashboard's browser baseline across build-tool upgrades.
+    target: ["es2020", "edge88", "firefox78", "chrome87", "safari14"],
     outDir: OUT_DIR,
     emptyOutDir: true,
     chunkSizeWarningLimit: 1200,
