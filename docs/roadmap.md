@@ -576,7 +576,7 @@ The original 1.8.4 review below remains historical evidence.
 |---|---|---|---|
 | 1.8.5 | Current routing fixes | Validated; merged [PR #85](https://github.com/FactShin/TailCam/pull/85) | Local checks and final CI passed; publication remains separate. See [release notes](releases/1.8.5.md) |
 | 1.8.6 | Dashboard dependency security | Validated; merged [PR #86](https://github.com/FactShin/TailCam/pull/86) | Local, package, and [final CI](https://github.com/FactShin/TailCam/actions/runs/34625628441) passed; [release notes](releases/1.8.6.md) |
-| 1.9.0 / 1.9.1 | Roles and installer | 1.9.0 released; 1.9.1 installer/release slice in review preparation | [PR #87](https://github.com/FactShin/TailCam/pull/87) merged; [PyPI 1.9.0](https://pypi.org/project/tailcam/1.9.0/) verified. Shared setup, role-aware installers, hub container and publishing gates implemented for 1.9.1; richer readiness/preview/packaging remain open. See [1.9.1 notes](releases/1.9.1.md) |
+| 1.9.0 / 1.9.1 | Roles and installer | 1.9.0 released; 1.9.1 installer/release slice in [PR #88](https://github.com/FactShin/TailCam/pull/88) | [PR #87](https://github.com/FactShin/TailCam/pull/87) merged; [PyPI 1.9.0](https://pypi.org/project/tailcam/1.9.0/) verified. Shared setup, role-aware installers, hub container and publishing gates implemented for 1.9.1; richer readiness/preview/packaging remain open. See [1.9.1 notes](releases/1.9.1.md) |
 | 1.10.0 | Unified storage | Planned | Isolated multi-process artifact-transfer tests |
 | 1.11.0 | Workload routing + Training Supervisor | Planned | Durable jobs, enforced budgets, no model activation |
 | 1.12.0 | Timelapse projects | Planned | Long capture/re-render recovery |
@@ -602,10 +602,10 @@ Update this record in the authoritative file before handing work back. Replace o
 |---|---|
 | Document revision/date | r6 / 2026-09-11 |
 | Last verified code baseline | main / 9bf041a078d69d60105981abca673f3a69631203 / 1.9.0 |
-| Active implementation branch/PR | `feat/role-aware-installers-release`; PR pending |
+| Active implementation branch/PR | `feat/role-aware-installers-release`; [PR #88](https://github.com/FactShin/TailCam/pull/88) |
 | Completed in this session | Confirmed PR #87 merged; published and independently installed PyPI 1.9.0; implemented the 1.9.1 installer and release-automation slice |
 | Current implementation target | 1.9.1 role-aware installation; every future release PR keeps installer/package versions and publishing workflow current |
-| Implementation commit | See the active PR head for this slice |
+| Implementation commit | `70363abc208071f0a984efbfc72238541b3e6428`; final checks tracked on PR #88 |
 | Code changes in this roadmap session | Shared setup; role-aware OS installers and pinned versions; Docker role/mount handling and hub Compose; automatic tested-main PyPI workflow; publication verification |
 | Validation evidence | 680 Python tests passed, one Windows-only skip, three existing warnings; focused subsequent setup/release/installer checks passed; Ruff/mypy (127 files), TypeScript/build and zero-vulnerability npm audit passed. Public PyPI 1.9.0 fresh-install API/asset/hub/UUID checks passed. See release notes and current PR checks for final package/platform results. |
 | Outstanding environment checks | Actual camera, Pi, GPU, voice, cross-OS live fleet and long-duration capture validation remain separate hardware gates |
