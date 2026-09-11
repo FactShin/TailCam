@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SCRIPT = (ROOT / "install.ps1").read_text()
+SCRIPT = (ROOT / "install.ps1").read_text(encoding="utf-8")
 
 
 def test_fail_never_exits_the_host():
@@ -82,7 +82,7 @@ def test_failed_install_restores_previous():
 def test_setup_runs_via_python_m_not_launcher_exes():
     # Setup steps invoke `python -m tailcam ...` so they can never hit a stale
     # launcher stub; tailcam.exe is only checked for existence and displayed.
-    assert "-m tailcam config --port" in SCRIPT
+    assert "-m tailcam setup @SetupArgs" in SCRIPT
     assert "-m tailcam install-service" in SCRIPT
     assert "-m tailcam tailscale serve" in SCRIPT
     assert "-m tailcam status" in SCRIPT
@@ -106,7 +106,7 @@ def test_self_updater_sets_noninteractive():
 def test_pyproject_arm64_markers():
     # Native win-arm64 Python defense in depth: no httptools (never shipped a
     # win_arm64 wheel), imageio-ffmpeg skipped (no wheel; degrades gracefully).
-    pyproject = (ROOT / "pyproject.toml").read_text()
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert "uvicorn[standard]~=0.34; platform_machine != 'ARM64'" in pyproject
     assert "uvicorn~=0.34; platform_machine == 'ARM64'" in pyproject
     assert "websockets>=13; platform_machine == 'ARM64'" in pyproject
@@ -141,3 +141,50 @@ def test_tray_relaunched_after_install():
     assert "CurrentVersion\\Run" in tail
     assert "Start-Process" in tail
     assert "'-m','tailcam','app','--no-window'" in tail
+
+
+def test_windows_setup_executes_before_services(isolated_env):
+    import os
+    import subprocess
+    import sys
+
+    import pytest
+
+    if sys.platform != "win32":
+        pytest.skip("Windows PowerShell runtime check")
+    from tailcam import paths
+
+    start = SCRIPT.index("  # Configure before registration")
+    end = SCRIPT.index("  # New install verified", start)
+    block = SCRIPT[start:end]
+    harness = isolated_env / "setup.ps1"
+    harness.write_text(
+        '$ErrorActionPreference = "Stop"\n'
+        '$VenvPy = $env:TEST_PYTHON\n'
+        '$Preset = "hub"; $Port = 9123; $NodeName = "Windows hub"\n'
+        '$HadPrevious = $false\n'
+        'function Fail($why) { throw $why }\n'
+        'function Info($text) {}\n' + block,
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-File", str(harness)],
+        env=dict(os.environ, TEST_PYTHON=sys.executable), capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    from tailcam.config import AppConfig
+    assert AppConfig.load().node.roles == []
+    assert AppConfig.load().server.port == 9123
+    original = paths.config_file().read_bytes()
+    # Also parse the complete installer with the actual Windows parser.
+    command = (
+        '$tokens=$null; $errors=$null; '
+        '[System.Management.Automation.Language.Parser]::ParseFile('
+        '$env:TEST_INSTALLER, [ref]$tokens, [ref]$errors) | Out-Null; '
+        'if ($errors.Count) { throw ($errors | Out-String) }'
+    )
+    subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", command],
+        env=dict(os.environ, TEST_INSTALLER=str(ROOT / "install.ps1")), check=True,
+    )
+    assert paths.config_file().read_bytes() == original

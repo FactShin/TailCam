@@ -174,9 +174,25 @@ irm https://raw.githubusercontent.com/factshin/tailcam/main/install.ps1 -OutFile
 .\install.ps1 -Port 9000 -NoTailscale
 ```
 
-Linux/macOS flags: `--port`, `--ref <tag>`, `--no-service`, `--no-tailscale`,
-`--no-tailscale-install`. Windows: `-Port`, `-Ref`, `-NoService`, `-NoTailscale`,
-`-NoTailscaleInstall`.
+Installers pin the PyPI package version (currently **1.9.1**) and configure the
+node before starting services. Select `--preset hub` on Linux/macOS or `-Preset hub`
+on Windows; other choices are `camera`, `storage`, `compute`, and `all-in-one`.
+`--node-name` / `-NodeName` sets its display name. Rerunning without a preset or
+port preserves saved roles, port, media, and identity. A new node without a
+preset defaults to all-in-one. Linux/macOS offer a role prompt when run from an
+interactive terminal; piped runs use flags or `TAILCAM_PRESET`.
+
+Linux/macOS flags: `--port`, `--version X.Y.Z`, `--ref REF` (explicit source
+installation), `--non-interactive`, `--no-color`, `--no-service`, `--no-tailscale`,
+`--no-tailscale-install`. Windows equivalents: `-Port`, `-Version`, `-Ref`,
+`-NonInteractive`, `-NoColor`, `-NoService`, `-NoTailscale`, `-NoTailscaleInstall`.
+The version override requires a release with the shared `setup` command (1.9.1+).
+
+For manual installation, use `tailcam setup --preset hub` before `tailcam run`.
+`tailcam setup --interactive` selects a preset; `--roles capture,storage` supports
+custom combinations. `--json`, `--quiet`, and `--dry-run` support automation.
+Linux/macOS logs live beside the installer virtualenv. Setup errors preserve the
+previous installation and leave it stopped until configuration is repaired.
 
 **Tailscale is set up for you.** If Tailscale isn't installed, the installer installs
 it (official script on Linux, Homebrew on macOS, winget on Windows). If it isn't
@@ -380,7 +396,7 @@ How it works:
 
 ### Choose what runs on each node
 
-The 1.9.0 source builds add **Settings → Node purpose** and CLI presets. For a
+TailCam 1.9.0 adds **Settings → Node purpose** and CLI presets. For a
 manual install, configure a hub before its first startup:
 
 ```bash
@@ -657,20 +673,26 @@ is needed. The project already exists at [PyPI](https://pypi.org/project/tailcam
 so maintain its publisher under the project's publishing settings rather than
 creating another pending publisher.
 
-1. Bump the version, rebuild any changed dashboard/docs, and run the checks above.
-2. Build and validate the distributions: `python -m pip install build twine`,
-   then `python -m build` and `python -m twine check --strict dist/*` in a clean checkout.
-3. Merge the PR, then publish a GitHub Release whose `vX.Y.Z` tag points to that
-   merged commit. The tag must match the package version; the workflow does not
-   bump or validate the version for you. Alternatively, run **Publish to PyPI**
-   manually from `main` once for that version.
-4. Confirm the workflow succeeds and `python -m pip index versions tailcam`
-   shows the new version. Test installation in a fresh virtual environment.
+1. Every release PR updates all version metadata **and the three native installer
+   version pins**, rebuilds changed dashboard/docs, and runs the required checks.
+   Keep the release notes and `docs/roadmap.md` checkpoint current as work continues.
+2. After merge, a successful `tests` workflow on `main` automatically triggers
+   **Publish to PyPI**. It checks out the exact tested commit, verifies it is still
+   current `main`, then builds and checks the wheel and source distribution.
+3. A separate job uploads those artifacts using Trusted Publishing. The build job
+   cannot request a publishing identity. PR runs, forks, failed tests, untested
+   commits, stale commits, and mismatched release tags cannot publish.
+4. Existing complete PyPI versions are skipped. An incomplete/yanked version or a
+   network/API error stops the workflow for inspection. Publishing is serialized.
+   Manual dispatch from current `main` and matching GitHub Releases remain retry
+   paths after the same test/version checks; do not change an uploaded version.
+5. Verify the public PyPI version and a fresh install before marking it Released.
+   The README description updates only with a new distribution.
 
-Merging alone does not publish to PyPI. Avoid uploading the same version via
-both triggers: PyPI rejects reusing distribution filenames. The PyPI description
-comes from the README packaged with each release; editing GitHub's README does
-not change an already uploaded distribution.
+The `pypi` environment may have repository-configured approval rules; this workflow
+preserves them. If a newer merge overtakes an older release run, the obsolete run
+stops and the newer tested version can publish. A version bump is still required
+for each intended package update.
 
 ## License
 

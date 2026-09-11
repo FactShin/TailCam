@@ -9,17 +9,22 @@
 
   Windows on ARM (Surface / Snapdragon X): TailCam's camera stack (OpenCV)
   publishes no native ARM64 wheels yet, so this installer uses x64 Python,
-  which Windows 11 runs transparently under emulation. Requires Windows 11 —
+  which Windows 11 runs transparently under emulation. Requires Windows 11  -
   Windows 10 on ARM cannot emulate x64.
 
   A full transcript of every run is written to
-  %LOCALAPPDATA%\TailCam\install-<timestamp>.log — if anything goes wrong,
+  %LOCALAPPDATA%\TailCam\install-<timestamp>.log  -  if anything goes wrong,
   that file has the whole story.
 #>
 [CmdletBinding()]
 param(
-  [int]$Port = 8088,
-  [string]$Ref = "main",
+  [ValidateRange(0, 65535)][int]$Port = 0,
+  [string]$Ref = $env:TAILCAM_REF,
+  [string]$Version = "1.9.1",
+  [ValidateSet("", "hub", "camera", "storage", "compute", "all-in-one")]
+  [string]$Preset = $env:TAILCAM_PRESET,
+  [string]$NodeName = $env:TAILCAM_NODE_NAME,
+  [switch]$NoColor,
   [switch]$NoService,
   [switch]$NoTailscale,
   [switch]$NoTailscaleInstall,
@@ -27,6 +32,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$VersionExplicit = $PSBoundParameters.ContainsKey("Version")
 $Repo = "factshin/tailcam"
 $AppDir = Join-Path $env:LOCALAPPDATA "TailCam"
 $VenvDir = Join-Path $AppDir "venv"
@@ -38,17 +44,17 @@ $LogPath = Join-Path $AppDir ("install-" + (Get-Date -Format "yyyyMMdd-HHmmss") 
 # itself runs inside an emulated x64 PowerShell on an ARM64 machine.
 $IsArm64 = ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") -or ($env:PROCESSOR_ARCHITEW6432 -eq "ARM64")
 
-function Info($m) { Write-Host "==> $m" -ForegroundColor Cyan }
-function Warn($m) { Write-Host "!!  $m" -ForegroundColor Yellow }
+function Info($m) { if ($NoColor -or $env:NO_COLOR) { Write-Host "==> $m" } else { Write-Host "==> $m" -ForegroundColor Cyan } }
+function Warn($m) { if ($NoColor -or $env:NO_COLOR) { Write-Host "!!  $m" } else { Write-Host "!!  $m" -ForegroundColor Yellow } }
 # NEVER `exit` here: under `irm | iex` the script runs in the session scope, so
 # `exit` kills the whole PowerShell window before the error can be read. Throw
-# instead — the try/catch at the bottom shows the message, points at the log,
+# instead  -  the try/catch at the bottom shows the message, points at the log,
 # and pauses so the window stays open.
 function Fail($m) { throw $m }
 
 # Windows PowerShell 5.1 turns a native command's stderr into a terminating
 # NativeCommandError when $ErrorActionPreference is "Stop" and the stream is
-# redirected (`2>$null`) — so a harmless probe like `python -c ...` or
+# redirected (`2>$null`)  -  so a harmless probe like `python -c ...` or
 # `tailscale status --json` killed the install. Run such probes with the
 # preference relaxed; the caller still inspects $LASTEXITCODE / output.
 function Invoke-Native([scriptblock]$Block) {
@@ -89,7 +95,7 @@ function Find-Python {
       $machine = Get-PyMachine $cand.Exe $cand.Args
       if ($machine -eq "ARM64" -or $machine -eq "aarch64") {
         $script:RejectedArmPython = $true
-        Warn ("Skipping " + $cand.Exe + " — it's native ARM64 Python, but TailCam needs x64 " +
+        Warn ("Skipping " + $cand.Exe + "  -  it's native ARM64 Python, but TailCam needs x64 " +
               "Python on this PC (OpenCV has no ARM64 wheels yet; x64 runs via Windows emulation).")
         continue
       }
@@ -105,7 +111,7 @@ function Install-X64Python {
                     "--accept-package-agreements", "--accept-source-agreements")
     if ($IsArm64) {
       # winget prefers the native (arm64) build by default; force x64.
-      Info "ARM64 PC detected — installing x64 Python 3.12 (runs via Windows 11 emulation),"
+      Info "ARM64 PC detected  -  installing x64 Python 3.12 (runs via Windows 11 emulation),"
       Info "because OpenCV publishes no native ARM64 wheels yet."
       $wingetArgs += @("--architecture", "x64")
     } else {
@@ -120,7 +126,7 @@ function Install-X64Python {
   # No winget: fetch the official x64 installer from python.org.
   $pyUrl = "https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe"
   $pyExe = Join-Path $env:TEMP "python-3.12.10-amd64.exe"
-  Info "winget not found — downloading x64 Python from python.org..."
+  Info "winget not found  -  downloading x64 Python from python.org..."
   Invoke-WebRequest -Uri $pyUrl -OutFile $pyExe
   Start-Process -FilePath $pyExe -ArgumentList "/quiet", "InstallAllUsers=0", "PrependPath=1" -Wait
   $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
@@ -138,7 +144,7 @@ function Stop-TailCamProcesses {
 
 function Test-WebView2 {
   # WebView2 Runtime is registered under EdgeUpdate Clients (per-machine or
-  # per-user). Its absence isn't fatal — the app falls back to the browser.
+  # per-user). Its absence isn't fatal  -  the app falls back to the browser.
   $guid = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
   foreach ($root in @("HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients",
                       "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients",
@@ -156,7 +162,7 @@ function Setup-DesktopApp($venvPy) {
   Write-Host ""
   Info "Installing the TailCam desktop app (tray + Start menu)"
   if (-not (Test-WebView2)) {
-    Warn "Microsoft Edge WebView2 Runtime not detected — the dashboard will open in your"
+    Warn "Microsoft Edge WebView2 Runtime not detected  -  the dashboard will open in your"
     Warn "browser. For the embedded window, install it from:"
     Write-Host "        https://developer.microsoft.com/microsoft-edge/webview2/"
   }
@@ -164,7 +170,7 @@ function Setup-DesktopApp($venvPy) {
   if ($LASTEXITCODE -eq 0) {
     & $venvPy -m tailcam app install --autostart
   } else {
-    Warn "Desktop backends failed to install — skip for now; retry: pip install 'tailcam[desktop]'"
+    Warn "Desktop backends failed to install  -  skip for now; retry: pip install 'tailcam[desktop]'"
   }
 }
 
@@ -193,7 +199,7 @@ function Install-TailCam {
   # no longer exists ("Fatal error in launcher: Unable to create process").
   # Windows venvs are not relocatable. So instead: set the OLD venv aside with
   # a rename (cheap, reversible), build the new one at its final path, and put
-  # the old one back if pip fails — a failed upgrade never bricks a node.
+  # the old one back if pip fails  -  a failed upgrade never bricks a node.
   New-Item -ItemType Directory -Force -Path $AppDir | Out-Null
   if (Test-Path $BackupDir) { Remove-Item -Recurse -Force $BackupDir -ErrorAction SilentlyContinue }
   $HadPrevious = $false
@@ -205,7 +211,7 @@ function Install-TailCam {
       Move-Item $VenvDir $BackupDir
       $HadPrevious = $true
     } catch {
-      Fail ("Couldn't set aside the current install at $VenvDir — a TailCam process or " +
+      Fail ("Couldn't set aside the current install at $VenvDir  -  a TailCam process or " +
             "terminal is holding files open. Close them (or reboot) and re-run the installer.")
     }
   }
@@ -229,9 +235,11 @@ function Install-TailCam {
   $Scripts = Join-Path $VenvDir "Scripts"
 
   & $VenvPy -m pip install --upgrade pip
-  $Zip = "https://github.com/$Repo/archive/refs/heads/$Ref.zip"
-  Info "Installing TailCam from $Zip"
-  & $VenvPy -m pip install $Zip
+  if ($env:TAILCAM_VERSION -and -not $VersionExplicit) { $Version = $env:TAILCAM_VERSION }
+  $Spec = "tailcam==$Version"
+  if ($Ref) { $Spec = "https://github.com/$Repo/archive/$Ref.zip" }
+  Info "Installing TailCam from $Spec"
+  & $VenvPy -m pip install $Spec
   if ($LASTEXITCODE -ne 0) {
     if ($IsArm64) {
       Restore-Previous ("pip install failed. This is an ARM64 PC: make sure the Python used above is x64 " +
@@ -241,8 +249,24 @@ function Install-TailCam {
     Restore-Previous "pip install failed. Scroll up for pip's error, or read the log."
   }
   if (-not (Test-Path $TailcamBin)) {
-    Restore-Previous "tailcam.exe was not created by pip — the install is incomplete. See the log."
+    Restore-Previous "tailcam.exe was not created by pip  -  the install is incomplete. See the log."
   }
+  # Configure before registration or backup disposal. Failed configuration keeps
+  # the restored service STOPPED: older versions may enable unsafe defaults.
+  $SetupArgs = @("--json")
+  if ($Preset) { $SetupArgs += @("--preset", $Preset) }
+  if ($NodeName) { $SetupArgs += @("--node-name", $NodeName) }
+  if ($Port) { $SetupArgs += @("--port", "$Port") }
+  $SetupText = & $VenvPy -m tailcam setup @SetupArgs
+  if ($LASTEXITCODE -ne 0) {
+    Remove-Item -Recurse -Force $VenvDir -ErrorAction SilentlyContinue
+    if ($HadPrevious) { Move-Item $BackupDir $VenvDir }
+    Fail "Setup failed; previous install restored but left stopped. Repair configuration before starting."
+  }
+  $NodeSetup = $SetupText | ConvertFrom-Json
+  Info ("Workloads: " + ($NodeSetup.roles -join ", "))
+  Info ("Dashboard when running: " + $NodeSetup.url)
+
   # New install verified: the old one can go, along with the pre-rename AnyCam venv.
   if ($HadPrevious) { Remove-Item -Recurse -Force $BackupDir -ErrorAction SilentlyContinue }
   if (Test-Path $LegacyVenvDir) {
@@ -269,12 +293,11 @@ function Install-TailCam {
   $newPath = $parts -join ';'
   if ($newPath -ne $userPath) {
     [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-    Info "Added TailCam to your PATH — open a NEW terminal to use the 'tailcam' command."
+    Info "Added TailCam to your PATH  -  open a NEW terminal to use the 'tailcam' command."
   }
 
   # --- background service (logon Scheduled Task) ------------------------------
   # Persist the chosen port so the service and `tailscale serve` both use it.
-  & $VenvPy -m tailcam config --port $Port | Out-Null
   if (-not $NoService) {
     Info "Registering logon task"
     & $VenvPy -m tailcam install-service
@@ -351,7 +374,7 @@ function Install-TailCam {
     $state = Get-TailscaleState
     if ($state -eq "Running") { Info "Tailscale is connected."; return $true }
     # Poll only when `up` failed AND the daemon is alive waiting on a browser
-    # login. Empty/Stopped means the daemon is gone or was brought down —
+    # login. Empty/Stopped means the daemon is gone or was brought down  -
     # waiting ten minutes can't change that.
     if ($upRc -eq 0 -or $state -ne "NeedsLogin") {
       if (-not $state) { Warn "The Tailscale service stopped responding. Open the Tailscale app, sign in, then run: tailcam tailscale serve" }
@@ -390,6 +413,7 @@ function Install-TailCam {
   Setup-DesktopApp $VenvPy
 
   # AI motion labeling (optional, local Ollama)
+  if ($NodeSetup.roles -contains "analysis") {
   Write-Host ""
   Info "AI motion labeling (optional)"
   $ollama = Get-Command ollama -ErrorAction SilentlyContinue
@@ -407,6 +431,7 @@ function Install-TailCam {
     Write-Host "        ollama pull moondream"
   }
   Write-Host "    You can also do all of this from the TailCam UI -> AI."
+  }
 
   # Stop-TailCamProcesses force-killed a running tray earlier; if the user
   # has the tray set to start at logon, bring it back now rather than leaving
@@ -432,7 +457,7 @@ function Install-TailCam {
 
 # --- top-level driver: transcript + readable failures ------------------------
 # Everything runs inside try/catch so ANY failure (explicit Fail or an uncaught
-# terminating error) prints its message, points at the transcript, and pauses —
+# terminating error) prints its message, points at the transcript, and pauses  -
 # the window never vanishes with the error unread.
 New-Item -ItemType Directory -Force -Path $AppDir | Out-Null
 $TranscriptStarted = $false

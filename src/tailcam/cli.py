@@ -63,7 +63,52 @@ def _root(
 
     if migrate.needs_migration():
         for line in migrate.migrate():
-            console.print(f"[dim]· {line}[/dim]")
+            Console(stderr=True).print(f"[dim]· {line}[/dim]")
+
+
+@app.command()
+def setup(
+    preset: str | None = typer.Option(None, help="hub, camera, storage, compute, all-in-one"),
+    roles: str | None = typer.Option(None, help="Comma-separated roles; empty means hub."),
+    node_name: str | None = typer.Option(None, help="Display name for this node."),
+    port: int | None = typer.Option(None, min=1, max=65535),
+    interactive: bool = typer.Option(False, "--interactive", help="Choose this node's purpose."),
+    if_missing: bool = typer.Option(False, "--if-missing", help="Preserve existing setup."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate without saving."),
+    json_output: bool = typer.Option(False, "--json", help="Print a machine-readable summary."),
+    quiet: bool = typer.Option(False, "--quiet", help="Only print errors."),
+) -> None:
+    """Configure before service startup; preserve existing media, identity and settings."""
+    import json
+
+    from tailcam.setup import configure
+
+    if interactive:
+        if preset is not None or roles is not None or json_output or quiet:
+            raise typer.BadParameter(
+                "Interactive setup cannot be combined with roles or quiet/JSON"
+            )
+        if not sys.stdin.isatty():
+            raise typer.BadParameter("Interactive setup requires a terminal; use --preset instead")
+        typer.echo("TAILCAM  /  What runs on this machine?")
+        typer.echo("hub: fleet view | camera: capture + storage | storage: save media")
+        typer.echo("compute: analysis + training | all-in-one: all four workloads")
+        preset = typer.prompt("Preset (leave blank to keep existing settings)", default="") or None
+    try:
+        result = configure(
+            preset=preset, roles=roles, node_name=node_name, port=port,
+            if_missing=if_missing, dry_run=dry_run,
+        )
+    except (NodeConfigError, OSError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if json_output:
+        typer.echo(json.dumps(result))
+    elif not quiet:
+        typer.echo(f"TAILCAM {result['version']}  /  Setup {'preview' if dry_run else 'ready'}")
+        typer.echo("Workloads: " + (", ".join(result["roles"]) or "hub (fleet view only)"))
+        typer.echo(f"Config: {result['config']}")
+        typer.echo(f"Dashboard when running: {result['url']}")
+        typer.echo("Start or restart TailCam to apply this setup.")
 
 
 @app.command()

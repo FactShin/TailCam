@@ -564,13 +564,19 @@ The product standard is simple: **every screen and every assistant should be abl
 
 ## 9. Progress ledger and handoff requirements
 
-**State as of document r5:** 1.8.5 and 1.8.6 are validated and merged. PR #86 final head `3d0665788f6dc5d2c4392c8bdf67179e3443dbd1` passed all four CI jobs before merge. The first 1.9.0 slice implements persistent identity, enforced workload roles, and CLI/dashboard controls; installers and full readiness discovery remain open. No roadmap release has been published: PyPI latest is 1.8.4 as checked on 2026-09-11. The original 1.8.4 review below remains historical evidence. Reconcile this ledger against GitHub at the start of each future session.
+**State as of document r6:** PRs #85, #86 and #87 are merged. The identity/roles
+foundation shipped as PyPI 1.9.0 on 2026-09-11 from main
+`9bf041a078d69d60105981abca673f3a69631203`; its public wheel/sdist and fresh install
+were verified. The next slice adds shared role-aware installer setup, a hub-only
+container, and test-gated automatic publishing for future version bumps. The full
+1.9 milestone still has readiness, preview, lean-package and hardware gates.
+The original 1.8.4 review below remains historical evidence.
 
 | Target | Workstream | Status | Evidence / next gate |
 |---|---|---|---|
 | 1.8.5 | Current routing fixes | Validated; merged [PR #85](https://github.com/FactShin/TailCam/pull/85) | Local checks and final CI passed; publication remains separate. See [release notes](releases/1.8.5.md) |
 | 1.8.6 | Dashboard dependency security | Validated; merged [PR #86](https://github.com/FactShin/TailCam/pull/86) | Local, package, and [final CI](https://github.com/FactShin/TailCam/actions/runs/34625628441) passed; [release notes](releases/1.8.6.md) |
-| 1.9.0 | Roles and installer | In progress; identity/roles foundation validated locally | [PR #87](https://github.com/FactShin/TailCam/pull/87): role-aware lifecycle, CLI/settings, and additive peer metadata implemented; installer/shared setup and richer readiness discovery remain open. See [release notes](releases/1.9.0.md) |
+| 1.9.0 / 1.9.1 | Roles and installer | 1.9.0 released; 1.9.1 installer/release slice in review preparation | [PR #87](https://github.com/FactShin/TailCam/pull/87) merged; [PyPI 1.9.0](https://pypi.org/project/tailcam/1.9.0/) verified. Shared setup, role-aware installers, hub container and publishing gates implemented for 1.9.1; richer readiness/preview/packaging remain open. See [1.9.1 notes](releases/1.9.1.md) |
 | 1.10.0 | Unified storage | Planned | Isolated multi-process artifact-transfer tests |
 | 1.11.0 | Workload routing + Training Supervisor | Planned | Durable jobs, enforced budgets, no model activation |
 | 1.12.0 | Timelapse projects | Planned | Long capture/re-render recovery |
@@ -594,18 +600,18 @@ Update this record in the authoritative file before handing work back. Replace o
 
 | Field | Current value |
 |---|---|
-| Document revision/date | r5 / 2026-09-11 |
-| Last verified code baseline | main / d3c75f81572cb9661103fd3c916e4921ab7051ca / 1.8.6 |
-| Active implementation branch/PR | `feat/node-roles-1.9.0`; [PR #87](https://github.com/FactShin/TailCam/pull/87) |
-| Completed in this session | Merged PR #86 after all checks passed; implemented first 1.9.0 roles/identity slice with parallel backend, interface, and lifecycle review |
-| Current implementation target | 1.9.0 foundation only; OS installer/setup and readiness gates remain open; latest published PyPI package is 1.8.4 |
-| Implementation commit | `9dc1dd6d869fc37a44ecd7be92dfed6458d94296` |
-| Code changes in this roadmap session | Persistent UUID/schema 13; strict node configuration; admin-audited role changes applied on restart; guarded services and HTTP operations; role-aware CLI/dashboard/peer metadata; remote refusal propagation and no disabled local fallback |
-| Validation evidence | 642 Python tests passed; Ruff and mypy (126 files) passed; TypeScript/build, nine browser tests, zero-vulnerability npm audit, 18-file reproducible bundle and mobile/desktop visual checks passed. Clean wheel/sdist, fresh-install dependency checks, 18-file source/install/HTTP parity, hub startup and persistent-identity checks passed. Current CI is recorded on the PR; see release notes. |
+| Document revision/date | r6 / 2026-09-11 |
+| Last verified code baseline | main / 9bf041a078d69d60105981abca673f3a69631203 / 1.9.0 |
+| Active implementation branch/PR | `feat/role-aware-installers-release`; PR pending |
+| Completed in this session | Confirmed PR #87 merged; published and independently installed PyPI 1.9.0; implemented the 1.9.1 installer and release-automation slice |
+| Current implementation target | 1.9.1 role-aware installation; every future release PR keeps installer/package versions and publishing workflow current |
+| Implementation commit | See the active PR head for this slice |
+| Code changes in this roadmap session | Shared setup; role-aware OS installers and pinned versions; Docker role/mount handling and hub Compose; automatic tested-main PyPI workflow; publication verification |
+| Validation evidence | 680 Python tests passed, one Windows-only skip, three existing warnings; focused subsequent setup/release/installer checks passed; Ruff/mypy (127 files), TypeScript/build and zero-vulnerability npm audit passed. Public PyPI 1.9.0 fresh-install API/asset/hub/UUID checks passed. See release notes and current PR checks for final package/platform results. |
 | Outstanding environment checks | Actual camera, Pi, GPU, voice, cross-OS live fleet and long-duration capture validation remain separate hardware gates |
-| Exact next action | Review the roles/identity PR and current CI; after merge, implement shared role-aware OS installer and container setup without camera mounts on hubs |
+| Exact next action | Review and merge the installer/release PR after CI passes; verify automatic PyPI 1.9.1 publication, then implement richer runtime readiness and guided setup/preview |
 | Unresolved product decisions | Hardware capacity budgets, approved training datasets, task-specific model acceptance thresholds, current agent-host integration details |
-| Blockers | No implementation blocker. PR checks govern merge readiness; installer and hardware milestone gates remain open. |
+| Blockers | No implementation blocker. The new publishing trigger activates only after merge. Hardware/preview/readiness gates remain open. |
 
 ### Implementation-session completion checklist
 
@@ -631,6 +637,7 @@ Measure and record numeric Pi memory/CPU targets, maximum camera modes/counts, s
 | r3 | Imports roadmap into the repository and begins 1.8.5 implementation with current validation, compatibility limits, security follow-up, and PR checkpoint |
 | r4 | Records merged PR #85 and its final CI, corrects the canonical roadmap location and historical review scope, and adds the 1.8.6 dependency-security patch before 1.9.0 |
 | r5 | Records merged PR #86 and begins the 1.9.0 identity/roles foundation, explicitly separating installer, readiness, lean-package, and hardware gates |
+| r6 | Records merged PR #87, verified PyPI 1.9.0 publication, and the next shared installer / automated release slice for 1.9.1 |
 
 ## Validation recorded for the original architecture review
 

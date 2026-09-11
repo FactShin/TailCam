@@ -18,11 +18,15 @@ curl -fsSL https://raw.githubusercontent.com/factshin/tailcam/main/install-docke
 ```
 
 Flags: `--authkey KEY`, `--hostname NAME`, `--port N`, `--device /dev/videoN`
-(repeatable), `--no-hotplug`, `--image REF`, `--name NAME`, `--no-tailscale`. On
-Linux the script binds the host's `/dev` into the container and allows every
+(repeatable), `--no-hotplug`, `--image REF`, `--name NAME`, `--no-tailscale`,
+`--preset hub|camera|storage|compute|all-in-one`, and `--node-name NAME`. On
+Linux, when the saved node roles include capture, the script binds the host's `/dev` into the container and allows every
 video4linux device, so webcams can be plugged in later and a missing
 `/dev/video0` doesn't stop the container. It replaces any existing container and
-keeps your data in named volumes.
+keeps your data in named volumes. Hubs, storage nodes and compute nodes get no
+camera mounts. The pulled image is resolved to an immutable digest, then shared
+setup runs before any existing container is stopped. Images older than 1.9.1
+lack this setup command and fail without replacing the running container.
 
 ## Prebuilt image
 
@@ -50,6 +54,27 @@ TS_AUTHKEY=tskey-auth-xxxx docker compose up -d
 `docker-compose.yml` builds the image, persists data in named volumes, and (on
 Linux) binds `/dev` with a device-cgroup rule for video4linux, so cameras
 hot-plug and none has to be present at `up` time.
+
+## Hub without camera access
+
+From the repository, use the standalone hub Compose file:
+
+```bash
+docker compose -f docker-compose.hub.yml up -d --build
+```
+
+This creates `tailcam-hub` with separate persistent volumes, no `/dev` mounts,
+no device passthrough, and no elevated capabilities. The dashboard is bound to
+host loopback at `http://127.0.0.1:8088/`. Stop another container using that port
+or choose another host port first. Tailscale uses userspace networking when enabled.
+
+For the installer path, use `bash install-docker.sh --preset hub`. It preserves
+the standard `tailcam-*` volumes and writes the hub role before replacement.
+
+`TAILCAM_PRESET` and `TAILCAM_NODE_NAME` initialize new container configuration
+only. Saved settings survive restarts; changing environment variables later does
+not reset roles. Use Settings or `docker exec tailcam-hub tailcam setup --preset
+storage`, then restart the container, to apply a deliberate role change.
 
 ## Two ways to run
 

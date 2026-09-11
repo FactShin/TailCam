@@ -58,7 +58,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -e ".[dev]"
-      - run: ruff check src tests
+      - run: ruff check src tests .github/scripts
       - run: mypy src/tailcam
 
   test:
@@ -95,3 +95,20 @@ jobs:
           tests/test_hostinfo.py tests/test_version.py tests/test_api.py
           tests/test_storage.py tests/test_cluster.py tests/test_mcp.py
           tests/test_node_config.py tests/test_node_lifecycle.py
+          tests/test_setup.py tests/test_release_workflow.py
+
+  container-hub:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start hub without camera or elevated access
+        run: docker compose -f docker-compose.hub.yml up -d --build
+      - name: Verify hub roles, identity and restart preservation
+        run: python .github/scripts/check_hub.py
+      - name: Container logs
+        if: always()
+        run: docker compose -f docker-compose.hub.yml logs --no-color
+      - name: Clean up test containers and volumes
+        if: always()
+        run: docker compose -f docker-compose.hub.yml down -v
