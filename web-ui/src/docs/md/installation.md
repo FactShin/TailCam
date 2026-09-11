@@ -2,8 +2,9 @@
 
 TailCam runs on Linux, macOS, and Windows — including **Windows on ARM**
 (Surface / Snapdragon X), where the installer uses x64 Python under Windows 11
-emulation because OpenCV has no native ARM64 wheels yet. It needs Python 3.10+ and a webcam
-(or the built-in synthetic camera for testing).
+emulation because OpenCV has no native ARM64 wheels yet. It needs Python 3.10+.
+Only capture nodes need a camera; hubs, storage nodes, and compute nodes can run
+without one. A built-in synthetic camera is available for testing.
 
 > Prefer containers? TailCam has a dedicated Docker image that bundles Tailscale
 > and all media libraries — see [Running in Docker](docker).
@@ -43,6 +44,29 @@ py -3 -m venv .venv
 
 Use x64 Python on Windows ARM. Open `http://localhost:8088/` once the server
 starts. Manual pip/pipx installs do not install Tailscale or register services.
+
+## Choose this node's purpose (1.9.0 source builds)
+
+Before the first `tailcam run`, select a preset:
+
+```bash
+tailcam config --init --preset hub --node-name "Workshop hub"
+tailcam run
+```
+
+Presets are `all-in-one`, `camera`, `hub`, `storage`, and `compute`. The camera
+preset includes local storage and skips AI/training. Use `--roles capture` for
+a streaming camera with recordings routed elsewhere. Existing valid configs
+retain all roles until you change them. See [Node configuration](configuration).
+
+You can change roles later in **Settings → Node purpose**; restart the server
+to apply them. A hub skips camera discovery, local model initialization, and
+training. These controls do not remove base dependencies or configure an
+external storage/AI destination for you.
+
+The OS installers below still start an all-in-one service on a fresh install;
+they do not yet ask for roles. Use the manual install and configure roles
+before registering a service when the first startup must be hub-only.
 
 ## OS installers (GitHub main)
 

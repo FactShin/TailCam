@@ -50,11 +50,15 @@ class TimelapseService:
         store: Store,
         config: TimelapseConfig,
         analysis_queue: TimelapseAnalysisQueue | None = None,
+        role_check: Callable[[], None] | None = None,
+        analysis_role_check: Callable[[], None] | None = None,
     ) -> None:
         self._manager = manager
         self._store = store
         self._config = config
         self._analysis_queue = analysis_queue
+        self._role_check = role_check
+        self._analysis_role_check = analysis_role_check
         self._workers: dict[int, TimelapseCaptureWorker] = {}
         self._encoding: set[int] = set()
         self._smoothing: set[int] = set()
@@ -86,6 +90,13 @@ class TimelapseService:
         """Start a capture. By default frames come from this node's camera
         ``camera_id``; a storage node capturing a *peer's* camera passes the
         pulled ``buffer`` (+ ``reacquire``) and the owning ``source_host``."""
+        if self._role_check is not None:
+            self._role_check()
+        analysis = self._config.analysis_enabled if analysis_enabled is None else analysis_enabled
+        smooth = self._config.auto_smooth if auto_smooth is None else auto_smooth
+        engine = smooth_engine or self._config.smooth_engine
+        if (analysis or (smooth and engine == "rife")) and self._analysis_role_check is not None:
+            self._analysis_role_check()
         if buffer is None:
             buffer = self._manager.get_buffer(camera_id)
             reacquire = partial(self._manager.get_buffer, camera_id)
@@ -230,6 +241,8 @@ class TimelapseService:
         return self.get(tl_id)
 
     def _finalize_async(self, tl_id: int) -> None:
+        if self._role_check is not None:
+            self._role_check()
         with self._lock:
             if tl_id in self._encoding:
                 return
@@ -297,9 +310,14 @@ class TimelapseService:
         """Kick off a background pass that turns the captured frames into smooth,
         flowing motion. ``engine`` is "ffmpeg" or "rife"; a failed RIFE run falls
         back to ffmpeg. Re-runnable; the source frames are kept."""
+        if self._role_check is not None:
+            self._role_check()
         record = self._store.get_timelapse(tl_id)
         if record is None:
             return None
+        chosen = engine or record.smooth_engine
+        if chosen == "rife" and self._analysis_role_check is not None:
+            self._analysis_role_check()
         frames_dir = Path(record.frames_dir)
         if not frames_dir.exists() or not any(frames_dir.glob("*.jpg")):
             return None

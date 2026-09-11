@@ -9,7 +9,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from tailcam import __version__
 from tailcam.camera.manager import ManagedCamera
-from tailcam.media.capture_router import CaptureRoutingError
 from tailcam.timelapse.presets import printer_presets
 from tailcam.web.context import AppContext
 from tailcam.web.deps import get_context
@@ -190,6 +189,9 @@ async def list_hosts(ctx: AppContext = Depends(get_context)) -> list[HostInfo]:
             version=__version__,
             camera_count=len(ctx.manager.list()),
             proxy_prefix="",
+            node_id=ctx.node_id,
+            node_name=ctx.config.node.name,
+            node_roles=sorted(ctx.active_roles),
         )
     ]
     for peer in await ctx.cluster.peers():
@@ -202,6 +204,9 @@ async def list_hosts(ctx: AppContext = Depends(get_context)) -> list[HostInfo]:
                 version=peer.version,
                 camera_count=peer.camera_count,
                 proxy_prefix=f"/proxy/{peer.key}",
+                node_id=peer.node_id,
+                node_name=peer.node_name,
+                node_roles=peer.node_roles,
             )
         )
     return hosts
@@ -264,6 +269,7 @@ def update_camera(
 @router.post("/cameras/{camera_id:path}/restart", response_model=OkResponse)
 def restart_camera(camera_id: str, ctx: AppContext = Depends(get_context)) -> OkResponse:
     """Recover a stuck feed by restarting its capture worker."""
+    ctx.require_role("capture")
     if not ctx.manager.restart(camera_id):
         raise HTTPException(status_code=404, detail="camera not found")
     return OkResponse(detail="camera restarting")
@@ -282,6 +288,7 @@ def delete_camera(camera_id: str, ctx: AppContext = Depends(get_context)) -> OkR
 
 @router.post("/cameras/{camera_id:path}/snapshot", response_model=MediaCreatedResponse)
 def snapshot(camera_id: str, ctx: AppContext = Depends(get_context)) -> MediaCreatedResponse:
+    ctx.require_role("capture")
     record = ctx.snapshots.capture(camera_id)
     if record is None:
         raise HTTPException(status_code=503, detail="could not capture snapshot")
@@ -291,6 +298,7 @@ def snapshot(camera_id: str, ctx: AppContext = Depends(get_context)) -> MediaCre
 @router.post("/cameras/{camera_id:path}/recording/start", response_model=OkResponse)
 def start_recording(camera_id: str, ctx: AppContext = Depends(get_context)) -> OkResponse:
     """Record this camera — here, or on the configured storage node."""
+    ctx.require_role("capture")
     started = ctx.capture.start_recording(camera_id)
     if not started:
         raise HTTPException(status_code=409, detail="already recording or camera unavailable")
@@ -319,6 +327,7 @@ async def detect_objects(
     detection model is active or detection is off for this camera — the UI
     just shows no overlay. Results are cached ~1s per camera so several open
     viewers cost one inference."""
+    ctx.require_role("capture")
     import anyio
 
     # Cheap early-returns first: this endpoint is polled ~every 1.5s per open
@@ -381,6 +390,7 @@ async def detect_image(
     uploaded JPEG/PNG, using THIS node's pipeline. Peers whose ``[detection]
     node`` points here send their frames to this endpoint, so a Pi can stream
     while a bigger box runs the models."""
+    ctx.require_role("analysis")
     import anyio
     import cv2
     import numpy as np
@@ -423,7 +433,8 @@ def detection_info(ctx: AppContext = Depends(get_context)) -> DetectionInfo:
     remote = ctx.remote_detector()
     remote_status = remote.status() if remote else None
     return DetectionInfo(
-        enabled=s.enabled, engine=s.engine, model=s.model, status=s.status,
+        enabled=cfg.enabled if remote else s.enabled, engine=s.engine, model=s.model,
+        status="remote" if remote else s.status,
         percent=s.percent, detail=s.detail, error=s.error,
         confidence=cfg.confidence, classes=cfg.classes,
         overlay_default=cfg.overlay_default,
@@ -648,6 +659,7 @@ async def start_timelapse(
     req: TimelapseStartRequest | None = None,
     ctx: AppContext = Depends(get_context),
 ) -> TimelapseInfo:
+    ctx.require_role("capture")
     import anyio
 
     if ctx.capture.configured_node.startswith(("http://", "https://")):
@@ -670,10 +682,7 @@ async def start_timelapse(
         analysis_cadence_seconds=req.analysis_cadence_seconds,
     )
     # Runs here, or on the storage node (which pulls this camera's stream).
-    try:
-        record = await anyio.to_thread.run_sync(ctx.capture.start_timelapse, camera_id, params)
-    except CaptureRoutingError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    record = await anyio.to_thread.run_sync(ctx.capture.start_timelapse, camera_id, params)
     if record is None:
         raise HTTPException(status_code=503, detail="camera unavailable")
     if isinstance(record, dict):
@@ -715,6 +724,7 @@ def stop_timelapse(tl_id: int, ctx: AppContext = Depends(get_context)) -> Timela
 @router.post("/timelapse/{tl_id}/encode", response_model=TimelapseInfo)
 def encode_timelapse(tl_id: int, ctx: AppContext = Depends(get_context)) -> TimelapseInfo:
     """(Re)encode a stopped or interrupted timelapse from its stored frames."""
+    ctx.require_role("storage")
     record = ctx.timelapse.encode(tl_id)
     if record is None:
         raise HTTPException(status_code=404, detail="timelapse not found")
@@ -728,6 +738,7 @@ def smooth_timelapse(
     ctx: AppContext = Depends(get_context),
 ) -> TimelapseInfo:
     """Post-process a timelapse into smooth motion (ffmpeg interpolation)."""
+    ctx.require_role("storage")
     from tailcam.timelapse.ffmpeg import ffmpeg_available
 
     if not ffmpeg_available():
@@ -759,14 +770,15 @@ def _postprocess_info(ctx: AppContext) -> PostprocessInfo:
 
     tl = ctx.config.timelapse
     ff_source = ffmpeg_source()
-    rife_ok = rife_available(tl.rife_path)
+    storage = ctx.has_role("storage")
+    rife_ok = storage and ctx.has_role("analysis") and rife_available(tl.rife_path)
     engines = [
         EngineInfo(
             id="ffmpeg",
             label="ffmpeg (minterpolate)",
-            available=ff_source != "missing",
+            available=storage and ff_source != "missing",
             source=ff_source,
-            version=ffmpeg_version(),
+            version=ffmpeg_version() if storage else None,
         ),
         EngineInfo(
             id="rife",
@@ -867,7 +879,9 @@ def _model_info(m) -> ModelInfo:
 def _training_info(ctx: AppContext) -> TrainingInfo:
     from tailcam.training.engine import engine_info
 
-    info = engine_info()
+    info: dict = engine_info() if ctx.has_role("training") else {
+        "available": False, "framework": "ultralytics", "version": None, "device": "disabled",
+    }
     tc = ctx.config.training
     return TrainingInfo(
         engine_available=info["available"],
@@ -875,7 +889,7 @@ def _training_info(ctx: AppContext) -> TrainingInfo:
         version=info["version"],
         device=info["device"],
         collecting=ctx.training.is_collecting(),
-        collect_enabled=tc.collect_enabled,
+        collect_enabled=tc.collect_enabled and ctx.has_role("training"),
         collect_interval_seconds=tc.collect_interval_seconds,
         auto_label=tc.auto_label,
         active_dataset_id=tc.active_dataset_id,
@@ -899,6 +913,7 @@ def update_collection(
     upd: CollectionUpdate, ctx: AppContext = Depends(get_context)
 ) -> TrainingInfo:
     """Toggle/configure continuous dataset collection from the camera feeds."""
+    ctx.require_role("training")
     tc = ctx.config.training
     if upd.interval_seconds is not None:
         tc.collect_interval_seconds = max(2.0, upd.interval_seconds)
@@ -926,6 +941,7 @@ def list_datasets(ctx: AppContext = Depends(get_context)) -> list[DatasetInfo]:
 
 @router.post("/datasets", response_model=DatasetInfo)
 def create_dataset(body: DatasetCreate, ctx: AppContext = Depends(get_context)) -> DatasetInfo:
+    ctx.require_role("training")
     record = ctx.training.create_dataset(body.name, body.note, body.task)
     ctx.config.save()
     return _dataset_info(ctx, record)
@@ -950,6 +966,7 @@ def delete_dataset(dataset_id: int, ctx: AppContext = Depends(get_context)) -> O
 @router.post("/datasets/{dataset_id}/import-events", response_model=DatasetInfo)
 def import_events(dataset_id: int, ctx: AppContext = Depends(get_context)) -> DatasetInfo:
     """Add existing motion-event snapshots to the dataset as labeled samples."""
+    ctx.require_role("training")
     d = ctx.store.get_dataset(dataset_id)
     if d is None:
         raise HTTPException(status_code=404, detail="dataset not found")
@@ -976,6 +993,7 @@ def list_samples(
 def relabel_sample(
     sample_id: int, body: SampleRelabel, ctx: AppContext = Depends(get_context)
 ) -> SampleInfo:
+    ctx.require_role("training")
     s = ctx.store.get_sample(sample_id)
     if s is None:
         raise HTTPException(status_code=404, detail="sample not found")
@@ -1013,6 +1031,7 @@ def set_sample_annotations(
 ) -> SampleAnnotations:
     """Replace a detection sample's bounding boxes (the annotation editor sends
     the full set on save)."""
+    ctx.require_role("training")
     stored = ctx.training.set_annotations(
         sample_id, [b.model_dump() for b in body.boxes]
     )
@@ -1031,6 +1050,7 @@ def list_models(ctx: AppContext = Depends(get_context)) -> list[ModelInfo]:
 @router.post("/models", response_model=ModelInfo)
 def register_model(body: ModelRegister, ctx: AppContext = Depends(get_context)) -> ModelInfo:
     """Register a bring-your-own model file (.pt) by path."""
+    ctx.require_role("analysis")
     record = ctx.training.register_byo(body.name, body.path, body.task)
     if record is None:
         raise HTTPException(status_code=400, detail="model file not found at that path")
@@ -1039,6 +1059,7 @@ def register_model(body: ModelRegister, ctx: AppContext = Depends(get_context)) 
 
 @router.post("/models/{model_id}/activate", response_model=ModelInfo)
 def activate_model(model_id: int, ctx: AppContext = Depends(get_context)) -> ModelInfo:
+    ctx.require_role("analysis")
     m = ctx.store.get_model(model_id)
     if m is None:
         raise HTTPException(status_code=404, detail="model not found")
@@ -1087,6 +1108,7 @@ def _run_info(r) -> TrainingRunInfo:
 @router.post("/training/runs", response_model=TrainingRunInfo)
 def start_run(body: TrainRequest, ctx: AppContext = Depends(get_context)) -> TrainingRunInfo:
     """Fine-tune a model on a dataset (needs the training engine installed)."""
+    ctx.require_role("training")
     from tailcam.training.engine import engine_available
 
     if not engine_available():
@@ -1142,6 +1164,9 @@ def system_info(ctx: AppContext = Depends(get_context)) -> SystemInfo:
         ram_gb=prof.total_ram_gb,
         cpu_count=prof.cpu_count,
         low_power=prof.low_power,
+        node_id=ctx.node_id,
+        node_name=ctx.config.node.name,
+        node_roles=sorted(ctx.active_roles),
     )
 
 
@@ -1185,7 +1210,10 @@ async def system_reload(ctx: AppContext = Depends(get_context)) -> list[CameraIn
 def _is_ollama(ctx: AppContext) -> bool:
     """Whether the active analyzer is the built-in Ollama provider (the only one
     that supports the model pull/list/load endpoints)."""
-    return ctx.config.ai.provider == "ollama" and hasattr(ctx.analyzer, "health")
+    return (
+        ctx.has_role("analysis") and ctx.config.ai.provider == "ollama"
+        and hasattr(ctx.analyzer, "health")
+    )
 
 
 async def _ai_info(ctx: AppContext) -> AIInfo:
@@ -1198,7 +1226,7 @@ async def _ai_info(ctx: AppContext) -> AIInfo:
     pipeline = await anyio.to_thread.run_sync(ctx.inference.describe)
     ai = ctx.config.ai
     return AIInfo(
-        enabled=ai.enabled,
+        enabled=ai.enabled and ctx.has_role("analysis"),
         reachable=reachable,
         model=ai.model,
         model_present=model is not None,
@@ -1253,6 +1281,7 @@ async def _ollama_models_info(ctx: AppContext) -> OllamaModelsInfo:
 async def ai_test(body: AITestRequest, ctx: AppContext = Depends(get_context)) -> AITestResult:
     """Analyze one live frame from a camera through the SAME pipeline motion
     events use — so users can validate their setup without waiting for motion."""
+    ctx.require_role("analysis")
     import anyio
 
     buffer = ctx.manager.get_buffer(body.camera_id)
@@ -1307,6 +1336,7 @@ async def ai_pull(
 ) -> AIPullStatus:
     """Start downloading a model into Ollama (runs in the background; poll
     GET /ai/pull for progress). Large vision models can take several minutes."""
+    ctx.require_role("analysis")
     import anyio
 
     if not _is_ollama(ctx):
@@ -1326,6 +1356,7 @@ async def ai_pull_status(ctx: AppContext = Depends(get_context)) -> AIPullStatus
 @router.post("/ai/load", response_model=AIInfo)
 async def ai_load(body: AIModelRequest, ctx: AppContext = Depends(get_context)) -> AIInfo:
     """Warm a model into Ollama's memory ('start' it) for fast first inference."""
+    ctx.require_role("analysis")
     import anyio
 
     if not _is_ollama(ctx):
@@ -1610,7 +1641,7 @@ def update_homekit(update: HomeKitUpdate, ctx: AppContext = Depends(get_context)
     if update.enabled is not None:
         cfg.enabled = update.enabled
     ctx.config.save()
-    if cfg.enabled:
+    if cfg.enabled and ctx.has_role("capture"):
         ctx.homekit.restart()
     else:
         ctx.homekit.stop()
@@ -1672,6 +1703,7 @@ async def _storage_nodes(ctx: AppContext, local: StorageInfo) -> list[StorageNod
         StorageNodeInfo(
             node_key="local", host=ctx.local_host, online=True, media_dir=local.media_dir,
             disk_total=local.disk_total, disk_free=local.disk_free, version=__version__,
+            storage_enabled=ctx.has_role("storage"),
         )
     ]
     peers = {p.key: p for p in await ctx.cluster.peers()}
@@ -1685,6 +1717,8 @@ async def _storage_nodes(ctx: AppContext, local: StorageInfo) -> list[StorageNod
                 disk_total=int(data.get("disk_total", 0) or 0),
                 disk_free=int(data.get("disk_free", 0) or 0),
                 version=peer.version,
+                storage_enabled=data.get("storage_enabled")
+                if isinstance(data.get("storage_enabled"), bool) else None,
             )
         )
     return nodes
@@ -1717,6 +1751,7 @@ def _storage_info(ctx: AppContext) -> StorageInfo:
         custom_dir=custom,
         is_default=(custom == ""),
         writable=writable,
+        storage_enabled=ctx.has_role("storage"),
         disk_total=total,
         disk_free=free,
         disk_used=used,

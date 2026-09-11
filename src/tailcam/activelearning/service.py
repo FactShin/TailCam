@@ -20,6 +20,7 @@ import copy
 import json
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -113,6 +114,9 @@ class ActiveLearningService:
         training,
         host: str,
         label_studio: LabelStudioService | None = None,
+        *,
+        role_check: Callable[[], None] | None = None,
+        analysis_check: Callable[[], None] | None = None,
     ) -> None:
         self._manager = manager
         self._store = store
@@ -122,6 +126,8 @@ class ActiveLearningService:
         self._analyzer = analyzer
         self._training = training  # TrainingService (owns the YOLO fine-tune path)
         self._host = host
+        self._role_check = role_check or (lambda: None)
+        self._analysis_check = analysis_check or (lambda: None)
         self.label_studio = label_studio or LabelStudioService(self._config)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -138,6 +144,8 @@ class ActiveLearningService:
         precondition fails (bad model, unreachable Label Studio, …) — nothing
         is left half-started.
         """
+        self._role_check()
+        self._analysis_check()
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 raise ValueError("active learning is already running")
@@ -384,6 +392,7 @@ class ActiveLearningService:
     def _apply_machine_labels(
         self, sample_id: int, annotations: list[FrameAnnotation]
     ) -> None:
+        self._role_check()
         ts = time.time()
         self._store.replace_annotations(
             sample_id,
@@ -405,6 +414,7 @@ class ActiveLearningService:
         decision: str,
         annotations: list[FrameAnnotation],
     ) -> DatasetSampleRecord | None:
+        self._role_check()
         from tailcam.streaming.encoder import encode_jpeg
 
         dataset_id = self._stats.dataset_id
@@ -438,6 +448,7 @@ class ActiveLearningService:
         return record
 
     def _write_thumb(self, image: np.ndarray, dataset_id: int, stem: str) -> Path | None:
+        self._role_check()
         from tailcam.streaming.encoder import encode_jpeg
 
         try:
@@ -456,6 +467,7 @@ class ActiveLearningService:
     def sync(self) -> dict:
         """Pull completed annotations from Label Studio and write them onto
         their samples. Returns {'completed', 'pending', 'dataset_version'}."""
+        self._role_check()
         cfg = self._config
         pending = self._store.list_review_items(status="pending")
         if not pending:
@@ -517,6 +529,7 @@ class ActiveLearningService:
         but report through the same TrainingRunRecord, so progress and errors
         land in the familiar place.
         """
+        self._role_check()
         cfg = self._config
         dataset_id = cfg.dataset_id
         if cfg.source.startswith("dataset:"):

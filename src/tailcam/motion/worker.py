@@ -17,9 +17,11 @@ from tailcam.ai.analyzer import FrameAnalyzer
 from tailcam.camera.frame import FrameBuffer, FrameConsumer
 from tailcam.config import MotionConfig
 from tailcam.logging_setup import get_logger
+from tailcam.media.capture_router import CaptureRoutingError
 from tailcam.media.recorder import RecordingService
 from tailcam.motion.detector import MotionDetector
 from tailcam.motion.events import EventLog
+from tailcam.node import RoleDisabledError
 
 if TYPE_CHECKING:
     from tailcam.media.capture_router import CaptureRouter
@@ -44,12 +46,14 @@ class MotionWorker:
         analyzer: FrameAnalyzer | None = None,
         notifier: NotificationService | None = None,
         reacquire: Callable[[], FrameBuffer | None] | None = None,
+        storage_enabled: Callable[[], bool] | None = None,
     ) -> None:
         self.camera_id = camera_id
         self.buffer = buffer
         # Follows the camera across a Restart (buffer swap). None in tests that
         # drive a single buffer directly.
         self._reacquire = reacquire
+        self._storage_enabled = storage_enabled or (lambda: True)
         self.config = config
         self._event_log = event_log
         self._recorder = recorder
@@ -70,21 +74,22 @@ class MotionWorker:
         label it with the vision model. Runs in its own thread — never blocks
         the detection loop, and tolerates any failure."""
         thumb_path: str | None = None
-        try:
-            stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
-            safe = self.camera_id.replace("/", "_")
-            thumb = paths.thumbnails_dir() / f"event_{safe}_{stamp}.jpg"
-            thumb.parent.mkdir(parents=True, exist_ok=True)
-            h, w = image.shape[:2]
-            scale = 320 / max(1, w)
-            small = cv2.resize(image, (320, max(1, int(h * scale))))
-            ok, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 75])
-            if ok:
-                thumb.write_bytes(buf.tobytes())
-                self._event_log.set_thumb(event_id, str(thumb))
-                thumb_path = str(thumb)
-        except Exception as exc:  # pragma: no cover - defensive
-            log.debug("event thumbnail failed: %s", exc)
+        if self._storage_enabled():
+            try:
+                stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
+                safe = self.camera_id.replace("/", "_")
+                thumb = paths.thumbnails_dir() / f"event_{safe}_{stamp}.jpg"
+                thumb.parent.mkdir(parents=True, exist_ok=True)
+                h, w = image.shape[:2]
+                scale = 320 / max(1, w)
+                small = cv2.resize(image, (320, max(1, int(h * scale))))
+                ok, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                if ok:
+                    thumb.write_bytes(buf.tobytes())
+                    self._event_log.set_thumb(event_id, str(thumb))
+                    thumb_path = str(thumb)
+            except Exception as exc:  # pragma: no cover - defensive
+                log.debug("event thumbnail failed: %s", exc)
         label = description = None
         confidence = None
         if self._analyzer and self._analyzer.enabled:
@@ -161,9 +166,14 @@ class MotionWorker:
                             daemon=True,
                         ).start()
                         if self.config.auto_record and self._recorder:
-                            recording_triggered = self._recorder.start(
-                                self.camera_id, trigger="motion"
-                            )
+                            try:
+                                recording_triggered = self._recorder.start(
+                                    self.camera_id, trigger="motion"
+                                )
+                            except (RoleDisabledError, CaptureRoutingError) as exc:
+                                # Keep detecting/logging motion when the chosen
+                                # storage node refuses work; never invent a clip.
+                                log.warning("motion recording unavailable: %s", exc)
                 elif self.active and (now - last_motion_ts) > self.config.cooldown_seconds:
                     self.active = False
                     recording_id = None

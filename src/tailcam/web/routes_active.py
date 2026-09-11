@@ -63,7 +63,9 @@ def _info(ctx: AppContext) -> ActiveLearningInfo:
         review_empty_frames=cfg.review_empty_frames,
         dataset_id=dataset_id,
         max_review_per_session=cfg.max_review_per_session,
-        platform=platform_summary(),
+        platform=platform_summary() if ctx.has_role("training") else {
+            "device": "disabled", "cuda": False, "mps": False,
+        },
         annotated_samples=annotated,
         dataset_version=version,
         training_ready=annotated >= 1,
@@ -118,6 +120,8 @@ def update_settings(
 @router.post("/start", response_model=ActiveLearningInfo)
 def start(ctx: AppContext = Depends(get_context)) -> ActiveLearningInfo:
     """Start the watch → pre-label → review loop with the saved settings."""
+    ctx.require_role("training")
+    ctx.require_role("analysis")
     try:
         ctx.active_learning.start()
     except LabelStudioError as exc:
@@ -136,6 +140,8 @@ def stop(ctx: AppContext = Depends(get_context)) -> ActiveLearningInfo:
 @router.get("/backends", response_model=list[LabelingBackendInfo])
 def labeling_backends(ctx: AppContext = Depends(get_context)) -> list[LabelingBackendInfo]:
     """Models that can watch + pre-label frames, with availability."""
+    if not ctx.has_role("training") or not ctx.has_role("analysis"):
+        return []
     infos = list_labeling_backends(ctx.store, ctx.detector, ctx.analyzer)
     return [LabelingBackendInfo(**vars(i)) for i in infos]
 
@@ -143,6 +149,8 @@ def labeling_backends(ctx: AppContext = Depends(get_context)) -> list[LabelingBa
 @router.get("/finetune-backends", response_model=list[FinetuneBackendInfo])
 def finetune_backends(ctx: AppContext = Depends(get_context)) -> list[FinetuneBackendInfo]:
     """Fine-tune targets, with what this machine supports (GPU/OS/packages)."""
+    if not ctx.has_role("training"):
+        return []
     infos = list_finetune_backends(ctx.store)
     return [FinetuneBackendInfo(**vars(i)) for i in infos]
 
@@ -150,6 +158,7 @@ def finetune_backends(ctx: AppContext = Depends(get_context)) -> list[FinetuneBa
 @router.post("/labelstudio/test", response_model=LabelStudioStatusInfo)
 def test_label_studio(ctx: AppContext = Depends(get_context)) -> LabelStudioStatusInfo:
     """Probe the configured Label Studio server + token."""
+    ctx.require_role("training")
     status = ctx.active_learning.label_studio.status()
     return LabelStudioStatusInfo(**vars(status))
 
@@ -158,6 +167,7 @@ def test_label_studio(ctx: AppContext = Depends(get_context)) -> LabelStudioStat
 def label_studio_projects(
     ctx: AppContext = Depends(get_context),
 ) -> list[LabelStudioProjectInfo]:
+    ctx.require_role("training")
     try:
         projects = ctx.active_learning.label_studio.list_projects()
     except LabelStudioError as exc:
@@ -168,6 +178,7 @@ def label_studio_projects(
 @router.post("/sync", response_model=ActiveLearningSyncResult)
 def sync_annotations(ctx: AppContext = Depends(get_context)) -> ActiveLearningSyncResult:
     """Pull completed Label Studio annotations back onto their samples."""
+    ctx.require_role("training")
     try:
         result = ctx.active_learning.sync()
     except LabelStudioError as exc:
@@ -180,6 +191,7 @@ def start_finetune(
     body: ActiveLearningTrainRequest, ctx: AppContext = Depends(get_context)
 ) -> TrainingRunInfo:
     """Fine-tune the configured target model on the accumulated dataset."""
+    ctx.require_role("training")
     try:
         run = ctx.active_learning.train(epochs=body.epochs)
     except ValueError as exc:

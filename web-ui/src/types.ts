@@ -61,6 +61,26 @@ export interface HostInfo {
   version: string | null;
   camera_count: number;
   proxy_prefix: string;
+  // Older peers do not advertise node metadata. Missing roles are unknown,
+  // whereas an empty list explicitly means a hub with no local workloads.
+  node_id?: string | null;
+  node_name?: string | null;
+  node_roles?: string[] | null;
+}
+
+export type NodeRole = "capture" | "storage" | "analysis" | "training";
+
+export interface NodeConfig {
+  node_id: string;
+  name: string;
+  configured_roles: string[];
+  active_roles: string[];
+  restart_required: boolean;
+}
+
+export interface NodeConfigUpdate {
+  name?: string;
+  roles?: string[];
 }
 
 export interface CameraSettingsUpdate {
@@ -190,6 +210,7 @@ export interface StorageNodeInfo {
   disk_total: number;
   disk_free: number;
   version: string | null;
+  storage_enabled?: boolean | null;
 }
 
 export interface FsEntry {
@@ -215,6 +236,7 @@ export interface StorageInfo {
   custom_dir: string;
   is_default: boolean;
   writable: boolean;
+  storage_enabled?: boolean | null;
   disk_total: number;
   disk_free: number;
   disk_used: number;
@@ -651,6 +673,8 @@ export interface PostprocessInfo {
 
 export interface TimelapseCapabilities {
   host: string;
+  capture_enabled?: boolean;
+  capture_reason?: string;
   printer_analyzer: {
     enabled: boolean;
     endpoint: string;
@@ -672,6 +696,9 @@ export interface TimelapsePreflight {
 export interface SystemInfo {
   version: string;
   host: string;
+  node_id?: string | null;
+  node_name?: string | null;
+  node_roles?: string[] | null;
   tailscale_installed: boolean;
   tailscale_running: boolean;
   access_url: string;

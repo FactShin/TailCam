@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:http";
 import { expect, test } from "@playwright/test";
-import type { CameraInfo, MediaInfo } from "../src/types";
+import type { CameraInfo, MediaInfo, NodeConfig, StorageInfo, SystemInfo } from "../src/types";
 
 const camera: CameraInfo = {
   id: "/dev/video0",
@@ -40,12 +40,52 @@ const media: MediaInfo = {
 let backend: Server;
 const requested = new Set<string>();
 const probes = new Map<string, number>();
+const allRoles = ["capture", "storage", "analysis", "training"];
+let nodeConfig: NodeConfig;
+let configReadStatus = 200;
+let configWriteStatus = 200;
+let visibleCameras: CameraInfo[] = [];
+let lastNodePatch: unknown;
+let fleetRefreshes = 0;
+let storageFixture: StorageInfo | undefined;
 test.beforeAll(async () => {
   backend = createServer((req, res) => {
     const path = new URL(req.url!, "http://127.0.0.1:4174").pathname;
     requested.add(path);
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Content-Type", "application/json");
+    if (path === "/api/v1/node/config") {
+      if (req.method === "PATCH") {
+        let body = "";
+        req.on("data", (chunk) => { body += chunk; });
+        req.on("end", () => {
+          lastNodePatch = JSON.parse(body);
+          if (configWriteStatus !== 200) {
+            res.writeHead(configWriteStatus).end(JSON.stringify({ detail: "admin role required" }));
+            return;
+          }
+          const update = lastNodePatch as { name?: string; roles?: string[] };
+          const configuredRoles = update.roles ?? nodeConfig.configured_roles;
+          nodeConfig = {
+            ...nodeConfig, name: update.name ?? nodeConfig.name, configured_roles: configuredRoles,
+            restart_required: JSON.stringify([...configuredRoles].sort()) !== JSON.stringify([...nodeConfig.active_roles].sort()),
+          };
+          res.end(JSON.stringify(nodeConfig));
+        });
+        return;
+      }
+      if (configReadStatus !== 200) {
+        res.writeHead(configReadStatus).end(JSON.stringify({ detail: "Node configuration unavailable" }));
+        return;
+      }
+      res.end(JSON.stringify(nodeConfig));
+      return;
+    }
+    if (path === "/api/cameras/refresh" && req.method === "POST") {
+      fleetRefreshes += 1;
+      res.end(JSON.stringify(visibleCameras));
+      return;
+    }
     if (req.method !== "GET") {
       res.writeHead(405).end(JSON.stringify({ detail: "Read-only browser fixture" }));
       return;
@@ -57,11 +97,24 @@ test.beforeAll(async () => {
       return;
     }
     const fixtures: Record<string, unknown> = {
-      "/api/cameras": [camera],
+      ...(storageFixture ? { "/api/storage": storageFixture } : {}),
+      "/api/cameras": visibleCameras,
       "/api/hosts": [{
+        host: "browser-hub", node_key: "local", kind: "local", online: true,
+        version: "1.9.0", camera_count: 0, proxy_prefix: "",
+        node_id: nodeConfig.node_id, node_name: nodeConfig.name, node_roles: nodeConfig.active_roles,
+      }, {
         host: camera.host, node_key: "capture", kind: "peer", online: true,
         version: "1.8.6", camera_count: 1, proxy_prefix: camera.proxy_prefix,
       }],
+      "/api/system": {
+        version: "1.9.0", host: "browser-hub", node_id: nodeConfig.node_id,
+        node_name: nodeConfig.name, node_roles: nodeConfig.active_roles,
+        tailscale_installed: false, tailscale_running: false,
+        access_url: "http://localhost:4173", local_url: "http://localhost:4173",
+        media_bytes: 0, hidden_count: 0, host_model: "Browser fixture",
+        ram_gb: 8, cpu_count: 4, low_power: false,
+      } satisfies SystemInfo,
       "/api/update": { current: "1.8.6", latest: "1.8.6", available: false },
       "/api/media": [],
       "/api/events": [],
@@ -93,7 +146,112 @@ test.afterAll(async () => {
 test.beforeEach(async ({ page }) => {
   requested.clear();
   probes.clear();
+  nodeConfig = {
+    node_id: "49ba90ab-a97a-4c6d-9ac8-1cfc2c48c7a9", name: "Studio",
+    configured_roles: [...allRoles], active_roles: [...allRoles], restart_required: false,
+  };
+  configReadStatus = 200;
+  configWriteStatus = 200;
+  visibleCameras = [camera];
+  lastNodePatch = undefined;
+  fleetRefreshes = 0;
+  storageFixture = undefined;
   await page.addInitScript(() => sessionStorage.setItem("tailcam.booted", "1"));
+});
+
+test("mobile node purpose saves future roles without claiming active capture stopped", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/settings");
+  const panel = page.getByRole("region", { name: "Node purpose", exact: true });
+  await expect(panel.getByLabel("Device name")).toHaveValue("Studio");
+  await panel.getByRole("checkbox", { name: "Training", exact: true }).uncheck();
+  await expect(panel.getByLabel("Purpose preset")).toHaveValue("custom");
+  await panel.getByRole("button", { name: "Discard changes", exact: true }).click();
+  await expect(panel.getByRole("checkbox", { name: "Training", exact: true })).toBeChecked();
+  await panel.getByLabel("Device name").fill("Living room hub");
+  await panel.getByLabel("Purpose preset").selectOption("hub");
+  await expect(panel.getByRole("checkbox", { name: "Camera capture", exact: true })).not.toBeChecked();
+  await panel.getByRole("button", { name: "Save purpose", exact: true }).click();
+  await expect(panel.getByRole("status")).toContainText("Restart required");
+  await expect(panel.locator(".node-purpose-current")).toContainText("Camera capture");
+  await expect(panel.getByRole("status")).toContainText("Saved for the next start: Hub · view and control");
+  expect(lastNodePatch).toEqual({ name: "Living room hub", roles: [] });
+  await panel.getByText("Persistent node ID", { exact: true }).click();
+  await expect(panel.getByText(nodeConfig.node_id, { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+  await page.reload();
+  await expect(panel.getByLabel("Device name")).toHaveValue("Living room hub");
+  await expect(panel.getByLabel("Purpose preset")).toHaveValue("hub");
+  await expect(panel.getByRole("status")).toContainText("Restart required");
+  await expect(page.getByText("Roles not reported", { exact: true })).toBeVisible();
+  await panel.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("node-purpose-mobile.png") });
+  await panel.getByRole("status").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("node-purpose-mobile-restart.png") });
+});
+
+test("node purpose preserves rejected edits and recovers from a read failure", async ({ page }, testInfo) => {
+  configReadStatus = 503;
+  await page.goto("/settings");
+  const panel = page.getByRole("region", { name: "Node purpose", exact: true });
+  await expect(panel.getByRole("alert")).toContainText("Could not load");
+  configReadStatus = 200;
+  await panel.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(panel.getByLabel("Device name")).toHaveValue("Studio");
+  configWriteStatus = 403;
+  await panel.getByLabel("Purpose preset").selectOption("storage");
+  await panel.getByRole("button", { name: "Save purpose", exact: true }).click();
+  await expect(panel.getByRole("alert")).toContainText("Admin access is required");
+  await expect(panel.getByLabel("Purpose preset")).toHaveValue("storage");
+  expect(nodeConfig.configured_roles).toEqual(allRoles);
+  configWriteStatus = 200;
+  await panel.getByRole("button", { name: "Save purpose", exact: true }).click();
+  await expect(panel.getByRole("status")).toContainText("Restart required");
+  expect(nodeConfig.configured_roles).toEqual(["storage"]);
+  expect(lastNodePatch).toEqual({ roles: ["storage"] });
+  expect(nodeConfig.name).toBe("Studio");
+  await panel.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("node-purpose-desktop.png") });
+});
+
+test("hub empty state refreshes the fleet and keeps peer camera navigation", async ({ page }) => {
+  nodeConfig.active_roles = [];
+  nodeConfig.configured_roles = [];
+  visibleCameras = [];
+  await page.goto("/");
+  await expect(page.getByText("This device does not capture cameras", { exact: true })).toBeVisible();
+  await expect(page.getByText("Plug in a USB camera", { exact: false })).toHaveCount(0);
+  await page.getByRole("button", { name: "Refresh fleet", exact: true }).first().click();
+  await expect.poll(() => fleetRefreshes).toBe(1);
+  visibleCameras = [camera];
+  await page.getByRole("button", { name: "Refresh fleet", exact: true }).first().click();
+  await expect(page.getByText(camera.name, { exact: true })).toBeVisible();
+  await page.getByText(camera.name, { exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/camera/${camera.host}/`));
+  await expect(page.getByRole("heading", { name: camera.name, exact: true })).toBeVisible();
+});
+
+test("storage picker explains disabled roles while keeping older peers compatible", async ({ page }) => {
+  storageFixture = {
+    media_dir: "/fixture/media", custom_dir: "", is_default: true,
+    writable: true, storage_enabled: false, disk_total: 1000, disk_free: 900,
+    disk_used: 100, media_bytes: 0, media_count: 0, timelapse_bytes: 0,
+    node: "", node_online: true, node_error: "", low_power_host: false,
+    auto_record: true, record_tail_seconds: 5, retention_enabled: false,
+    max_gb: 10, max_age_days: 30,
+    nodes: [
+      { node_key: "local", host: "browser-hub", online: true, storage_enabled: false, media_dir: "/fixture/media", disk_total: 1000, disk_free: 900, version: "1.9.0" },
+      { node_key: "compute", host: "compute-worker", online: true, storage_enabled: false, media_dir: "/fixture/media", disk_total: 1000, disk_free: 900, version: "1.9.0" },
+      { node_key: "legacy", host: "older-storage", online: true, media_dir: "/fixture/media", disk_total: 1000, disk_free: 900, version: "1.8.6" },
+    ],
+  };
+  await page.goto("/settings");
+  await expect(page.getByRole("button", { name: /browser-hub \(this device\) Storage role off/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /compute-worker Storage role off/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /older-storage.*free/ })).toBeEnabled();
+  await expect(page.getByText("The Storage role is disabled here.", { exact: false })).toBeVisible();
+  await expect(page.getByText("not writable", { exact: true })).toHaveCount(0);
 });
 
 test("direct camera and docs routes preserve encoded IDs and browser history", async ({ page }) => {

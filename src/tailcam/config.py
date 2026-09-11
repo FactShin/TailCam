@@ -23,6 +23,17 @@ else:  # pragma: no cover - exercised only on 3.10
 import tomli_w
 
 from tailcam import paths
+from tailcam.node import ROLE_NAMES, NodeConfigError, validate_node_name, validate_roles
+
+
+@dataclass
+class NodeConfig:
+    name: str = ""
+    roles: list[str] = field(default_factory=lambda: list(ROLE_NAMES))
+
+    def __post_init__(self) -> None:
+        self.name = validate_node_name(self.name)
+        self.roles = validate_roles(self.roles)
 
 
 @dataclass
@@ -367,6 +378,7 @@ def _section(dc: type[_T], raw: dict[str, Any], key: str) -> _T:
 
 @dataclass
 class AppConfig:
+    node: NodeConfig = field(default_factory=NodeConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
     stream: StreamConfig = field(default_factory=StreamConfig)
     motion: MotionConfig = field(default_factory=MotionConfig)
@@ -423,18 +435,14 @@ class AppConfig:
                     raw = tomllib.load(fh)
                 config = cls.from_dict(raw)
             except (tomllib.TOMLDecodeError, OSError, TypeError, ValueError) as exc:
-                # A malformed/hand-edited config must NOT brick every command or
-                # crash-loop the background service. Back the bad file up and run on
-                # defaults; the user can fix it and `tailcam restart`.
-                logging.getLogger("tailcam.config").error(
-                    "Invalid config at %s (%s). Using defaults; bad file saved as %s.bad",
-                    cfg_path, exc, cfg_path.name,
-                )
-                try:
-                    cfg_path.replace(cfg_path.with_suffix(cfg_path.suffix + ".bad"))
-                except OSError:
-                    pass
-                config = cls()
+                # A syntax error can hide the node's intended workload roles.
+                # Default recovery would silently turn a hub into a capture /
+                # storage / compute node. Preserve the original file and stop.
+                raise NodeConfigError(
+                    f"Invalid configuration at {cfg_path}: {exc}. "
+                    "The file was preserved; fix it with `tailcam config --edit` "
+                    "before restarting. No default workloads were enabled."
+                ) from exc
         # Loading config is the single choke point every entry path goes
         # through (server, CLI, MCP), so apply the custom media location here —
         # before anything computes or creates media paths.
@@ -443,7 +451,11 @@ class AppConfig:
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> AppConfig:
+        node_raw = raw.get("node", {})
+        if not isinstance(node_raw, dict) or set(node_raw) - {"name", "roles"}:
+            raise NodeConfigError("[node] accepts only name and roles")
         config = cls(
+            node=NodeConfig(**node_raw),
             server=_section(ServerConfig, raw, "server"),
             stream=_section(StreamConfig, raw, "stream"),
             motion=_section(MotionConfig, raw, "motion"),
@@ -489,6 +501,7 @@ class AppConfig:
         return {
             # Top-level scalars must precede tables in TOML; keep this first.
             "config_version": _CONFIG_VERSION,
+            "node": asdict(NodeConfig(name=self.node.name, roles=self.node.roles)),
             "server": asdict(self.server),
             "stream": asdict(self.stream),
             "motion": asdict(self.motion),

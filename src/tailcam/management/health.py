@@ -71,7 +71,7 @@ class NodeHealthService:
         issues: list[NodeIssue] = []
         server_port = ctx.config.server.port
         tailscale = ctx.tailscale.status()
-        cameras = ctx.manager.list()
+        cameras = ctx.manager.list() if ctx.has_role("capture") else []
         camera_statuses = [ctx.manager.status(cam.descriptor.id) for cam in cameras]
         camera_online = sum(1 for status in camera_statuses if status == CameraStatus.ONLINE)
         camera_degraded = sum(1 for status in camera_statuses if status == CameraStatus.DEGRADED)
@@ -123,9 +123,13 @@ class NodeHealthService:
                 )
             )
 
-        ai_reachable, ai_model_present_name = ctx.analyzer.health()
+        analysis_active = ctx.has_role("analysis")
+        ai_enabled = analysis_active and ctx.config.ai.enabled
+        ai_reachable, ai_model_present_name = (
+            ctx.analyzer.health() if analysis_active else (False, None)
+        )
         ai_model_present = bool(ai_model_present_name)
-        if ctx.config.ai.enabled and not ai_reachable:
+        if ai_enabled and not ai_reachable:
             issues.append(
                 NodeIssue(
                     code="ai.unreachable",
@@ -134,7 +138,7 @@ class NodeHealthService:
                     detail=ctx.config.ai.base_url,
                 )
             )
-        elif ctx.config.ai.enabled and not ai_model_present:
+        elif ai_enabled and not ai_model_present:
             issues.append(
                 NodeIssue(
                     code="ai.model_missing",
@@ -176,7 +180,7 @@ class NodeHealthService:
             update_current=current,
             update_latest=latest,
             update_available=newer,
-            ai_enabled=ctx.config.ai.enabled,
+            ai_enabled=ai_enabled,
             ai_reachable=ai_reachable,
             ai_model=ctx.config.ai.model,
             ai_model_present=ai_model_present,

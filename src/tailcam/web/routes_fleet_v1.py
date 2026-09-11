@@ -42,7 +42,7 @@ async def node_capabilities(
     principal: RequestPrincipal = Depends(node_routes.get_principal),
 ) -> NodeCapabilitiesInfo:
     if node_key == "local":
-        return node_routes.capabilities(principal)
+        return node_routes.capabilities(principal, ctx)
     data = await _relay_json(ctx, node_key, request, "GET", "/api/v1/node/capabilities")
     return NodeCapabilitiesInfo.model_validate(data)
 

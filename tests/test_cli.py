@@ -1,3 +1,4 @@
+import pytest
 from typer.testing import CliRunner
 
 from tailcam.cli import app
@@ -37,7 +38,7 @@ def test_version(isolated_env):
     assert result.exit_code == 0
 
 
-def test_malformed_config_falls_back_to_defaults(isolated_env, tmp_path):
+def test_malformed_config_stops_without_enabling_default_workloads(isolated_env, tmp_path):
     from tailcam import paths
     from tailcam.config import AppConfig
 
@@ -45,7 +46,8 @@ def test_malformed_config_falls_back_to_defaults(isolated_env, tmp_path):
     cfg.parent.mkdir(parents=True, exist_ok=True)
     cfg.write_text('[ai]\nbase_url = "http://oops\n')  # unterminated string
 
-    loaded = AppConfig.load()  # must NOT raise
-    assert loaded.server.port == 8088  # defaults
-    assert cfg.with_suffix(".toml.bad").exists()  # bad file preserved
-    assert not cfg.exists()
+    original = cfg.read_bytes()
+    with pytest.raises(ValueError, match="No default workloads were enabled"):
+        AppConfig.load()
+    assert cfg.read_bytes() == original
+    assert not cfg.with_suffix(".toml.bad").exists()

@@ -56,13 +56,14 @@ export function Dashboard() {
   const cameras = camerasQ.data ?? [];
   const hosts = hostsQ.data ?? [];
   const online = cameras.filter((c) => c.status === "online").length;
+  const captureDisabled = Array.isArray(system?.node_roles) && !system.node_roles.includes("capture");
 
   const doRefresh = async () => {
     try {
       await refresh.mutateAsync();
-      toast.ok("Devices re-scanned");
+      toast.ok(captureDisabled ? "Fleet refreshed" : "Devices re-scanned");
     } catch {
-      toast.err("Re-scan failed");
+      toast.err(captureDisabled ? "Fleet refresh failed" : "Re-scan failed");
     }
   };
 
@@ -140,7 +141,7 @@ export function Dashboard() {
           </p>
         </div>
         <div className="head-actions">
-          {system && system.hidden_count > 0 && (
+          {system && system.hidden_count > 0 && !captureDisabled && (
             <Button
               variant="ghost"
               onClick={async () => {
@@ -165,7 +166,7 @@ export function Dashboard() {
             onClick={doRefresh}
             disabled={refresh.isPending}
           >
-            {refresh.isPending ? "Scanning…" : "Re-scan"}
+            {refresh.isPending ? (captureDisabled ? "Refreshing…" : "Scanning…") : (captureDisabled ? "Refresh fleet" : "Re-scan")}
           </Button>
         </div>
       </div>
@@ -175,9 +176,14 @@ export function Dashboard() {
       {cameras.length === 0 ? (
         <div className="empty">
           <div className="empty-ic"><IconCamera size={40} /></div>
-          <div className="empty-title">No cameras found</div>
-          <div className="empty-sub">Plug in a USB camera on any TailCam device on your tailnet, then re-scan.</div>
-          <Button variant="primary" icon={<IconRefresh size={16} />} onClick={doRefresh}>Refresh devices</Button>
+          <div className="empty-title">{captureDisabled ? "This device does not capture cameras" : "No cameras found"}</div>
+          <div className="empty-sub">
+            {captureDisabled
+              ? "Camera capture is off here. Cameras from other TailCam devices appear when those devices are connected. Change this device’s purpose in Settings to capture locally."
+              : "Plug in a USB camera on any TailCam device on your tailnet, then re-scan."}
+          </div>
+          <Button variant="primary" icon={<IconRefresh size={16} />} disabled={refresh.isPending} onClick={doRefresh}>{captureDisabled ? "Refresh fleet" : "Refresh devices"}</Button>
+          {captureDisabled && <Button onClick={() => navigate("/settings")}>Node purpose settings</Button>}
         </div>
       ) : (
         <div className="dash-cols has-feed">

@@ -93,6 +93,10 @@ class CameraManager:
     def __init__(self, store: Store, config: AppConfig | None = None) -> None:
         self._store = store
         self._config = config
+        # Role changes take effect on restart. Keep this decision independent
+        # of live configuration edits so lazy stream requests cannot reopen a
+        # camera on a node started without capture.
+        self._capture_enabled = config is None or "capture" in config.node.roles
         self._cameras: dict[str, ManagedCamera] = {}
         self._lock = threading.RLock()
 
@@ -101,6 +105,8 @@ class CameraManager:
 
     def discover(self) -> list[ManagedCamera]:
         """Re-run discovery and merge with persisted settings/names."""
+        if not self._capture_enabled:
+            return []
         with self._lock:
             hidden = self._hidden()
             for descriptor in cam_enumerate.discover():
@@ -123,15 +129,21 @@ class CameraManager:
             return list(self._cameras.values())
 
     def list(self) -> list[ManagedCamera]:
+        if not self._capture_enabled:
+            return []
         with self._lock:
             return list(self._cameras.values())
 
     def get(self, camera_id: str) -> ManagedCamera | None:
+        if not self._capture_enabled:
+            return None
         with self._lock:
             return self._cameras.get(camera_id)
 
     def get_buffer(self, camera_id: str) -> FrameBuffer | None:
         """Lazily start the camera's worker and return its frame buffer."""
+        if not self._capture_enabled:
+            return None
         with self._lock:
             cam = self._cameras.get(camera_id)
             if cam is None:
@@ -151,6 +163,8 @@ class CameraManager:
         "offline" camera, but only a stream request would start the worker
         that brings it online.
         """
+        if not self._capture_enabled:
+            return
         with self._lock:
             ids = list(self._cameras)
         for camera_id in ids:
@@ -158,6 +172,8 @@ class CameraManager:
 
     def restart(self, camera_id: str) -> bool:
         """Stop and re-create a camera's capture worker (recover a stuck feed)."""
+        if not self._capture_enabled:
+            return False
         with self._lock:
             cam = self._cameras.get(camera_id)
             if cam is None:

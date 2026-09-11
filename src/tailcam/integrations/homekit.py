@@ -231,6 +231,8 @@ class HomeKitBridge:
 
     # -- lifecycle ---------------------------------------------------------
     def start(self) -> None:
+        if not self._ctx.has_role("capture"):
+            return
         with self._lock:
             if self.running or not self._cfg.enabled or not self.available():
                 return

@@ -15,6 +15,7 @@ def main():
     parser.add_argument("--peer", default="")
     parser.add_argument("--storage", default="")
     parser.add_argument("--ai", default="")
+    parser.add_argument("--roles", default=None, help="Comma-separated roles; empty means hub")
     args = parser.parse_args()
     args.root.mkdir(parents=True, exist_ok=True)
     if args.name == "mock-ai":
@@ -55,6 +56,8 @@ def main():
     from tailcam.web.app import create_app
 
     config = AppConfig()
+    if args.roles is not None:
+        config.node.roles = [role.strip() for role in args.roles.split(",") if role.strip()]
     config.server.port = args.port
     config.tailscale.auto_serve = False
     config.peers.auto_discover = False

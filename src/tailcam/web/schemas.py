@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from tailcam.node import validate_node_name, validate_roles
 
 
 class TransformModel(BaseModel):
@@ -99,6 +101,9 @@ class HostInfo(BaseModel):
     version: str | None = None
     camera_count: int = 0
     proxy_prefix: str = ""
+    node_id: str | None = None
+    node_name: str | None = None
+    node_roles: list[str] | None = None
 
 
 class MediaInfo(BaseModel):
@@ -341,9 +346,11 @@ class StorageNodeInfo(BaseModel):
     disk_total: int = 0
     disk_free: int = 0
     version: str | None = None
+    storage_enabled: bool | None = None
 
 
 class StorageInfo(BaseModel):
+    storage_enabled: bool | None = None
     media_dir: str  # resolved absolute path media is written to
     custom_dir: str = ""  # configured custom path ("" = app default)
     is_default: bool = True
@@ -544,6 +551,8 @@ class PrinterAnalyzerInfo(BaseModel):
 
 class TimelapseCapabilities(BaseModel):
     host: str
+    capture_enabled: bool = True
+    capture_reason: str = ""
     printer_analyzer: PrinterAnalyzerInfo
     postprocess: PostprocessInfo
 
@@ -869,6 +878,34 @@ class SystemInfo(BaseModel):
     ram_gb: float = 0.0
     cpu_count: int = 0
     low_power: bool = False
+    node_id: str | None = None
+    node_name: str | None = None
+    node_roles: list[str] | None = None
+
+
+class NodeConfigInfo(BaseModel):
+    node_id: str
+    name: str
+    configured_roles: list[str]
+    active_roles: list[str]
+    restart_required: bool
+
+
+class NodeConfigUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    name: str = ""
+    roles: list[str] = Field(default_factory=list)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def valid_name(cls, value: object) -> str:
+        return validate_node_name(value)
+
+    @field_validator("roles", mode="before")
+    @classmethod
+    def valid_roles(cls, value: object) -> list[str]:
+        return validate_roles(value)
 
 
 class UpdateInfo(BaseModel):
@@ -897,6 +934,9 @@ class NodeCapabilitiesInfo(BaseModel):
     capabilities: list[str]
     actions: list[str]
     principal: PrincipalInfo
+    node_id: str | None = None
+    node_name: str | None = None
+    node_roles: list[str] | None = None
 
 
 class NodeHealthInfo(BaseModel):

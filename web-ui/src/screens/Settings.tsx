@@ -3,12 +3,14 @@ import { useState } from "react";
 import { useAi, useCameras, useHosts, useSystem } from "../api/hooks";
 import { IntegrationsPanel } from "../components/IntegrationsPanel";
 import { NotificationsSettings } from "../components/NotificationsSettings";
+import { NodePurposePanel } from "../components/NodePurposePanel";
 import { StoragePanel } from "../components/StoragePanel";
 import { StreamingPanel } from "../components/StreamingPanel";
 import { useToast } from "../components/toast";
 import { IconCheck, IconCopy, IconDevice, IconInfo, IconServer, IconWifi, IconWifiOff } from "../icons";
 import { copyToClipboard } from "../lib/clipboard";
 import { fmtBytes } from "../lib/format";
+import { nodeRoleSummary } from "../lib/nodeRoles";
 
 export function Settings() {
   const sys = useSystem().data;
@@ -43,10 +45,12 @@ export function Settings() {
       </div>
 
       <div className="settings-grid">
+        <NodePurposePanel />
         <div className="panel">
           <div className="panel-title"><IconInfo size={16} /> System</div>
           <div className="kv"><span className="kv-k">Version</span><span className="kv-v mono">TailCam {sys.version}</span></div>
-          <div className="kv"><span className="kv-k">This device</span><span className="kv-v mono">{sys.host}</span></div>
+          <div className="kv"><span className="kv-k">This device</span><span className="kv-v mono">{sys.node_name || sys.host}</span></div>
+          {sys.node_name && sys.node_name !== sys.host && <div className="kv"><span className="kv-k">Hostname</span><span className="kv-v mono">{sys.host}</span></div>}
           <div className="kv">
             <span className="kv-k">Hardware</span>
             <span className="kv-v mono">
@@ -68,8 +72,12 @@ export function Settings() {
           <div className="panel-title"><IconServer size={16} /> Tailnet devices</div>
           {hosts.length === 0 && <div className="kv"><span className="kv-v mono">No nodes discovered.</span></div>}
           {hosts.map((h) => (
-            <div className="kv" key={h.host}>
-              <span className="kv-k">{h.host}{h.kind === "local" ? " (this device)" : ""}</span>
+            <div className="kv node-device" key={h.node_key}>
+              <span className="kv-k node-device-detail">
+                <span>{h.node_name || h.host}{h.kind === "local" ? " (this device)" : ""}</span>
+                {h.node_name && h.node_name !== h.host && <span className="mono">{h.host}</span>}
+                <span className="node-device-roles">{nodeRoleSummary(h.node_roles)}</span>
+              </span>
               <span className="kv-v">
                 <span className={`badge ${h.online ? "badge-ok" : "badge-err"}`}>
                   <span className="pill-dot" style={{ background: h.online ? "var(--ok)" : "var(--err)" }} />

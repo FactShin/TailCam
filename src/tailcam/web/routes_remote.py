@@ -73,6 +73,7 @@ async def remote_recording_start(
     body: RemoteRecordingStart,
     ctx: AppContext = Depends(get_context),
 ) -> OkResponse:
+    ctx.require_role("storage")
     await _source_base(ctx, source_key)
     key = _session_key(source_key, camera_id)
     buffer = ctx.remote_feeds.get_buffer(source_key, camera_id, body.fps)
@@ -124,12 +125,17 @@ async def remote_timelapse_start(
     body: RemoteTimelapseStart,
     ctx: AppContext = Depends(get_context),
 ) -> TimelapseInfo:
+    ctx.require_role("storage")
     _check_camera_id(camera_id)
     await _source_base(ctx, source_key)
     analysis_enabled = (
         ctx.config.timelapse.analysis_enabled
         if body.analysis_enabled is None else body.analysis_enabled
     )
+    smooth = ctx.config.timelapse.auto_smooth if body.auto_smooth is None else body.auto_smooth
+    engine = body.smooth_engine or ctx.config.timelapse.smooth_engine
+    if analysis_enabled or (smooth and engine == "rife"):
+        ctx.require_role("analysis")
     if analysis_enabled and not ctx.printer_analyzer.config.enabled:
         raise HTTPException(
             status_code=409,

@@ -7,6 +7,7 @@ import json
 import threading
 import time
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -59,15 +60,20 @@ def coerce_printer_analysis(data: object) -> PrinterAnalysis | None:
 
 
 class PrinterAnalyzer:
-    def __init__(self, config: AIConfig) -> None:
+    def __init__(
+        self, config: AIConfig, *, role_enabled: Callable[[], bool] | None = None
+    ) -> None:
         self.config = config
+        self._role_enabled = role_enabled or (lambda: True)
 
     def analyze_path(self, path: Path) -> PrinterAnalysis | None:
+        if not self._role_enabled():
+            return None
         image = cv2.imread(str(path))
         return self.analyze(image) if image is not None else None
 
     def analyze(self, image: np.ndarray) -> PrinterAnalysis | None:
-        if not self.config.enabled:
+        if not self._role_enabled() or not self.config.enabled:
             return None
         h, w = image.shape[:2]
         if w > 1024:
@@ -108,21 +114,27 @@ class TimelapseAnalysisQueue:
     unbounded backlog of stale frames during a long print.
     """
 
-    def __init__(self, store: Store, analyzer: _Analyzer) -> None:
+    def __init__(
+        self, store: Store, analyzer: _Analyzer, *, role_check: Callable[[], None] | None = None
+    ) -> None:
         self._store = store
         self._analyzer = analyzer
+        self._role_check = role_check or (lambda: None)
         self._pending: OrderedDict[int, tuple[int, int, Path]] = OrderedDict()
         self._condition = threading.Condition()
         self._closed = False
-        self._thread = threading.Thread(
-            target=self._run, name="timelapse-printer-analysis", daemon=True
-        )
-        self._thread.start()
+        self._thread: threading.Thread | None = None
 
     def submit(self, timelapse_id: int, frame_number: int, evidence_path: Path) -> None:
+        self._role_check()
         with self._condition:
             if self._closed:
                 return
+            if self._thread is None:
+                self._thread = threading.Thread(
+                    target=self._run, name="timelapse-printer-analysis", daemon=True
+                )
+                self._thread.start()
             self._pending[timelapse_id] = (timelapse_id, frame_number, evidence_path)
             self._pending.move_to_end(timelapse_id)
             self._condition.notify()
@@ -131,7 +143,8 @@ class TimelapseAnalysisQueue:
         with self._condition:
             self._closed = True
             self._condition.notify()
-        self._thread.join(timeout=2)
+        if self._thread is not None:
+            self._thread.join(timeout=2)
 
     def _run(self) -> None:
         while True:

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -106,8 +107,11 @@ class BuiltinDetector:
     serialized behind a lock (cv2.dnn nets are not thread-safe).
     """
 
-    def __init__(self, config: DetectionConfig) -> None:
+    def __init__(
+        self, config: DetectionConfig, *, role_enabled: Callable[[], bool] | None = None
+    ) -> None:
         self._config = config
+        self._role_enabled = role_enabled or (lambda: True)
         self._lock = threading.Lock()  # guards state below + inference
         self._download_thread: threading.Thread | None = None
         self._last_attempt = 0.0  # monotonic; throttles retry after an error
@@ -141,15 +145,23 @@ class BuiltinDetector:
     @property
     def enabled(self) -> bool:
         # Routed to another node → this node never loads/provisions a model.
-        return bool(self._config.enabled) and not (self._config.node or "").strip()
+        return (
+            self._role_enabled()
+            and bool(self._config.enabled)
+            and not (self._config.node or "").strip()
+        )
 
     @property
     def ready(self) -> bool:
+        if not self._role_enabled():
+            return False
         with self._lock:
             return self._status == "ready"
 
     def status(self) -> DetectorStatus:
         with self._lock:
+            if not self._role_enabled():
+                return DetectorStatus(enabled=False, status="off", detail="analysis role disabled")
             if not self._config.enabled:
                 return DetectorStatus(enabled=False, status="off")
             if (self._config.node or "").strip():
@@ -171,7 +183,7 @@ class BuiltinDetector:
 
     def ensure_ready(self) -> None:
         """Start provisioning (download + load) in the background if needed."""
-        if not self._config.enabled:
+        if not self.enabled:
             return
         with self._lock:
             if self._status in ("ready", "downloading"):
