@@ -2,7 +2,7 @@
 
 Prepared for Wayne Scire · 11 September 2026 · Document revision **r4**
 
-**Status:** 1.8.5 validated and merged in [PR #85](https://github.com/FactShin/TailCam/pull/85); 1.8.6 dependency-security patch implemented with local and package checks passed; CI pending. **Last verified main baseline:** 1.8.5 at `324ba11e2fb7933830d5c438c5d4fef51abdd553`. **Publication:** PyPI remains 1.8.4; neither 1.8.5 nor 1.8.6 is published as of 2026-09-11. **Authoritative implementation roadmap:** this repository file, imported from the supplied r2 planning snapshot on 2026-09-11. Document revisions and application release versions are separate.
+**Status:** 1.8.5 validated and merged in [PR #85](https://github.com/FactShin/TailCam/pull/85); 1.8.6 dependency-security patch implemented with local and package checks passed in [PR #86](https://github.com/FactShin/TailCam/pull/86), which records current CI status. **Last verified main baseline:** 1.8.5 at `324ba11e2fb7933830d5c438c5d4fef51abdd553`. **Publication:** PyPI remains 1.8.4; neither 1.8.5 nor 1.8.6 is published as of 2026-09-11. **Authoritative implementation roadmap:** this repository file, imported from the supplied r2 planning snapshot on 2026-09-11. Document revisions and application release versions are separate.
 
 **Purpose:** this file carries the product intent, engineering constraints, release scopes, completion gates, and working instructions into a new session. It consolidates the original feature attachment, architecture review, all nine later product suggestions, and the decision to add agent-supervised training. A fresh agent should not need the original chat to understand the work.
 
@@ -564,7 +564,7 @@ The product standard is simple: **every screen and every assistant should be abl
 
 ## 9. Progress ledger and handoff requirements
 
-**State as of document r4:** 1.8.5 is validated and merged in PR #85. The 1.8.6 dependency-security patch is implemented and has passed local and package checks; CI remains pending. Feature releases remain planned. No roadmap release has been published: PyPI latest is 1.8.4 and the GitHub releases collection is empty as checked on 2026-09-11. The original 1.8.4 review below remains historical evidence. Reconcile this ledger against GitHub at the start of each future session.
+**State as of document r4:** 1.8.5 is validated and merged in PR #85. The 1.8.6 dependency-security patch is implemented and has passed local and package checks; current CI is recorded on PR #86. Feature releases remain planned. No roadmap release has been published: PyPI latest is 1.8.4 and the GitHub releases collection is empty as checked on 2026-09-11. The original 1.8.4 review below remains historical evidence. Reconcile this ledger against GitHub at the start of each future session.
 
 | Target | Workstream | Status | Evidence / next gate |
 |---|---|---|---|
