@@ -27,12 +27,26 @@ jobs:
           cache-dependency-path: web-ui/package-lock.json
       - run: npm ci
         working-directory: web-ui
+      - name: Audit dashboard dependencies
+        run: npm audit
+        working-directory: web-ui
       - run: npm run typecheck && npm run build
         working-directory: web-ui
       - name: Check committed dashboard matches source
         run: |
           git diff --exit-code -- src/tailcam/web/spa
           test -z "$(git ls-files --others --exclude-standard src/tailcam/web/spa)"
+      - run: npx playwright install --with-deps chromium
+        working-directory: web-ui
+      - name: Check production routing and PWA cache behavior
+        run: npm run test:e2e
+        working-directory: web-ui
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: dashboard-browser-traces
+          path: web-ui/test-results/
+          retention-days: 7
 
   lint:
     runs-on: ubuntu-latest
