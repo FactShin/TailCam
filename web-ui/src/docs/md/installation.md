@@ -45,12 +45,12 @@ py -3 -m venv .venv
 Use x64 Python on Windows ARM. Open `http://localhost:8088/` once the server
 starts. Manual pip/pipx installs do not install Tailscale or register services.
 
-## Choose this node's purpose (1.9.0 source builds)
+## Choose this node's purpose
 
 Before the first `tailcam run`, select a preset:
 
 ```bash
-tailcam config --init --preset hub --node-name "Workshop hub"
+tailcam setup --preset hub --node-name "Workshop hub"
 tailcam run
 ```
 
@@ -64,9 +64,13 @@ to apply them. A hub skips camera discovery, local model initialization, and
 training. These controls do not remove base dependencies or configure an
 external storage/AI destination for you.
 
-The OS installers below still start an all-in-one service on a fresh install;
-they do not yet ask for roles. Use the manual install and configure roles
-before registering a service when the first startup must be hub-only.
+The installers configure the chosen preset before starting a service. For a hub,
+pass `--preset hub` (Windows `-Preset hub`) or set `TAILCAM_PRESET=hub`. Omitted
+answers preserve existing settings; a new node without a choice uses all-in-one.
+Use `tailcam setup --interactive` for guided selection or `--roles capture` for a
+custom combination. `--dry-run --json` previews configuration without saving or
+moving legacy AnyCam data;
+`--quiet` prints only errors. Setup performs no camera discovery or model downloads.
 
 ## OS installers (GitHub main)
 
@@ -85,9 +89,21 @@ curl -fsSL https://raw.githubusercontent.com/factshin/tailcam/main/install-macos
 irm https://raw.githubusercontent.com/factshin/tailcam/main/install.ps1 | iex
 ```
 
-These fetch **GitHub main**, which may be ahead of PyPI. Download the script
-and pass `--ref <tag>` (Windows: `-Ref <tag>`) to select a Git ref. The desktop
+These scripts install the pinned **PyPI 1.9.1** package. Download the script and
+pass `--version X.Y.Z` (Windows `-Version`) for another setup-capable release, or
+`--ref REF` (`-Ref`) to explicitly install source. `--node-name` (`-NodeName`)
+sets the label. `--non-interactive` (`-NonInteractive`) skips role/login prompts;
+`--no-color` (`-NoColor`, or `NO_COLOR`) uses plain installer messages. The desktop
 shell is included on macOS/Windows; Linux opts in with `--desktop`.
+
+Reruns preserve roles and the server port unless explicitly changed. Media and
+node identities stay in place. Logs are stored beside the virtualenv on POSIX
+and under `%LOCALAPPDATA%\TailCam` on Windows. Setup, service registration, or
+startup verification failure restores the previous installation and leaves it
+stopped: inspect the log and repair its config before starting it. Startup
+verification uses the local API and checks the installed version, node identity,
+and active roles; it does not test cameras or models. With `--no-service`, the
+installer retains the backup and leaves startup to you.
 
 ## Optional features: use TailCam's environment
 

@@ -1,0 +1,22 @@
+# Standalone hub configuration: docker compose -f docker-compose.hub.yml up -d --build
+# Deliberately no host /dev mounts, camera rules, devices or elevated capabilities.
+services:
+  tailcam:
+    build: .
+    container_name: tailcam-hub
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8088:8088"
+    environment:
+      TAILCAM_PRESET: hub
+      TAILCAM_NODE_NAME: "${TAILCAM_NODE_NAME:-}"
+      TS_AUTHKEY: "${TS_AUTHKEY:-}"
+      TS_HOSTNAME: tailcam
+    volumes:
+      - tailcam-hub-data:/data
+      - tailcam-hub-config:/config
+      - tailcam-hub-tsstate:/var/lib/tailscale
+volumes:
+  tailcam-hub-data:
+  tailcam-hub-config:
+  tailcam-hub-tsstate:

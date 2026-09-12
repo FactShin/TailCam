@@ -43,3 +43,11 @@ def test_lock_metadata_and_extension_label_match_app_version():
         encoding="utf-8",
     )
     assert f"TailCam Companion v{tailcam.__version__}" in label
+
+
+def test_native_installer_release_pins_match_package():
+    for name in ("install-linux.sh", "install-macos.sh"):
+        script = (_REPO_ROOT / name).read_text(encoding="utf-8")
+        assert 'VERSION="${TAILCAM_VERSION:-' + tailcam.__version__ + '}"' in script
+    script = (_REPO_ROOT / "install.ps1").read_text(encoding="utf-8")
+    assert f'[string]$Version = "{tailcam.__version__}"' in script

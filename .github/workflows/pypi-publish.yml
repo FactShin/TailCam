@@ -1,20 +1,13 @@
 name: Publish to PyPI
 
-# Trusted Publishing — no PyPI token in GitHub secrets.
-#
-# tailcam is already published. Maintain this Trusted Publisher in the
-# existing PyPI project's publishing settings (no new pending publisher):
-#   PyPI project name:  tailcam
-#   Owner:              FactShin
-#   Repository:         TailCam
-#   Workflow name:      pypi-publish.yml
-#   Environment:        pypi
-#
-# Bump the package version first, then create a GitHub Release (tag vX.Y.Z)
-# at the merged commit OR run this workflow manually from main. Do not run
-# both for the same version; PyPI distribution filenames cannot be reused.
-
+# Trusted Publisher: tailcam / FactShin/TailCam / pypi-publish.yml / pypi.
+# Release PRs bump the version. Publish the exact tested main commit; skip
+# versions already on PyPI. The privileged upload job executes no repo code.
 on:
+  workflow_run:
+    workflows: [tests]
+    types: [completed]
+    branches: [main]
   release:
     types: [published]
   workflow_dispatch:
@@ -22,29 +15,91 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: tailcam-pypi
+  cancel-in-progress: false
+
 jobs:
+  build:
+    if: >-
+      github.repository == 'FactShin/TailCam' &&
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      publish: ${{ steps.release.outputs.publish }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify tested commit and unpublished version
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python .github/scripts/release_check.py
+      - name: Build and validate distributions
+        if: steps.release.outputs.publish == 'true'
+        run: |
+          python -m pip install --upgrade build twine
+          python -m build
+          python -m twine check --strict dist/*
+      - uses: actions/upload-artifact@v4
+        if: steps.release.outputs.publish == 'true'
+        with:
+          name: pypi-distributions
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
   pypi:
-    name: Build and publish
+    name: Publish verified distributions
+    needs: build
+    if: needs.build.outputs.publish == 'true'
     runs-on: ubuntu-latest
     environment:
       name: pypi
       url: https://pypi.org/project/tailcam/
     permissions:
       id-token: write
-      contents: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: pypi-distributions
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+  verify:
+    name: Install the public release
+    needs: [build, pypi]
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      RELEASE_VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Build sdist and wheel
+      - name: Verify a fresh PyPI install
         run: |
-          pip install --upgrade build
-          python -m build
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+          python -m venv /tmp/tailcam-release
+          for attempt in 1 2 3 4 5; do
+            if /tmp/tailcam-release/bin/pip install --no-cache-dir "tailcam==$RELEASE_VERSION"; then
+              break
+            fi
+            if [ "$attempt" = 5 ]; then exit 1; fi
+            sleep 15
+          done
+          /tmp/tailcam-release/bin/python -m pip check
+          /tmp/tailcam-release/bin/python -c 'import os, tailcam; assert tailcam.__version__ == os.environ["RELEASE_VERSION"]'
+          /tmp/tailcam-release/bin/tailcam --version

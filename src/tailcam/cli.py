@@ -43,6 +43,7 @@ def _version_callback(value: bool) -> None:
 
 @app.callback()
 def _root(
+    ctx: typer.Context,
     version: bool = typer.Option(
         False,
         "--version",
@@ -57,13 +58,75 @@ def _root(
     Run [bold]tailcam run[/bold] to start the server, or [bold]tailcam status[/bold]
     to see your cameras and tailnet nodes.
     """
+    # Setup owns its preflight and migration ordering: its dry-run must never
+    # move legacy configuration, media, or the database.
+    if ctx.invoked_subcommand == "setup":
+        return
+    _migrate_legacy()
+
+
+def _migrate_legacy(*, quiet: bool = False) -> None:
     # First run after a clean reinstall from the old AnyCam build: pull the old
     # config/media/database across. Cheap marker check, then a one-time move.
     from tailcam import migrate
 
     if migrate.needs_migration():
         for line in migrate.migrate():
-            console.print(f"[dim]· {line}[/dim]")
+            if not quiet:
+                Console(stderr=True).print(f"[dim]· {line}[/dim]")
+
+
+@app.command()
+def setup(
+    preset: str | None = typer.Option(None, help="hub, camera, storage, compute, all-in-one"),
+    roles: str | None = typer.Option(None, help="Comma-separated roles; empty means hub."),
+    node_name: str | None = typer.Option(None, help="Display name for this node."),
+    port: int | None = typer.Option(None, min=1, max=65535),
+    interactive: bool = typer.Option(False, "--interactive", help="Choose this node's purpose."),
+    if_missing: bool = typer.Option(False, "--if-missing", help="Preserve existing setup."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate without saving."),
+    json_output: bool = typer.Option(False, "--json", help="Print a machine-readable summary."),
+    quiet: bool = typer.Option(False, "--quiet", help="Only print errors."),
+) -> None:
+    """Configure before service startup; preserve existing media, identity and settings."""
+    import json
+
+    from tailcam.setup import configure
+
+    if interactive:
+        if preset is not None or roles is not None or json_output or quiet:
+            raise typer.BadParameter(
+                "Interactive setup cannot be combined with roles or quiet/JSON"
+            )
+        if not sys.stdin.isatty():
+            raise typer.BadParameter("Interactive setup requires a terminal; use --preset instead")
+        typer.echo("TAILCAM  /  What runs on this machine?")
+        typer.echo("hub: fleet view | camera: capture + storage | storage: save media")
+        typer.echo("compute: analysis + training | all-in-one: all four workloads")
+        preset = typer.prompt("Preset (leave blank to keep existing settings)", default="") or None
+    try:
+        # Validate both options and the config that would be migrated before
+        # moving any files. The preview reads legacy config without changing it.
+        result = configure(
+            preset=preset, roles=roles, node_name=node_name, port=port,
+            if_missing=if_missing, dry_run=True,
+        )
+        if not dry_run:
+            _migrate_legacy(quiet=quiet)
+            result = configure(
+                preset=preset, roles=roles, node_name=node_name, port=port,
+                if_missing=if_missing,
+            )
+    except (NodeConfigError, OSError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if json_output:
+        typer.echo(json.dumps(result))
+    elif not quiet:
+        typer.echo(f"TAILCAM {result['version']}  /  Setup {'preview' if dry_run else 'ready'}")
+        typer.echo("Workloads: " + (", ".join(result["roles"]) or "hub (fleet view only)"))
+        typer.echo(f"Config: {result['config']}")
+        typer.echo(f"Dashboard when running: {result['url']}")
+        typer.echo("Start or restart TailCam to apply this setup.")
 
 
 @app.command()

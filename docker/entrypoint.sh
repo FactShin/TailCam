@@ -62,6 +62,13 @@ start_tailscale() {
     ${TS_EXTRA_ARGS:-}
 }
 
+# Seed roles only on the first start. Saved dashboard/CLI edits survive restarts.
+# Invalid configuration aborts before Tailscale or any workload starts.
+setup_args=(--if-missing --quiet)
+[ -z "${TAILCAM_PRESET:-}" ] || setup_args+=(--preset "$TAILCAM_PRESET")
+[ -z "${TAILCAM_NODE_NAME:-}" ] || setup_args+=(--node-name "$TAILCAM_NODE_NAME")
+tailcam setup "${setup_args[@]}"
+
 if [ -n "${TS_AUTHKEY:-}" ]; then
   start_tailscale
   log "starting TailCam (served over Tailscale)…"

@@ -26,6 +26,8 @@ AUTHKEY="${TS_AUTHKEY:-}"
 DO_TAILSCALE=1
 DEVICES=""
 HOTPLUG=1
+PRESET="${TAILCAM_PRESET:-}"
+NODE_NAME="${TAILCAM_NODE_NAME:-}"
 
 log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
@@ -40,9 +42,12 @@ while [ $# -gt 0 ]; do
         --device) DEVICES="${DEVICES} $2"; shift ;;
         --image) IMAGE="$2"; shift ;;
         --name) NAME="$2"; shift ;;
+        --preset) PRESET="$2"; shift ;;
+        --node-name) NODE_NAME="$2"; shift ;;
         --no-tailscale) DO_TAILSCALE=0 ;;
         --no-hotplug) HOTPLUG=0 ;;
         -h|--help)
+            echo "Setup: --preset hub|camera|storage|compute|all-in-one --node-name NAME"
             echo "Usage: install-docker.sh [--authkey KEY] [--hostname NAME] [--port N]"
             echo "                         [--device /dev/videoN]... [--no-hotplug]"
             echo "                         [--image REF] [--name NAME] [--no-tailscale]"
@@ -51,10 +56,18 @@ while [ $# -gt 0 ]; do
             echo "  --no-hotplug    don't bind the host /dev (no cameras unless --device is given)"
             echo "  Default on Linux: bind /dev + allow all video4linux devices (hot-plug)."
             exit 0 ;;
-        *) warn "Unknown option: $1" ;;
+        *) err "Unknown option: $1"; exit 2 ;;
     esac
     shift
 done
+
+case "$PRESET" in
+    ""|hub|camera|storage|compute|all-in-one) ;;
+    *) err "Unknown preset: $PRESET"; exit 2 ;;
+esac
+case "$PORT" in ""|*[!0-9]*) err "Port must be numeric"; exit 2 ;; esac
+[ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ] || { err "Port must be 1..65535"; exit 2; }
+case "$NAME" in ""|-*|*[!a-zA-Z0-9_.-]*) err "Invalid container name"; exit 2 ;; esac
 
 have docker || { err "Docker is not installed. Install it: https://docs.docker.com/get-docker/"; exit 1; }
 docker info >/dev/null 2>&1 || { err "Cannot reach the Docker daemon. Is it running, and do you have permission?"; exit 1; }
@@ -72,9 +85,68 @@ if ! docker pull "$IMAGE"; then
     exit 1
 fi
 
+# Resolve the pulled tag once; setup and runtime must execute the same image.
+IMAGE="$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE")"
+[ -n "$IMAGE" ] && [ "$IMAGE" != '<no value>' ] || { err "No immutable image digest"; exit 1; }
+log "Using ${IMAGE}"
+
+# Shared setup validates before stopping a running container, then applies only
+# after it stops. Otherwise a save from the old process can overwrite new roles.
+configure_node() {
+    docker run --rm --entrypoint python \
+        -v tailcam-data:/data -v tailcam-config:/config \
+        -e "TAILCAM_PRESET=$PRESET" -e "TAILCAM_NODE_NAME=$NODE_NAME" \
+        -e "TAILCAM_DEVICES=$DEVICES" -e "TAILCAM_SETUP_DRY_RUN=$1" \
+        "$IMAGE" -c '
+import os
+from tailcam.setup import configure
+options = dict(preset=os.environ.get("TAILCAM_PRESET") or None,
+               node_name=os.environ.get("TAILCAM_NODE_NAME") or None, port=8088)
+r = configure(dry_run=True, **options)
+if "capture" not in r["roles"] and os.environ["TAILCAM_DEVICES"]:
+    raise SystemExit("Camera devices require the capture role")
+if os.environ["TAILCAM_SETUP_DRY_RUN"] != "1":
+    r = configure(**options)
+print("capture=" + str(int("capture" in r["roles"])))'
+}
+
+PREVIOUS="${NAME}-previous"
+HAD_PREVIOUS=0
+if docker ps -a --format '{{.Names}}' | grep -qx "$PREVIOUS"; then
+    err "${PREVIOUS} exists from an earlier recovery; inspect it before retrying."; exit 1
+fi
+# An older image without role-aware setup fails here without replacing anything.
+if ! configure_node 1 >/dev/null; then
+    err "Node setup failed; existing container was left untouched."; exit 1
+fi
 if docker ps -a --format '{{.Names}}' | grep -qx "$NAME"; then
-    log "Replacing existing container '${NAME}' (named volumes are preserved)"
-    docker rm -f "$NAME" >/dev/null
+    log "Stopping existing container (config, data and identity volumes are preserved)"
+    docker stop "$NAME" >/dev/null
+    docker rename "$NAME" "$PREVIOUS"
+    HAD_PREVIOUS=1
+fi
+
+restore_previous() {
+    docker rm -f "$NAME" >/dev/null 2>&1 || true
+    if [ "$HAD_PREVIOUS" = 1 ]; then
+        docker rename "$PREVIOUS" "$NAME"
+        # Setup may have changed roles; an older image may not enforce them.
+        warn "Previous container restored and left stopped; inspect config before starting."
+    fi
+}
+
+SETUP="$(configure_node 0)" || {
+    restore_previous
+    err "Node setup failed after stopping the container. Persistent volumes were preserved."; exit 1;
+}
+# The final saved result controls device access, including changes made to the
+# old process between preflight and shutdown when no explicit preset was given.
+if ! printf '%s\n' "$SETUP" | grep -qx 'capture=1'; then
+    HOTPLUG=0
+    if [ -n "$DEVICES" ]; then
+        restore_previous
+        err "Camera devices require the capture role"; exit 2
+    fi
 fi
 
 # Assemble the run arguments.
@@ -108,7 +180,18 @@ done
 set -- "$@" "$IMAGE"
 
 log "Starting TailCam…"
-docker run "$@" >/dev/null
+if ! docker run "$@" >/dev/null; then
+    restore_previous
+    err "Container startup failed. Persistent volumes were preserved."; exit 1
+fi
+log "Waiting for TailCam to report its configured roles and installed version…"
+# Detached creation succeeds before the entrypoint runs. Check from inside the
+# replacement, with a bounded wait, so an unrelated host service cannot pass.
+if ! docker exec "$NAME" python -m tailcam.service.readiness --timeout 30 --host 127.0.0.1; then
+    restore_previous
+    err "TailCam did not become ready. Persistent volumes were preserved."; exit 1
+fi
+if [ "$HAD_PREVIOUS" = 1 ]; then docker rm "$PREVIOUS" >/dev/null; fi
 
 echo
 if [ "$DO_TAILSCALE" = 1 ] && [ -n "$AUTHKEY" ]; then

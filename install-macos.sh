@@ -9,8 +9,13 @@
 set -eu
 
 REPO="${TAILCAM_REPO:-factshin/tailcam}"
-REF="${TAILCAM_REF:-main}"
-PORT="${TAILCAM_PORT:-8088}"
+REF="${TAILCAM_REF:-}"
+VERSION="${TAILCAM_VERSION:-1.9.1}"
+PRESET="${TAILCAM_PRESET:-}"
+NODE_NAME="${TAILCAM_NODE_NAME:-}"
+NONINTERACTIVE="${TAILCAM_INSTALL_NONINTERACTIVE:-0}"
+NO_COLOR="${NO_COLOR:-}"
+PORT="${TAILCAM_PORT:-}"
 DO_SERVICE=1
 DO_TAILSCALE=1
 DO_TAILSCALE_INSTALL=1
@@ -18,25 +23,43 @@ TS_LOGIN_TIMEOUT="${TAILCAM_TAILSCALE_LOGIN_TIMEOUT:-600}"
 VENV_DIR="${HOME}/.local/share/tailcam/venv"
 LEGACY_VENV_DIR="${HOME}/.local/share/anycam/venv"
 
-log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
-warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
-err()  { printf '\033[1;31mxx\033[0m %s\n' "$*" >&2; }
+log()  { if [ -n "$NO_COLOR" ] || [ ! -t 1 ]; then printf '==> %s\n' "$*"; else printf '\033[1;34m==>\033[0m %s\n' "$*"; fi; }
+warn() { printf '!! %s\n' "$*" >&2; }
+err() { printf 'xx %s\n' "$*" >&2; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --port) PORT="$2"; shift ;;
         --ref) REF="$2"; shift ;;
+        --version) VERSION="$2"; shift ;;
+        --preset) PRESET="$2"; shift ;;
+        --node-name) NODE_NAME="$2"; shift ;;
+        --non-interactive) NONINTERACTIVE=1 ;;
+        --no-color) NO_COLOR=1 ;;
         --no-service) DO_SERVICE=0 ;;
         --no-tailscale) DO_TAILSCALE=0 ;;
         --no-tailscale-install) DO_TAILSCALE_INSTALL=0 ;;
         -h|--help)
+            echo "Setup: --preset hub|camera|storage|compute|all-in-one --node-name NAME"
+            echo "Release: --version X.Y.Z (PyPI, default 1.9.1); --ref REF (explicit source override)"
+            echo "Automation: --non-interactive --no-color (no role or login prompts)"
             echo "Usage: install-macos.sh [--port N] [--ref REF] [--no-service] [--no-tailscale] [--no-tailscale-install]"
             exit 0 ;;
-        *) warn "Unknown option: $1" ;;
+        *) err "Unknown option: $1"; exit 2 ;;
     esac
     shift
 done
+
+case "$PRESET" in
+    ""|hub|camera|storage|compute|all-in-one) ;;
+    *) err "Unknown preset: $PRESET"; exit 2 ;;
+esac
+case "$VERSION" in ""|*[!0-9.]*) err "Version must be a numeric PyPI release"; exit 2 ;; esac
+if [ -n "$PORT" ]; then
+    case "$PORT" in *[!0-9]*) err "Port must be numeric"; exit 2 ;; esac
+    [ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ] || { err "Port must be 1..65535"; exit 2; }
+fi
 
 [ "$(uname -s)" = "Darwin" ] || { err "This installer is for macOS. Use install-linux.sh or install.ps1."; exit 1; }
 
@@ -63,12 +86,46 @@ ensure_python() {
     exit 1
 }
 
+
+configure_node() {
+    set --
+    [ -n "$PRESET" ] && set -- "$@" --preset "$PRESET"
+    [ -n "$NODE_NAME" ] && set -- "$@" --node-name "$NODE_NAME"
+    [ -n "$PORT" ] && set -- "$@" --port "$PORT"
+    # Prompts only on an explicitly interactive terminal; piped/unattended runs
+    # preserve existing roles (all-in-one for new nodes without an answer).
+    if [ -z "$PRESET" ] && [ "$NONINTERACTIVE" = 0 ] && [ -t 0 ]; then
+        "${VENV_DIR}/bin/tailcam" setup --interactive "$@" || return 1
+        set --
+    fi
+    "${VENV_DIR}/bin/tailcam" setup "$@" || return 1
+}
+node_has_role() {
+    "${VENV_DIR}/bin/python" -c 'import sys; from tailcam.config import AppConfig; sys.exit(0 if sys.argv[1] in AppConfig.load().node.roles else 1)' "$1"
+}
+
+rollback_install() {
+    local plist="$HOME/Library/LaunchAgents/com.tailcam.plist"
+    launchctl unload "$plist" 2>/dev/null || true
+    # Prevent RunAtLoad from starting the restored build on the next login.
+    [ ! -f "$plist" ] || mv "$plist" "${plist}.failed"
+    rm -rf "$VENV_DIR"
+    if [ -d "${VENV_DIR}.bak" ]; then
+        mv "${VENV_DIR}.bak" "$VENV_DIR"
+        warn "Previous installation restored at $VENV_DIR; service left stopped."
+    fi
+    err "$1 Repair the saved config before running: tailcam install-service"
+    exit 1
+}
+
 install_tailcam() {
     local spec backup="${VENV_DIR}.bak"
     # `git` on a fresh Mac is a stub that pops the Xcode Command Line Tools
     # dialog (and fails under a piped install). Only use git+https when a real
     # git is present; otherwise pip installs from GitHub's zip archive.
-    if have git && git --version >/dev/null 2>&1; then
+    if [ -z "$REF" ]; then
+        spec="tailcam==$VERSION"
+    elif have git && git --version >/dev/null 2>&1; then
         spec="git+https://github.com/${REPO}.git@${REF}"
     else
         spec="https://github.com/${REPO}/archive/${REF}.zip"
@@ -84,16 +141,12 @@ install_tailcam() {
     if ! ( "$PYTHON" -m venv "$VENV_DIR" \
            && "${VENV_DIR}/bin/pip" install --upgrade pip >/dev/null \
            && { log "Installing TailCam ($spec)"; "${VENV_DIR}/bin/pip" install "$spec"; } ); then
-        rm -rf "$VENV_DIR"
-        if [ -d "$backup" ]; then
-            mv "$backup" "$VENV_DIR"
-            launchctl load "$HOME/Library/LaunchAgents/com.tailcam.plist" 2>/dev/null || true
-            warn "Install failed — restored the previous version."
-        fi
-        err "TailCam installation failed (see the pip output above)."
-        exit 1
+        rollback_install "TailCam installation failed (see the pip output above)."
     fi
-    rm -rf "$backup"
+    if ! configure_node; then
+        rollback_install "Setup failed."
+    fi
+    # Keep the backup until the new service proves it can start with saved roles.
     TAILCAM_BIN="${VENV_DIR}/bin/tailcam"
 }
 
@@ -122,12 +175,20 @@ link_cli() {
 }
 
 setup_service() {
-    "$TAILCAM_BIN" config --port "$PORT" >/dev/null 2>&1 || true
-    [ "$DO_SERVICE" -eq 0 ] && { warn "Skipping service (--no-service)."; return 0; }
+    if [ "$DO_SERVICE" -eq 0 ]; then
+        warn "Service not started (--no-service); startup has not been verified."
+        [ ! -d "${VENV_DIR}.bak" ] || warn "Previous installation retained at ${VENV_DIR}.bak."
+        return 0
+    fi
     log "Registering launchd agent"
-    "$TAILCAM_BIN" install-service \
-        || warn "Service registration FAILED (see above). TailCam is installed but not running as a service; fix the cause, then run: tailcam install-service"
-    warn "First run may prompt for camera access — approve it in System Settings › Privacy."
+    if ! "$TAILCAM_BIN" install-service; then
+        rollback_install "Service registration failed."
+    fi
+    if ! "${VENV_DIR}/bin/python" -m tailcam.service.readiness --timeout 30; then
+        rollback_install "Service startup verification failed; inspect the service and install logs."
+    fi
+    rm -rf "${VENV_DIR}.bak"
+    if node_has_role capture; then warn "First run may prompt for camera access — approve it in System Settings › Privacy."; fi
 }
 
 setup_desktop_app() {
@@ -170,7 +231,9 @@ install_tailscale() {
         if brew install tailscale; then
             # The Homebrew CLI needs its daemon registered once (asks for sudo;
             # sudo prompts on /dev/tty, so this works under `curl | bash` too).
-            if [ -c /dev/tty ]; then
+            if [ "$NONINTERACTIVE" != 0 ]; then
+                sudo -n tailscaled install-system-daemon </dev/null || warn "Passwordless sudo unavailable; run: sudo tailscaled install-system-daemon"
+            elif [ -c /dev/tty ]; then
                 sudo tailscaled install-system-daemon </dev/tty || warn "Could not register tailscaled; run: sudo tailscaled install-system-daemon"
             else
                 warn "Run once to start the Tailscale daemon:  sudo tailscaled install-system-daemon"
@@ -224,6 +287,7 @@ wait_for_tailscale_login() {
         ts_explain_state ""
         return 1
     fi
+    if [ "$NONINTERACTIVE" != 0 ]; then warn "Tailscale needs login; run tailscale up later."; return 1; fi
     echo
     log "Tailscale needs to sign in. A login link will appear below — open it on ANY device"
     echo "    and approve this Mac. The installer waits up to ${TS_LOGIN_TIMEOUT}s."
@@ -266,6 +330,7 @@ ensure_tailscale() {
 
 # --- AI motion labeling (optional, local Ollama) ----------------------------
 ensure_ai_hint() {
+    node_has_role analysis || return 0
     local rec="moondream"
     echo
     log "AI motion labeling (optional)"
@@ -284,12 +349,18 @@ ensure_ai_hint() {
     echo "    You can also do all of this from the TailCam UI → AI."
 }
 
+INSTALL_LOG="${VENV_DIR%/venv}/install-$(date +%Y%m%d-%H%M%S).log"
+mkdir -p "$(dirname "$INSTALL_LOG")"
+umask 077
+exec > >(tee -a "$INSTALL_LOG") 2>&1
+trap 'rc=$?; if [ "$rc" -ne 0 ]; then printf "Install failed. Log: %s\n" "$INSTALL_LOG" >&2; fi' EXIT
+log "TAILCAM / Prepare, install, configure, start"
 log "Installing TailCam on macOS (ref=${REF}, port=${PORT})"
 ensure_python
 install_tailcam
-remove_legacy_anycam
 link_cli
 setup_service
+remove_legacy_anycam
 setup_desktop_app
 ensure_tailscale
 ensure_ai_hint
@@ -297,4 +368,8 @@ echo
 log "TailCam installed."
 "$TAILCAM_BIN" status || true
 echo
-log "Open the web UI at one of the URLs above."
+if [ "$DO_SERVICE" -eq 1 ]; then
+    log "Open the web UI at one of the URLs above."
+else
+    warn "Service not started. Start it when ready with: tailcam install-service"
+fi
