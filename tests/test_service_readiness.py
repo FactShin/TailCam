@@ -92,7 +92,7 @@ def test_ready_checks_only_local_system_metadata(startup_server, monkeypatch):
 )
 def test_wrong_running_installation_never_passes(startup_server, field, value):
     startup_server["body"][field] = value
-    assert not readiness.wait_ready(timeout_seconds=0.05, poll_interval=0.01)
+    assert not readiness.wait_ready(timeout_seconds=1, poll_interval=0.01)
 
 
 @pytest.mark.parametrize(
@@ -100,7 +100,7 @@ def test_wrong_running_installation_never_passes(startup_server, field, value):
 )
 def test_invalid_or_oversize_metadata_fails_bounded(startup_server, body):
     startup_server["body"] = body
-    assert not readiness.wait_ready(timeout_seconds=0.05, poll_interval=0.01)
+    assert not readiness.wait_ready(timeout_seconds=1, poll_interval=0.01)
 
 
 @pytest.mark.parametrize("status", [302, 401, 500])
@@ -117,7 +117,7 @@ def test_error_and_redirect_never_count_as_startup(startup_server, status, monke
 
     monkeypatch.setattr(socket, "create_connection", only_loopback)
     startup_server["status"] = status
-    assert not readiness.wait_ready(timeout_seconds=0.05, poll_interval=0.01)
+    assert not readiness.wait_ready(timeout_seconds=1, poll_interval=0.01)
     assert destinations
 
 
