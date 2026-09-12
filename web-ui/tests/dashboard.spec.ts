@@ -134,14 +134,14 @@ test.beforeAll(async () => {
       "/api/cameras": visibleCameras,
       "/api/hosts": [{
         host: "browser-hub", node_key: "local", kind: "local", online: true,
-        version: "1.9.0", camera_count: 0, proxy_prefix: "",
+        version: "1.9.2", camera_count: 0, proxy_prefix: "",
         node_id: nodeConfig.node_id, node_name: nodeConfig.name, node_roles: nodeConfig.active_roles,
       }, {
         host: camera.host, node_key: "capture", kind: "peer", online: true,
         version: "1.8.6", camera_count: 1, proxy_prefix: camera.proxy_prefix,
       }],
       "/api/system": {
-        version: "1.9.0", host: "browser-hub", node_id: nodeConfig.node_id,
+        version: "1.9.2", host: "browser-hub", node_id: nodeConfig.node_id,
         node_name: nodeConfig.name, node_roles: nodeConfig.active_roles,
         tailscale_installed: false, tailscale_running: false,
         access_url: "http://localhost:4173", local_url: "http://localhost:4173",
@@ -194,11 +194,11 @@ test.beforeEach(async ({ page }) => {
     checked_at: checkedAt,
     capacity: { cpu_count: 4, total_ram_bytes: 8 * 1024 ** 3, media_free_bytes: 0, media_total_bytes: 16 * 1024 ** 3, media_writable: false },
     tasks: [
-      { id: "camera.capture", label: "Attached cameras", state: "ready", code: "camera.ready", detail: "One local camera is online.", checked_at: checkedAt },
-      { id: "media.write", label: "Local media writes", state: "unavailable", code: "storage.not_writable", detail: "The media directory is not writable.", checked_at: checkedAt },
-      { id: "vision.detect", label: "Vision detection", state: "disabled", code: "role.disabled", detail: "The analysis role is disabled.", checked_at: checkedAt },
-      { id: "printer.analyze", label: "Printer analysis", state: "unchecked", code: "runtime.unchecked", detail: "The configured runtime has not been checked.", checked_at: 0 },
-      { id: "processing.ffmpeg", label: "Video encoding", state: "unchecked", code: "encoder_untested", detail: "An FFmpeg executable is present; codecs and encoding have not been tested.", checked_at: checkedAt },
+      { id: "capture", label: "Camera capture", state: "ready", code: "camera_online", detail: "1 camera(s) currently online; individual cameras may differ.", checked_at: checkedAt },
+      { id: "storage.local", label: "Local media storage", state: "unavailable", code: "media_not_writable", detail: "No write access or free space. Check storage settings.", checked_at: checkedAt },
+      { id: "detection.builtin", label: "Built-in object detection", state: "disabled", code: "feature_disabled", detail: "Object detection is switched off.", checked_at: checkedAt },
+      { id: "analysis.ollama", label: "Ollama model", state: "unchecked", code: "runtime_unchecked", detail: "Use Check runtimes to query the configured Ollama model inventory.", checked_at: checkedAt },
+      { id: "processing.ffmpeg", label: "FFmpeg encoding", state: "unchecked", code: "encoder_untested", detail: "An FFmpeg executable is present; codecs and encoding have not been tested.", checked_at: checkedAt },
       { id: "training", label: "Model training", state: "unavailable", code: "training_dependencies_missing", detail: "Training packages missing. Install the TailCam training extra.", checked_at: checkedAt },
     ],
     probe_supported: true,
@@ -223,11 +223,11 @@ test("mobile readiness explains mixed task states and capacity without probing",
   await page.goto("/settings");
   const panel = page.getByRole("region", { name: "Runtime readiness", exact: true });
   await expect(panel.getByRole("list", { name: "Task readiness" })).toBeVisible();
-  await expect(panel.getByRole("listitem").filter({ hasText: "Attached cameras" })).toContainText("Ready");
-  await expect(panel.getByRole("listitem").filter({ hasText: "Local media writes" })).toContainText("Unavailable");
-  await expect(panel.getByRole("listitem").filter({ hasText: "Vision detection" })).toContainText("Disabled");
-  await expect(panel.getByRole("listitem").filter({ hasText: "Printer analysis" })).toContainText("Not checked");
-  await expect(panel.getByText("The media directory is not writable.", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("listitem").filter({ hasText: "Camera capture" })).toContainText("Ready");
+  await expect(panel.getByRole("listitem").filter({ hasText: "Local media storage" })).toContainText("Unavailable");
+  await expect(panel.getByRole("listitem").filter({ hasText: "Built-in object detection" })).toContainText("Disabled");
+  await expect(panel.getByRole("listitem").filter({ hasText: "Ollama model" })).toContainText("Not checked");
+  await expect(panel.getByText("No write access or free space. Check storage settings.", { exact: true })).toBeVisible();
   await expect(panel.locator(".readiness-capacity")).toContainText("4 logical CPUs");
   await expect(panel.locator(".readiness-capacity")).toContainText("8.0 GB");
   await expect(panel.locator(".readiness-capacity")).toContainText("0 B free");
@@ -280,8 +280,8 @@ test("explicit runtime check retains stale results after failure and retries", a
   finishRuntimeProbe?.();
   finishRuntimeProbe = undefined;
   await expect(panel.getByRole("alert")).toContainText("Stale snapshot");
-  await expect(panel.getByRole("listitem").filter({ hasText: "Attached cameras" })).toContainText("One local camera is online.");
-  await expect(panel.getByRole("listitem").filter({ hasText: "Printer analysis" })).toContainText("Not checked");
+  await expect(panel.getByRole("listitem").filter({ hasText: "Camera capture" })).toContainText("1 camera(s) currently online; individual cameras may differ.");
+  await expect(panel.getByRole("listitem").filter({ hasText: "Ollama model" })).toContainText("Not checked");
   await panel.evaluate((element) => element.scrollIntoView({ block: "start" }));
   await page.screenshot({ path: testInfo.outputPath("readiness-stale.png") });
 
@@ -289,12 +289,12 @@ test("explicit runtime check retains stale results after failure and retries", a
   deferRuntimeProbe = false;
   readinessSnapshot = {
     ...readinessSnapshot,
-    tasks: readinessSnapshot.tasks.map((task) => task.id === "printer.analyze"
-      ? { ...task, state: "ready", code: "model.available", detail: "The configured model is available.", checked_at: Math.floor(Date.now() / 1000) }
+    tasks: readinessSnapshot.tasks.map((task) => task.id === "analysis.ollama"
+      ? { ...task, state: "ready", code: "ollama.model_available", detail: "The selected model is installed; inference and vision support were not tested.", checked_at: Math.floor(Date.now() / 1000) }
       : task),
   };
   await panel.getByRole("button", { name: "Retry runtime check", exact: true }).click();
-  await expect(panel.getByRole("listitem").filter({ hasText: "Printer analysis" })).toContainText("The configured model is available.");
+  await expect(panel.getByRole("listitem").filter({ hasText: "Ollama model" })).toContainText("The selected model is installed; inference and vision support were not tested.");
   await expect(panel.getByRole("alert")).toHaveCount(0);
   expect(readinessProbeCount).toBe(2);
   expect(requestedUrls.filter((url) => url.includes("probe=true"))).toEqual([
@@ -331,12 +331,12 @@ test("initial readiness error retries a cheap snapshot without a runtime probe",
 test("peer runtime checks remain attached to their node when selection changes", async ({ page }) => {
   peerReadiness = {
     ...readinessSnapshot,
-    tasks: [{ id: "timelapse.encode", label: "Peer encoding", state: "ready", code: "runtime.ready", detail: "The peer encoder is available.", checked_at: readinessSnapshot.checked_at }],
+    tasks: [{ id: "processing.ffmpeg", label: "FFmpeg encoding", state: "unavailable", code: "encoder_missing", detail: "FFmpeg missing. Install FFmpeg or repair TailCam.", checked_at: readinessSnapshot.checked_at }],
   };
   await page.goto("/settings");
   const panel = page.getByRole("region", { name: "Runtime readiness", exact: true });
   await panel.getByLabel("Check device").selectOption("capture");
-  await expect(panel.getByRole("listitem")).toContainText("Peer encoding");
+  await expect(panel.getByRole("listitem")).toContainText("FFmpeg missing. Install FFmpeg or repair TailCam.");
   deferRuntimeProbe = true;
   await panel.getByRole("button", { name: "Check runtimes", exact: true }).click();
   await expect.poll(() => readinessProbeCount).toBe(1);
@@ -344,8 +344,8 @@ test("peer runtime checks remain attached to their node when selection changes",
   await panel.getByLabel("Check device").selectOption("local");
   finishRuntimeProbe?.();
   finishRuntimeProbe = undefined;
-  await expect(panel.getByRole("listitem").filter({ hasText: "Attached cameras" })).toBeVisible();
-  await expect(panel.getByText("Peer encoding", { exact: true })).toHaveCount(0);
+  await expect(panel.getByRole("listitem").filter({ hasText: "Camera capture" })).toBeVisible();
+  await expect(panel.getByText("FFmpeg missing. Install FFmpeg or repair TailCam.", { exact: true })).toHaveCount(0);
   await expect(panel.getByRole("button", { name: "Check runtimes", exact: true })).toBeEnabled();
 });
 
@@ -431,8 +431,8 @@ test("storage picker explains disabled roles while keeping older peers compatibl
     auto_record: true, record_tail_seconds: 5, retention_enabled: false,
     max_gb: 10, max_age_days: 30,
     nodes: [
-      { node_key: "local", host: "browser-hub", online: true, storage_enabled: false, media_dir: "/fixture/media", disk_total: 1000, disk_free: 900, version: "1.9.0" },
-      { node_key: "compute", host: "compute-worker", online: true, storage_enabled: false, media_dir: "/fixture/media", disk_total: 1000, disk_free: 900, version: "1.9.0" },
+      { node_key: "local", host: "browser-hub", online: true, storage_enabled: false, media_dir: "/fixture/media", disk_total: 1000, disk_free: 900, version: "1.9.2" },
+      { node_key: "compute", host: "compute-worker", online: true, storage_enabled: false, media_dir: "/fixture/media", disk_total: 1000, disk_free: 900, version: "1.9.2" },
       { node_key: "legacy", host: "older-storage", online: true, media_dir: "/fixture/media", disk_total: 1000, disk_free: 900, version: "1.8.6" },
     ],
   };

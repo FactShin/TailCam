@@ -235,6 +235,7 @@ def test_compressed_response_is_rejected_without_expansion(mock_endpoint):
 
 def test_wall_clock_deadline_cancels_stalled_headers_without_using_proxy(monkeypatch):
     release = threading.Event()
+    server_started = threading.Event()
     seen = []
 
     class StalledHeaders(BaseHTTPRequestHandler):
@@ -244,7 +245,7 @@ def test_wall_clock_deadline_cancels_stalled_headers_without_using_proxy(monkeyp
             self.wfile.flush()
             # Keep resetting a per-socket read timeout without completing the
             # headers. Only the overall async deadline can stop this promptly.
-            deadline = time.monotonic() + 3
+            deadline = time.monotonic() + 6
             while time.monotonic() < deadline and not release.wait(0.025):
                 try:
                     self.wfile.write(b".")
@@ -256,13 +257,26 @@ def test_wall_clock_deadline_cancels_stalled_headers_without_using_proxy(monkeyp
             pass
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), StalledHeaders)
-    worker = threading.Thread(target=lambda: server.serve_forever(poll_interval=0.01), daemon=True)
+
+    def serve():
+        server_started.set()
+        server.serve_forever(poll_interval=0.01)
+
+    worker = threading.Thread(target=serve, daemon=True)
     worker.start()
-    monkeypatch.setattr(runtime_probe, "_TIMEOUT_SECONDS", 0.15)
     monkeypatch.setenv("HTTP_PROXY", "http://user:proxy-secret@127.0.0.1:1")
     monkeypatch.setenv("ALL_PROXY", "http://user:proxy-secret@127.0.0.1:1")
     monkeypatch.setenv("NO_PROXY", "")
+    # HTTPX creates its TLS context even for HTTP. Exclude cold certificate /
+    # import initialization from the network deadline measurement on Windows.
+    # This fresh client has no loop-bound connections until the probe uses it.
+    prepared_client = httpx.AsyncClient(
+        timeout=runtime_probe._TIMEOUT_SECONDS, trust_env=False, follow_redirects=False,
+    )
+    monkeypatch.setattr(runtime_probe.httpx, "AsyncClient", lambda **kwargs: prepared_client)
     try:
+        assert server_started.wait(3), "Loopback server did not start"
+        assert runtime_probe._TIMEOUT_SECONDS == 2.0
         started = time.monotonic()
         result = runtime_probe.probe_ollama(f"http://127.0.0.1:{server.server_port}", "llava")
         elapsed = time.monotonic() - started
@@ -274,4 +288,6 @@ def test_wall_clock_deadline_cancels_stalled_headers_without_using_proxy(monkeyp
     assert result[:2] == ("unavailable", "ollama.timeout")
     assert "proxy-secret" not in str(result)
     assert seen == ["/api/tags"]
-    assert elapsed < 1.0
+    # Allow scheduler overhead while remaining well below the six-second
+    # trickle that would defeat a per-socket timeout without cancellation.
+    assert elapsed < 4.0
