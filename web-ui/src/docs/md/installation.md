@@ -89,7 +89,7 @@ curl -fsSL https://raw.githubusercontent.com/factshin/tailcam/main/install-macos
 irm https://raw.githubusercontent.com/factshin/tailcam/main/install.ps1 | iex
 ```
 
-These scripts install the pinned **PyPI 1.9.1** package. Download the script and
+These scripts install the pinned **PyPI 1.9.2** package. Download the script and
 pass `--version X.Y.Z` (Windows `-Version`) for another setup-capable release, or
 `--ref REF` (`-Ref`) to explicitly install source. `--node-name` (`-NodeName`)
 sets the label. `--non-interactive` (`-NonInteractive`) skips role/login prompts;

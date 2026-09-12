@@ -174,7 +174,7 @@ irm https://raw.githubusercontent.com/factshin/tailcam/main/install.ps1 -OutFile
 .\install.ps1 -Port 9000 -NoTailscale
 ```
 
-Installers pin the PyPI package version (currently **1.9.1**) and configure the
+Installers pin the PyPI package version (currently **1.9.2**) and configure the
 node before starting services. Select `--preset hub` on Linux/macOS or `-Preset hub`
 on Windows; other choices are `camera`, `storage`, `compute`, and `all-in-one`.
 `--node-name` / `-NodeName` sets its display name. Rerunning without a preset or
