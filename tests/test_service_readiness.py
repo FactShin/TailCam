@@ -6,6 +6,7 @@ import json
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,6 +14,17 @@ from tailcam import __version__
 from tailcam.config import AppConfig
 from tailcam.node import NodeConfigError
 from tailcam.service import readiness
+
+
+@pytest.fixture
+def metadata_only(monkeypatch):
+    # These deadline tests measure stalled network I/O, not first-run SQLite
+    # initialization (which Windows antivirus can delay significantly).
+    monkeypatch.setattr(readiness.AppConfig, "load", lambda: AppConfig())
+    monkeypatch.setattr(
+        readiness, "Store",
+        lambda: SimpleNamespace(get_node_id=lambda: "da29f349-83ed-4f2d-bb58-564999c0a1c1"),
+    )
 
 
 @pytest.fixture
@@ -139,7 +151,7 @@ def test_timeout_is_finite_and_bounded(timeout):
         readiness.wait_ready(timeout_seconds=timeout)
 
 
-def test_unavailable_service_fails_within_deadline(isolated_env, monkeypatch):
+def test_unavailable_service_fails_within_deadline(metadata_only, monkeypatch):
     def unavailable(*args, **kwargs):
         raise ConnectionRefusedError()
 
@@ -161,7 +173,7 @@ def test_cli_configuration_errors_do_not_print_secrets(monkeypatch, capsys):
     assert "saved configuration" in output.err
 
 
-def test_stalled_http_headers_cannot_extend_installer_deadline(isolated_env, monkeypatch):
+def test_stalled_http_headers_cannot_extend_installer_deadline(metadata_only, monkeypatch):
     release = threading.Event()
 
     def stalled(*args, **kwargs):
