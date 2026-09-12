@@ -12,7 +12,13 @@ import threading
 import time
 from http.client import HTTPException
 from urllib.error import URLError
-from urllib.request import HTTPRedirectHandler, ProxyHandler, build_opener
+from urllib.request import (
+    HTTPDefaultErrorHandler,
+    HTTPErrorProcessor,
+    HTTPHandler,
+    HTTPRedirectHandler,
+    OpenerDirector,
+)
 
 from tailcam import __version__
 from tailcam.config import AppConfig
@@ -25,6 +31,16 @@ _MAX_RESPONSE = 65536
 class _NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
+
+
+def _http_opener() -> OpenerDirector:
+    # build_opener also creates an unused HTTPS handler, loading the platform
+    # certificate store before this HTTP-only probe can start its deadline.
+    # Explicit handlers avoid TLS setup and environment proxy/other protocols.
+    opener = OpenerDirector()
+    for handler in (HTTPHandler(), HTTPDefaultErrorHandler(), HTTPErrorProcessor(), _NoRedirect()):
+        opener.add_handler(handler)
+    return opener
 
 
 def wait_ready(
@@ -48,7 +64,7 @@ def wait_ready(
         host = "::1" if config.server.host in {"::", "::1"} else "127.0.0.1"
     host = "[::1]" if host == "::1" else host
     url = f"http://{host}:{config.server.port}/api/system"
-    opener = build_opener(ProxyHandler({}), _NoRedirect())
+    opener = _http_opener()
     deadline = time.monotonic() + timeout_seconds
     def probe() -> bool:
         remaining = deadline - time.monotonic()
