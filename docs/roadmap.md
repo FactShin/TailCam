@@ -577,7 +577,7 @@ remain open. The original 1.8.4 review below remains historical evidence.
 | 1.8.5 | Current routing fixes | Validated; merged [PR #85](https://github.com/FactShin/TailCam/pull/85) | Local checks and final CI passed; publication remains separate. See [release notes](releases/1.8.5.md) |
 | 1.8.6 | Dashboard dependency security | Validated; merged [PR #86](https://github.com/FactShin/TailCam/pull/86) | Local, package, and [final CI](https://github.com/FactShin/TailCam/actions/runs/34625628441) passed; [release notes](releases/1.8.6.md) |
 | 1.9.0 / 1.9.1 | Roles and installer | Foundation merged in [PR #87](https://github.com/FactShin/TailCam/pull/87) and [PR #88](https://github.com/FactShin/TailCam/pull/88) | 1.9.0 public release verified. The HTTP-only correction in [PR #89](https://github.com/FactShin/TailCam/pull/89) is merged; [PyPI 1.9.1](https://pypi.org/project/tailcam/1.9.1/) and a fresh public install are verified against all 157 package files from merged main. Shared setup, role-aware installers, hub container and publishing gates implemented. See [1.9.1 notes](releases/1.9.1.md) |
-| 1.9.2 | Runtime readiness | Locally validated on `feat/runtime-readiness-1.9.2` | Six conservative task checks, CPU/RAM/media observations, explicit bounded Ollama inventory, passive Settings and safe fleet/health errors. 919 Python tests and 16 browser tests passed; hardware, preview and lean-package gates remain open. See [1.9.2 notes](releases/1.9.2.md) |
+| 1.9.2 | Runtime readiness | Locally validated; [PR #90](https://github.com/FactShin/TailCam/pull/90) awaits review | Six conservative task checks, CPU/RAM/media observations, explicit bounded Ollama inventory, passive Settings and safe fleet/health errors, and protection against older polling responses replacing explicit probe results. 919 Python tests and 17 browser tests passed; hardware, preview and lean-package gates remain open. See [1.9.2 notes](releases/1.9.2.md) |
 | 1.10.0 | Unified storage | Planned | Isolated multi-process artifact-transfer tests |
 | 1.11.0 | Workload routing + Training Supervisor | Planned | Durable jobs, enforced budgets, no model activation |
 | 1.12.0 | Timelapse projects | Planned | Long capture/re-render recovery |
@@ -603,16 +603,16 @@ Update this record in the authoritative file before handing work back. Replace o
 |---|---|
 | Document revision/date | r8 / 2026-09-12 |
 | Last verified code baseline | main / 24c9edcc5519f13b349e48f9f9b1be19447593ab / 1.9.1; public PyPI wheel/sdist and fresh installation verified |
-| Active implementation branch/PR | `feat/runtime-readiness-1.9.2`; one readiness PR follows merged #89 |
+| Active implementation branch/PR | `feat/runtime-readiness-1.9.2` / [PR #90](https://github.com/FactShin/TailCam/pull/90); follows merged #89 |
 | Completed in this session | Merged #88 after fixing dry-run migration, preserved ports, stopped rollback and startup verification; landed the HTTP-only startup correction in #89; continued with task readiness using three subagents for implementation and independent review |
 | Current implementation target | 1.9.2: complete the initial role-readiness diagnostic contract without starting optional workloads |
 | Implementation commit | See the latest head of `feat/runtime-readiness-1.9.2`; final package-source parity and PR checks govern review |
 | Code changes in this roadmap session | Optional capabilities readiness schema; passive local task/capacity snapshot; bounded explicit cached Ollama inventory in killable child processes (including stalled DNS); local/fleet Settings panel with legacy/error states; passive HomeKit FFmpeg status; sanitized health/fleet errors and malformed peer validation |
-| Validation evidence | 919 Python tests passed, ten Windows-only skips, three existing warnings; 151 focused readiness/probe tests passed. Ruff/mypy (130 files), 16 browser tests, TypeScript and zero-vulnerability npm audit passed. Two SPA builds matched all 18 files. Clean wheel/sdist, strict Twine, fresh wheel/API/hub/UUID checks and 159 package-file source parity passed. The installed child probe completed a single loopback inventory request. Final PR/platform CI remains required. |
+| Validation evidence | 919 Python tests passed, ten Windows-only skips, three existing warnings; 151 focused readiness/probe tests passed. Ruff/mypy (130 files), 17 browser tests, TypeScript and zero-vulnerability npm audit passed. Two SPA builds matched all 18 files. Clean wheel/sdist, strict Twine, fresh wheel/API/hub/UUID checks and 159 package-file source parity passed. The installed child probe completed a single loopback inventory request. Final PR/platform CI is recorded on [PR #90](https://github.com/FactShin/TailCam/pull/90). |
 | Outstanding environment checks | Actual camera, Pi, GPU, voice, cross-OS live fleet and long-duration capture validation remain separate hardware gates |
-| Exact next action | Finish the 1.9.2 readiness PR checks and review. After readiness merges and publishes, start a bounded 1.10 storage policy/artifact catalog slice with isolated multi-process transfer tests. |
+| Exact next action | Review PR #90 and its latest commit checks before merging 1.9.2. After readiness merges and publishes, start a bounded 1.10 storage policy/artifact catalog slice with isolated multi-process transfer tests. |
 | Unresolved product decisions | Hardware capacity budgets, approved training datasets, task-specific model acceptance thresholds, current agent-host integration details |
-| Blockers | No implementation blocker. Final PR CI is being verified; hardware/preview/packaging remain explicit follow-up gates. |
+| Blockers | No implementation blocker. PR #90 awaits review; hardware/preview/lean-package work remain explicit follow-up gates. |
 
 ### Implementation-session completion checklist
 

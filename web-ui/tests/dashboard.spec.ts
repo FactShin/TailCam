@@ -55,6 +55,8 @@ let readinessProbeStatus = 200;
 let readinessProbeCount = 0;
 let deferRuntimeProbe = false;
 let finishRuntimeProbe: (() => void) | undefined;
+let deferReadinessRefresh = false;
+let finishReadinessRefresh: (() => void) | undefined;
 const requestedUrls: string[] = [];
 test.beforeAll(async () => {
   backend = createServer((req, res) => {
@@ -102,13 +104,14 @@ test.beforeAll(async () => {
     }
     if (path === "/api/v1/node/capabilities" || path === "/api/v1/fleet/nodes/capture/capabilities") {
       const probe = requestUrl.searchParams.get("probe") === "true";
-      const send = () => {
-        const status = probe ? readinessProbeStatus : readinessReadStatus;
+      const send = (
+        snapshot = path === "/api/v1/node/capabilities" ? readinessSnapshot : peerReadiness,
+        status = probe ? readinessProbeStatus : readinessReadStatus,
+      ) => {
         if (status !== 200) {
           res.writeHead(status).end(JSON.stringify({ detail: "Runtime status is temporarily unavailable" }));
           return;
         }
-        const snapshot = path === "/api/v1/node/capabilities" ? readinessSnapshot : peerReadiness;
         res.end(JSON.stringify({
           api_version: "1", capabilities: ["camera.view", "node.health"], actions: ["reload"],
           principal: { actor: "local", display_name: "Local", source: "local", verified: true, roles: ["admin"] },
@@ -118,6 +121,10 @@ test.beforeAll(async () => {
       if (probe) readinessProbeCount += 1;
       if (probe && deferRuntimeProbe) {
         finishRuntimeProbe = send;
+      } else if (!probe && deferReadinessRefresh) {
+        const snapshot = structuredClone(path === "/api/v1/node/capabilities" ? readinessSnapshot : peerReadiness);
+        const status = readinessReadStatus;
+        finishReadinessRefresh = () => send(snapshot, status);
       } else {
         send();
       }
@@ -210,12 +217,16 @@ test.beforeEach(async ({ page }) => {
   requestedUrls.length = 0;
   deferRuntimeProbe = false;
   finishRuntimeProbe = undefined;
+  deferReadinessRefresh = false;
+  finishReadinessRefresh = undefined;
   await page.addInitScript(() => sessionStorage.setItem("tailcam.booted", "1"));
 });
 
 test.afterEach(() => {
   finishRuntimeProbe?.();
   finishRuntimeProbe = undefined;
+  finishReadinessRefresh?.();
+  finishReadinessRefresh = undefined;
 });
 
 test("mobile readiness explains mixed task states and capacity without probing", async ({ page }, testInfo) => {
@@ -265,6 +276,49 @@ test("Settings polls passive diagnostics without loading AI and probes only when
     "/api/v1/node/capabilities?probe=true",
   ]);
   expect(requestedUrls.filter((url) => /^\/api\/ai(?:[/?]|$)/.test(url))).toEqual([]);
+});
+
+test("a refresh started during a runtime probe cannot overwrite its newer result", async ({ page }) => {
+  await page.clock.install();
+  await page.goto("/settings");
+  const panel = page.getByRole("region", { name: "Runtime readiness", exact: true });
+  const ollama = panel.getByRole("listitem").filter({ hasText: "Ollama model" });
+  await expect(ollama).toContainText("Not checked");
+  await page.clock.fastForward(29_000);
+
+  deferRuntimeProbe = true;
+  await panel.getByRole("button", { name: "Check runtimes", exact: true }).click();
+  await expect.poll(() => readinessProbeCount).toBe(1);
+  deferReadinessRefresh = true;
+  await page.clock.fastForward(1500);
+  await expect.poll(() => typeof finishReadinessRefresh).toBe("function");
+  expect(requestedUrls.filter((url) => url.startsWith("/api/v1/node/capabilities"))).toEqual([
+    "/api/v1/node/capabilities", "/api/v1/node/capabilities?probe=true", "/api/v1/node/capabilities",
+  ]);
+
+  // The ordinary GET has already captured the older unchecked snapshot.
+  // Finish the newer explicit probe first, then deliver that obsolete GET.
+  const checkedAt = readinessSnapshot.checked_at + 2;
+  readinessSnapshot = {
+    ...readinessSnapshot, checked_at: checkedAt,
+    tasks: readinessSnapshot.tasks.map((task) => task.id === "analysis.ollama"
+      ? { ...task, state: "ready", code: "ollama.model_available", detail: "The selected model is installed; inference and vision support were not tested.", checked_at: checkedAt }
+      : task),
+  };
+  finishRuntimeProbe?.();
+  finishRuntimeProbe = undefined;
+  await expect(ollama.locator(".badge")).toHaveText("Ready");
+
+  const lateResponse = page.waitForResponse((response) => response.url().endsWith("/api/v1/node/capabilities"));
+  finishReadinessRefresh?.();
+  finishReadinessRefresh = undefined;
+  const obsolete = await lateResponse;
+  await obsolete.finished();
+  expect((await obsolete.json()).readiness.tasks.find((task: { id: string }) => task.id === "analysis.ollama").state).toBe("unchecked");
+  await page.clock.runFor(100);
+  await expect(ollama.locator(".badge")).toHaveText("Ready");
+  await expect(ollama).toContainText("The selected model is installed");
+  await expect(panel.getByRole("alert")).toHaveCount(0);
 });
 
 test("explicit runtime check retains stale results after failure and retries", async ({ page }, testInfo) => {

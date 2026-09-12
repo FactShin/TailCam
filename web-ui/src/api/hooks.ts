@@ -312,7 +312,12 @@ export function useProbeNodeCapabilities() {
     mutationFn: (nodeKey: string) => api.getNodeCapabilities(nodeKey, true),
     // A slower ordinary refresh must not replace the explicit probe result.
     onMutate: (nodeKey) => qc.cancelQueries({ queryKey: ["node-capabilities", nodeKey] }),
-    onSuccess: (data, nodeKey) => qc.setQueryData(["node-capabilities", nodeKey], data),
+    onSuccess: async (data, nodeKey) => {
+      const queryKey = ["node-capabilities", nodeKey];
+      // A polling refresh may have started while the probe was in flight.
+      await qc.cancelQueries({ queryKey });
+      qc.setQueryData(queryKey, data);
+    },
   });
 }
 
