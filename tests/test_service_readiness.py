@@ -19,8 +19,11 @@ from tailcam.service import readiness
 @pytest.fixture
 def metadata_only(monkeypatch):
     # These deadline tests measure stalled network I/O, not first-run SQLite
-    # initialization (which Windows antivirus can delay significantly).
-    monkeypatch.setattr(readiness.AppConfig, "load", lambda: AppConfig())
+    # or HTTP client initialization, which can vary across platforms.
+    config = AppConfig()
+    opener = readiness._http_opener()
+    monkeypatch.setattr(readiness.AppConfig, "load", lambda: config)
+    monkeypatch.setattr(readiness, "_http_opener", lambda: opener)
     monkeypatch.setattr(
         readiness, "Store",
         lambda: SimpleNamespace(get_node_id=lambda: "da29f349-83ed-4f2d-bb58-564999c0a1c1"),
@@ -73,6 +76,17 @@ def startup_server(store):
 def test_ready_checks_only_local_system_metadata(startup_server, monkeypatch):
     monkeypatch.setenv("http_proxy", "http://not-loopback.invalid:3128")
     monkeypatch.setenv("HTTP_PROXY", "http://not-loopback.invalid:3128")
+    assert readiness.wait_ready(timeout_seconds=1)
+    assert startup_server["paths"] == ["/api/system"]
+
+
+def test_loopback_http_never_initializes_tls_or_discovers_proxies(startup_server, monkeypatch):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Loopback HTTP initialized TLS or discovered environment proxies")
+
+    monkeypatch.setattr("ssl.create_default_context", forbidden)
+    monkeypatch.setattr("urllib.request.HTTPSHandler.__init__", forbidden)
+    monkeypatch.setattr("urllib.request.getproxies", forbidden)
     assert readiness.wait_ready(timeout_seconds=1)
     assert startup_server["paths"] == ["/api/system"]
 
