@@ -198,6 +198,8 @@ test.beforeEach(async ({ page }) => {
       { id: "media.write", label: "Local media writes", state: "unavailable", code: "storage.not_writable", detail: "The media directory is not writable.", checked_at: checkedAt },
       { id: "vision.detect", label: "Vision detection", state: "disabled", code: "role.disabled", detail: "The analysis role is disabled.", checked_at: checkedAt },
       { id: "printer.analyze", label: "Printer analysis", state: "unchecked", code: "runtime.unchecked", detail: "The configured runtime has not been checked.", checked_at: 0 },
+      { id: "processing.ffmpeg", label: "Video encoding", state: "unchecked", code: "encoder_untested", detail: "An FFmpeg executable is present; codecs and encoding have not been tested.", checked_at: checkedAt },
+      { id: "training", label: "Model training", state: "unavailable", code: "training_dependencies_missing", detail: "Training packages missing. Install the TailCam training extra.", checked_at: checkedAt },
     ],
     probe_supported: true,
   };
@@ -233,8 +235,13 @@ test("mobile readiness explains mixed task states and capacity without probing",
   expect(readinessProbeCount).toBe(0);
   expect(requestedUrls.filter((url) => url.includes("probe=true"))).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await panel.scrollIntoViewIfNeeded();
+  await panel.evaluate((element) => element.scrollIntoView({ block: "start" }));
   await page.screenshot({ path: testInfo.outputPath("readiness-mobile.png") });
+  await panel.getByRole("listitem").last().scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("readiness-mobile-bottom.png") });
+  await page.setViewportSize({ width: 1440, height: 1200 });
+  await panel.evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await page.screenshot({ path: testInfo.outputPath("readiness-desktop.png") });
 });
 
 test("Settings polls passive diagnostics without loading AI and probes only when requested", async ({ page }) => {
@@ -260,7 +267,7 @@ test("Settings polls passive diagnostics without loading AI and probes only when
   expect(requestedUrls.filter((url) => /^\/api\/ai(?:[/?]|$)/.test(url))).toEqual([]);
 });
 
-test("explicit runtime check retains stale results after failure and retries", async ({ page }) => {
+test("explicit runtime check retains stale results after failure and retries", async ({ page }, testInfo) => {
   await page.goto("/settings");
   const panel = page.getByRole("region", { name: "Runtime readiness", exact: true });
   await expect(panel.getByRole("button", { name: "Check runtimes", exact: true })).toBeVisible();
@@ -275,6 +282,8 @@ test("explicit runtime check retains stale results after failure and retries", a
   await expect(panel.getByRole("alert")).toContainText("Stale snapshot");
   await expect(panel.getByRole("listitem").filter({ hasText: "Attached cameras" })).toContainText("One local camera is online.");
   await expect(panel.getByRole("listitem").filter({ hasText: "Printer analysis" })).toContainText("Not checked");
+  await panel.evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await page.screenshot({ path: testInfo.outputPath("readiness-stale.png") });
 
   readinessProbeStatus = 200;
   deferRuntimeProbe = false;
