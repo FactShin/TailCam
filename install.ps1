@@ -20,7 +20,7 @@
 param(
   [ValidateRange(0, 65535)][int]$Port = 0,
   [string]$Ref = $env:TAILCAM_REF,
-  [string]$Version = "1.9.1",
+  [string]$Version = "1.9.2",
   [ValidateSet("", "hub", "camera", "storage", "compute", "all-in-one")]
   [string]$Preset = $env:TAILCAM_PRESET,
   [string]$NodeName = $env:TAILCAM_NODE_NAME,

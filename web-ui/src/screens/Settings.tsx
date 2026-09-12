@@ -1,9 +1,10 @@
 import { useState } from "react";
 
-import { useAi, useCameras, useHosts, useSystem } from "../api/hooks";
+import { useCameras, useHosts, useSystem } from "../api/hooks";
 import { IntegrationsPanel } from "../components/IntegrationsPanel";
 import { NotificationsSettings } from "../components/NotificationsSettings";
 import { NodePurposePanel } from "../components/NodePurposePanel";
+import { NodeReadinessPanel } from "../components/NodeReadinessPanel";
 import { StoragePanel } from "../components/StoragePanel";
 import { StreamingPanel } from "../components/StreamingPanel";
 import { useToast } from "../components/toast";
@@ -16,7 +17,6 @@ export function Settings() {
   const sys = useSystem().data;
   const cameras = useCameras().data ?? [];
   const hosts = useHosts().data ?? [];
-  const ai = useAi().data;
   const toast = useToast();
   const [copied, setCopied] = useState(false);
 
@@ -46,6 +46,7 @@ export function Settings() {
 
       <div className="settings-grid">
         <NodePurposePanel />
+        <NodeReadinessPanel />
         <div className="panel">
           <div className="panel-title"><IconInfo size={16} /> System</div>
           <div className="kv"><span className="kv-k">Version</span><span className="kv-v mono">TailCam {sys.version}</span></div>
@@ -90,37 +91,11 @@ export function Settings() {
 
         <div className="panel">
           <div className="panel-title"><IconInfo size={16} /> AI motion analysis</div>
-          {!ai || !ai.enabled ? (
-            <div className="kv kv-stack">
-              <span className="kv-k">Status</span>
-              <span className="kv-v">
-                <span className="badge"><span className="pill-dot" style={{ background: "var(--muted)" }} /> Disabled</span>
-              </span>
-              <span className="help-foot mono">
-                Motion events get labels (person/animal/vehicle…) when AI is on. Set it up — model
-                download included — in <a className="lit" href="/ai">AI Studio</a>.
-              </span>
-            </div>
-          ) : (
-            <>
-              <div className="kv"><span className="kv-k">Model</span><span className="kv-v mono">{ai.model}</span></div>
-              <div className="kv">
-                <span className="kv-k">Ollama</span>
-                <span className="kv-v">
-                  {ai.reachable && ai.model_present ? (
-                    <span className="badge badge-ok"><span className="pill-dot" style={{ background: "var(--ok)" }} /> Ready</span>
-                  ) : ai.reachable ? (
-                    <span className="badge badge-warn"><span className="pill-dot" style={{ background: "var(--warn)" }} /> Model not pulled</span>
-                  ) : (
-                    <span className="badge badge-err"><span className="pill-dot" style={{ background: "var(--err)" }} /> Unreachable</span>
-                  )}
-                </span>
-              </div>
-              {ai.reachable && !ai.model_present && (
-                <span className="help-foot mono">Run on the Ollama host: ollama pull {ai.model}</span>
-              )}
-            </>
-          )}
+          <p className="ais-intro">
+            Configure motion labels, object detection, and models in AI Studio.
+            Runtime readiness above shows current task checks.
+          </p>
+          <a className="btn btn-outline" href="/ai">Open AI Studio</a>
         </div>
 
         <div className="panel">

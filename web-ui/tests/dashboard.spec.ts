@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:http";
 import { expect, test } from "@playwright/test";
-import type { CameraInfo, MediaInfo, NodeConfig, StorageInfo, SystemInfo } from "../src/types";
+import type { CameraInfo, MediaInfo, NodeConfig, NodeReadiness, StorageInfo, SystemInfo } from "../src/types";
 
 const camera: CameraInfo = {
   id: "/dev/video0",
@@ -48,9 +48,21 @@ let visibleCameras: CameraInfo[] = [];
 let lastNodePatch: unknown;
 let fleetRefreshes = 0;
 let storageFixture: StorageInfo | undefined;
+let readinessSnapshot: NodeReadiness;
+let peerReadiness: NodeReadiness | null | undefined;
+let readinessReadStatus = 200;
+let readinessProbeStatus = 200;
+let readinessProbeCount = 0;
+let deferRuntimeProbe = false;
+let finishRuntimeProbe: (() => void) | undefined;
+let deferReadinessRefresh = false;
+let finishReadinessRefresh: (() => void) | undefined;
+const requestedUrls: string[] = [];
 test.beforeAll(async () => {
   backend = createServer((req, res) => {
-    const path = new URL(req.url!, "http://127.0.0.1:4174").pathname;
+    const requestUrl = new URL(req.url!, "http://127.0.0.1:4174");
+    const path = requestUrl.pathname;
+    requestedUrls.push(req.url!);
     requested.add(path);
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Content-Type", "application/json");
@@ -90,6 +102,34 @@ test.beforeAll(async () => {
       res.writeHead(405).end(JSON.stringify({ detail: "Read-only browser fixture" }));
       return;
     }
+    if (path === "/api/v1/node/capabilities" || path === "/api/v1/fleet/nodes/capture/capabilities") {
+      const probe = requestUrl.searchParams.get("probe") === "true";
+      const send = (
+        snapshot = path === "/api/v1/node/capabilities" ? readinessSnapshot : peerReadiness,
+        status = probe ? readinessProbeStatus : readinessReadStatus,
+      ) => {
+        if (status !== 200) {
+          res.writeHead(status).end(JSON.stringify({ detail: "Runtime status is temporarily unavailable" }));
+          return;
+        }
+        res.end(JSON.stringify({
+          api_version: "1", capabilities: ["camera.view", "node.health"], actions: ["reload"],
+          principal: { actor: "local", display_name: "Local", source: "local", verified: true, roles: ["admin"] },
+          ...(snapshot === undefined ? {} : { readiness: snapshot }),
+        }));
+      };
+      if (probe) readinessProbeCount += 1;
+      if (probe && deferRuntimeProbe) {
+        finishRuntimeProbe = send;
+      } else if (!probe && deferReadinessRefresh) {
+        const snapshot = structuredClone(path === "/api/v1/node/capabilities" ? readinessSnapshot : peerReadiness);
+        const status = readinessReadStatus;
+        finishReadinessRefresh = () => send(snapshot, status);
+      } else {
+        send();
+      }
+      return;
+    }
     if (path.endsWith("/browser-probe")) {
       const count = (probes.get(path) ?? 0) + 1;
       probes.set(path, count);
@@ -101,14 +141,14 @@ test.beforeAll(async () => {
       "/api/cameras": visibleCameras,
       "/api/hosts": [{
         host: "browser-hub", node_key: "local", kind: "local", online: true,
-        version: "1.9.0", camera_count: 0, proxy_prefix: "",
+        version: "1.9.2", camera_count: 0, proxy_prefix: "",
         node_id: nodeConfig.node_id, node_name: nodeConfig.name, node_roles: nodeConfig.active_roles,
       }, {
         host: camera.host, node_key: "capture", kind: "peer", online: true,
         version: "1.8.6", camera_count: 1, proxy_prefix: camera.proxy_prefix,
       }],
       "/api/system": {
-        version: "1.9.0", host: "browser-hub", node_id: nodeConfig.node_id,
+        version: "1.9.2", host: "browser-hub", node_id: nodeConfig.node_id,
         node_name: nodeConfig.name, node_roles: nodeConfig.active_roles,
         tailscale_installed: false, tailscale_running: false,
         access_url: "http://localhost:4173", local_url: "http://localhost:4173",
@@ -156,7 +196,211 @@ test.beforeEach(async ({ page }) => {
   lastNodePatch = undefined;
   fleetRefreshes = 0;
   storageFixture = undefined;
+  const checkedAt = Math.floor(Date.now() / 1000);
+  readinessSnapshot = {
+    checked_at: checkedAt,
+    capacity: { cpu_count: 4, total_ram_bytes: 8 * 1024 ** 3, media_free_bytes: 0, media_total_bytes: 16 * 1024 ** 3, media_writable: false },
+    tasks: [
+      { id: "capture", label: "Camera capture", state: "ready", code: "camera_online", detail: "1 camera(s) currently online; individual cameras may differ.", checked_at: checkedAt },
+      { id: "storage.local", label: "Local media storage", state: "unavailable", code: "media_not_writable", detail: "No write access or free space. Check storage settings.", checked_at: checkedAt },
+      { id: "detection.builtin", label: "Built-in object detection", state: "disabled", code: "feature_disabled", detail: "Object detection is switched off.", checked_at: checkedAt },
+      { id: "analysis.ollama", label: "Ollama model", state: "unchecked", code: "runtime_unchecked", detail: "Use Check runtimes to query the configured Ollama model inventory.", checked_at: checkedAt },
+      { id: "processing.ffmpeg", label: "FFmpeg encoding", state: "unchecked", code: "encoder_untested", detail: "An FFmpeg executable is present; codecs and encoding have not been tested.", checked_at: checkedAt },
+      { id: "training", label: "Model training", state: "unavailable", code: "training_dependencies_missing", detail: "Training packages missing. Install the TailCam training extra.", checked_at: checkedAt },
+    ],
+    probe_supported: true,
+  };
+  peerReadiness = undefined;
+  readinessReadStatus = 200;
+  readinessProbeStatus = 200;
+  readinessProbeCount = 0;
+  requestedUrls.length = 0;
+  deferRuntimeProbe = false;
+  finishRuntimeProbe = undefined;
+  deferReadinessRefresh = false;
+  finishReadinessRefresh = undefined;
   await page.addInitScript(() => sessionStorage.setItem("tailcam.booted", "1"));
+});
+
+test.afterEach(() => {
+  finishRuntimeProbe?.();
+  finishRuntimeProbe = undefined;
+  finishReadinessRefresh?.();
+  finishReadinessRefresh = undefined;
+});
+
+test("mobile readiness explains mixed task states and capacity without probing", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/settings");
+  const panel = page.getByRole("region", { name: "Runtime readiness", exact: true });
+  await expect(panel.getByRole("list", { name: "Task readiness" })).toBeVisible();
+  await expect(panel.getByRole("listitem").filter({ hasText: "Camera capture" })).toContainText("Ready");
+  await expect(panel.getByRole("listitem").filter({ hasText: "Local media storage" })).toContainText("Unavailable");
+  await expect(panel.getByRole("listitem").filter({ hasText: "Built-in object detection" })).toContainText("Disabled");
+  await expect(panel.getByRole("listitem").filter({ hasText: "Ollama model" })).toContainText("Not checked");
+  await expect(panel.getByText("No write access or free space. Check storage settings.", { exact: true })).toBeVisible();
+  await expect(panel.locator(".readiness-capacity")).toContainText("4 logical CPUs");
+  await expect(panel.locator(".readiness-capacity")).toContainText("8.0 GB");
+  await expect(panel.locator(".readiness-capacity")).toContainText("0 B free");
+  await expect(panel.locator(".readiness-capacity")).toContainText("Not writable");
+  expect(readinessProbeCount).toBe(0);
+  expect(requestedUrls.filter((url) => url.includes("probe=true"))).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await panel.evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await page.screenshot({ path: testInfo.outputPath("readiness-mobile.png") });
+  await panel.getByRole("listitem").last().scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("readiness-mobile-bottom.png") });
+  await page.setViewportSize({ width: 1440, height: 1200 });
+  await panel.evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await page.screenshot({ path: testInfo.outputPath("readiness-desktop.png") });
+});
+
+test("Settings polls passive diagnostics without loading AI and probes only when requested", async ({ page }) => {
+  await page.clock.install();
+  await page.goto("/settings");
+  const panel = page.getByRole("region", { name: "Runtime readiness", exact: true });
+  await expect(panel.getByRole("button", { name: "Check runtimes", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open AI Studio", exact: true })).toHaveAttribute("href", "/ai");
+
+  // Exercise the periodic refresh too: opening Settings must not merely delay
+  // a legacy /api/ai call until its polling interval.
+  await page.clock.fastForward(31_000);
+  await expect.poll(() => requestedUrls.filter((url) => url === "/api/v1/node/capabilities").length).toBeGreaterThan(1);
+  expect(requestedUrls.filter((url) => /^\/api\/ai(?:[/?]|$)/.test(url))).toEqual([]);
+  expect(requestedUrls.filter((url) => url.includes("probe=true"))).toEqual([]);
+
+  await panel.getByRole("button", { name: "Check runtimes", exact: true }).click();
+  await expect.poll(() => readinessProbeCount).toBe(1);
+  await expect(panel.getByRole("button", { name: "Check runtimes", exact: true })).toBeEnabled();
+  expect(requestedUrls.filter((url) => url.includes("probe=true"))).toEqual([
+    "/api/v1/node/capabilities?probe=true",
+  ]);
+  expect(requestedUrls.filter((url) => /^\/api\/ai(?:[/?]|$)/.test(url))).toEqual([]);
+});
+
+test("a refresh started during a runtime probe cannot overwrite its newer result", async ({ page }) => {
+  await page.clock.install();
+  await page.goto("/settings");
+  const panel = page.getByRole("region", { name: "Runtime readiness", exact: true });
+  const ollama = panel.getByRole("listitem").filter({ hasText: "Ollama model" });
+  await expect(ollama).toContainText("Not checked");
+  await page.clock.fastForward(29_000);
+
+  deferRuntimeProbe = true;
+  await panel.getByRole("button", { name: "Check runtimes", exact: true }).click();
+  await expect.poll(() => readinessProbeCount).toBe(1);
+  deferReadinessRefresh = true;
+  await page.clock.fastForward(1500);
+  await expect.poll(() => typeof finishReadinessRefresh).toBe("function");
+  expect(requestedUrls.filter((url) => url.startsWith("/api/v1/node/capabilities"))).toEqual([
+    "/api/v1/node/capabilities", "/api/v1/node/capabilities?probe=true", "/api/v1/node/capabilities",
+  ]);
+
+  // The ordinary GET has already captured the older unchecked snapshot.
+  // Finish the newer explicit probe first, then deliver that obsolete GET.
+  const checkedAt = readinessSnapshot.checked_at + 2;
+  readinessSnapshot = {
+    ...readinessSnapshot, checked_at: checkedAt,
+    tasks: readinessSnapshot.tasks.map((task) => task.id === "analysis.ollama"
+      ? { ...task, state: "ready", code: "ollama.model_available", detail: "The selected model is installed; inference and vision support were not tested.", checked_at: checkedAt }
+      : task),
+  };
+  finishRuntimeProbe?.();
+  finishRuntimeProbe = undefined;
+  await expect(ollama.locator(".badge")).toHaveText("Ready");
+
+  const lateResponse = page.waitForResponse((response) => response.url().endsWith("/api/v1/node/capabilities"));
+  finishReadinessRefresh?.();
+  finishReadinessRefresh = undefined;
+  const obsolete = await lateResponse;
+  await obsolete.finished();
+  expect((await obsolete.json()).readiness.tasks.find((task: { id: string }) => task.id === "analysis.ollama").state).toBe("unchecked");
+  await page.clock.runFor(100);
+  await expect(ollama.locator(".badge")).toHaveText("Ready");
+  await expect(ollama).toContainText("The selected model is installed");
+  await expect(panel.getByRole("alert")).toHaveCount(0);
+});
+
+test("explicit runtime check retains stale results after failure and retries", async ({ page }, testInfo) => {
+  await page.goto("/settings");
+  const panel = page.getByRole("region", { name: "Runtime readiness", exact: true });
+  await expect(panel.getByRole("button", { name: "Check runtimes", exact: true })).toBeVisible();
+  deferRuntimeProbe = true;
+  await panel.getByRole("button", { name: "Check runtimes", exact: true }).click();
+  await expect.poll(() => readinessProbeCount).toBe(1);
+  await expect(panel.getByRole("button", { name: "Checking runtimes…", exact: true })).toBeDisabled();
+  await expect(panel.getByRole("status")).toContainText("Models are not loaded or downloaded");
+  readinessProbeStatus = 503;
+  finishRuntimeProbe?.();
+  finishRuntimeProbe = undefined;
+  await expect(panel.getByRole("alert")).toContainText("Stale snapshot");
+  await expect(panel.getByRole("listitem").filter({ hasText: "Camera capture" })).toContainText("1 camera(s) currently online; individual cameras may differ.");
+  await expect(panel.getByRole("listitem").filter({ hasText: "Ollama model" })).toContainText("Not checked");
+  await panel.evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await page.screenshot({ path: testInfo.outputPath("readiness-stale.png") });
+
+  readinessProbeStatus = 200;
+  deferRuntimeProbe = false;
+  readinessSnapshot = {
+    ...readinessSnapshot,
+    tasks: readinessSnapshot.tasks.map((task) => task.id === "analysis.ollama"
+      ? { ...task, state: "ready", code: "ollama.model_available", detail: "The selected model is installed; inference and vision support were not tested.", checked_at: Math.floor(Date.now() / 1000) }
+      : task),
+  };
+  await panel.getByRole("button", { name: "Retry runtime check", exact: true }).click();
+  await expect(panel.getByRole("listitem").filter({ hasText: "Ollama model" })).toContainText("The selected model is installed; inference and vision support were not tested.");
+  await expect(panel.getByRole("alert")).toHaveCount(0);
+  expect(readinessProbeCount).toBe(2);
+  expect(requestedUrls.filter((url) => url.includes("probe=true"))).toEqual([
+    "/api/v1/node/capabilities?probe=true", "/api/v1/node/capabilities?probe=true",
+  ]);
+});
+
+for (const legacyState of ["missing", "null"] as const) {
+  test(`legacy peer with ${legacyState} readiness never inherits local healthy results`, async ({ page }) => {
+    peerReadiness = legacyState === "missing" ? undefined : null;
+    await page.goto("/settings");
+    const panel = page.getByRole("region", { name: "Runtime readiness", exact: true });
+    await expect(panel.getByRole("list", { name: "Task readiness" })).toBeVisible();
+    await panel.getByLabel("Check device").selectOption("capture");
+    await expect(panel.getByText("Readiness is not reported by this node.", { exact: false })).toBeVisible();
+    await expect(panel.getByRole("list", { name: "Task readiness" })).toHaveCount(0);
+    await expect(panel.getByRole("button", { name: "Check runtimes", exact: true })).toHaveCount(0);
+    expect(requestedUrls).toContain("/api/v1/fleet/nodes/capture/capabilities");
+    expect(readinessProbeCount).toBe(0);
+  });
+}
+
+test("initial readiness error retries a cheap snapshot without a runtime probe", async ({ page }) => {
+  readinessReadStatus = 503;
+  await page.goto("/settings");
+  const panel = page.getByRole("region", { name: "Runtime readiness", exact: true });
+  await expect(panel.getByRole("alert")).toContainText("Could not load this node’s readiness");
+  readinessReadStatus = 200;
+  await panel.getByRole("button", { name: "Retry readiness", exact: true }).click();
+  await expect(panel.getByRole("list", { name: "Task readiness" })).toBeVisible();
+  expect(readinessProbeCount).toBe(0);
+});
+
+test("peer runtime checks remain attached to their node when selection changes", async ({ page }) => {
+  peerReadiness = {
+    ...readinessSnapshot,
+    tasks: [{ id: "processing.ffmpeg", label: "FFmpeg encoding", state: "unavailable", code: "encoder_missing", detail: "FFmpeg missing. Install FFmpeg or repair TailCam.", checked_at: readinessSnapshot.checked_at }],
+  };
+  await page.goto("/settings");
+  const panel = page.getByRole("region", { name: "Runtime readiness", exact: true });
+  await panel.getByLabel("Check device").selectOption("capture");
+  await expect(panel.getByRole("listitem")).toContainText("FFmpeg missing. Install FFmpeg or repair TailCam.");
+  deferRuntimeProbe = true;
+  await panel.getByRole("button", { name: "Check runtimes", exact: true }).click();
+  await expect.poll(() => readinessProbeCount).toBe(1);
+  expect(requestedUrls).toContain("/api/v1/fleet/nodes/capture/capabilities?probe=true");
+  await panel.getByLabel("Check device").selectOption("local");
+  finishRuntimeProbe?.();
+  finishRuntimeProbe = undefined;
+  await expect(panel.getByRole("listitem").filter({ hasText: "Camera capture" })).toBeVisible();
+  await expect(panel.getByText("FFmpeg missing. Install FFmpeg or repair TailCam.", { exact: true })).toHaveCount(0);
+  await expect(panel.getByRole("button", { name: "Check runtimes", exact: true })).toBeEnabled();
 });
 
 test("mobile node purpose saves future roles without claiming active capture stopped", async ({ page }, testInfo) => {
@@ -241,8 +485,8 @@ test("storage picker explains disabled roles while keeping older peers compatibl
     auto_record: true, record_tail_seconds: 5, retention_enabled: false,
     max_gb: 10, max_age_days: 30,
     nodes: [
-      { node_key: "local", host: "browser-hub", online: true, storage_enabled: false, media_dir: "/fixture/media", disk_total: 1000, disk_free: 900, version: "1.9.0" },
-      { node_key: "compute", host: "compute-worker", online: true, storage_enabled: false, media_dir: "/fixture/media", disk_total: 1000, disk_free: 900, version: "1.9.0" },
+      { node_key: "local", host: "browser-hub", online: true, storage_enabled: false, media_dir: "/fixture/media", disk_total: 1000, disk_free: 900, version: "1.9.2" },
+      { node_key: "compute", host: "compute-worker", online: true, storage_enabled: false, media_dir: "/fixture/media", disk_total: 1000, disk_free: 900, version: "1.9.2" },
       { node_key: "legacy", host: "older-storage", online: true, media_dir: "/fixture/media", disk_total: 1000, disk_free: 900, version: "1.8.6" },
     ],
   };
