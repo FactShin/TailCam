@@ -124,3 +124,19 @@ explorers at **`/api-docs`** (Swagger UI) and **`/api-redoc`** (ReDoc). (The
 > The dashboard talks to these endpoints over loopback/the tailnet. There's no
 > separate API key — access is governed by Tailscale identity and the
 > [role model](security).
+
+## Task readiness
+
+`GET /api/v1/node/capabilities` and
+`GET /api/v1/fleet/nodes/{node_key}/capabilities` retain the existing capability
+and principal fields. Updated nodes add optional `readiness`: `checked_at` (Unix
+seconds), `capacity` (CPU count, total RAM, nullable media free/total bytes and write
+access), `probe_supported`, and `tasks`. A task has `id`, `label`, `state`, `code`,
+`detail`, and its own observation `checked_at`. States are `ready`, `unavailable`,
+`disabled`, and `unchecked`. Missing or null readiness means unknown on older peers.
+
+Ordinary GETs are passive. `?probe=true` requests a bounded, read-only Ollama model
+inventory probe, with cached results for 30 seconds and a three-second minimum
+probe interval. Cached task timestamps remain unchanged. No model is downloaded,
+loaded, or run. A readiness result is not a work admission decision or a capacity
+reservation. See [Runtime readiness](configuration).

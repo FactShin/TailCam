@@ -60,6 +60,30 @@ the base OpenCV dependency; selecting a role does not install or remove packages
 Training datasets and models remain on their current local paths until the
 unified-storage milestone.
 
+## Runtime readiness
+
+Open **Settings → Runtime readiness** to inspect this device or a fleet peer.
+Enabled roles describe permitted work. The readiness panel adds current evidence
+for camera capture, local media storage, the built-in detector, an Ollama model,
+FFmpeg encoding, and training packages.
+
+- **Ready:** the specific check passed; read its detail for what was verified.
+- **Unavailable:** a required resource is missing or the check failed.
+- **Disabled:** the active role or feature switch prevents this task.
+- **Not checked:** the runtime has not been exercised or its previous check expired.
+
+CPU and RAM are host totals. Free media space and directory access are observations,
+not reserved capacity or proof that a particular recording fits. Drive identity,
+write speed, codecs, inference quality, and GPU memory are not tested here.
+
+Ordinary refreshes read current process state and files; they do not open cameras,
+load models, import training engines, or contact Ollama. **Check runtimes** also
+queries the configured Ollama model inventory with a two-second deadline. It never
+loads, downloads, warms, or runs a model. Installed model presence does not establish
+vision support. Results are cached for 30 seconds with their original check time;
+checks are limited to once per three seconds on each node. Other providers remain
+unchecked. Older peers without readiness metadata show **not reported**.
+
 ## `[server]`
 
 | Key | Default | Meaning |

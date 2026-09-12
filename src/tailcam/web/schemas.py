@@ -929,6 +929,30 @@ class NodeIssueInfo(BaseModel):
     detail: str | None = None
 
 
+class TaskReadinessInfo(BaseModel):
+    id: str
+    label: str
+    state: Literal["ready", "unavailable", "disabled", "unchecked"]
+    code: str
+    detail: str
+    checked_at: float = Field(ge=0, allow_inf_nan=False)
+
+
+class ReadinessCapacityInfo(BaseModel):
+    cpu_count: int = Field(ge=0)
+    total_ram_bytes: int = Field(ge=0)
+    media_free_bytes: int | None = Field(default=None, ge=0)
+    media_total_bytes: int | None = Field(default=None, ge=0)
+    media_writable: bool | None = None
+
+
+class NodeReadinessInfo(BaseModel):
+    checked_at: float = Field(ge=0, allow_inf_nan=False)
+    capacity: ReadinessCapacityInfo
+    tasks: list[TaskReadinessInfo]
+    probe_supported: bool = False
+
+
 class NodeCapabilitiesInfo(BaseModel):
     api_version: str
     capabilities: list[str]
@@ -937,6 +961,7 @@ class NodeCapabilitiesInfo(BaseModel):
     node_id: str | None = None
     node_name: str | None = None
     node_roles: list[str] | None = None
+    readiness: NodeReadinessInfo | None = None
 
 
 class NodeHealthInfo(BaseModel):

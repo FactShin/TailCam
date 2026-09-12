@@ -297,6 +297,25 @@ export function useNodeConfig() {
   });
 }
 
+export function useNodeCapabilities(nodeKey: string) {
+  return useQuery({
+    queryKey: ["node-capabilities", nodeKey],
+    queryFn: () => api.getNodeCapabilities(nodeKey),
+    refetchInterval: 30000,
+    retry: false,
+  });
+}
+
+export function useProbeNodeCapabilities() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (nodeKey: string) => api.getNodeCapabilities(nodeKey, true),
+    // A slower ordinary refresh must not replace the explicit probe result.
+    onMutate: (nodeKey) => qc.cancelQueries({ queryKey: ["node-capabilities", nodeKey] }),
+    onSuccess: (data, nodeKey) => qc.setQueryData(["node-capabilities", nodeKey], data),
+  });
+}
+
 export function useUpdateNodeConfig() {
   const qc = useQueryClient();
   return useMutation({

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import threading
 from copy import deepcopy
+from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
@@ -25,6 +26,7 @@ from tailcam.web.schemas import (
     NodeConfigUpdate,
     NodeHealthInfo,
     NodeIssueInfo,
+    NodeReadinessInfo,
     PrincipalInfo,
 )
 
@@ -48,8 +50,10 @@ def require_admin(
 def capabilities(
     principal: RequestPrincipal = Depends(get_principal),
     ctx: AppContext = Depends(get_context),
+    probe: bool = False,
 ) -> NodeCapabilitiesInfo:
-    return _capabilities_info(NodeCapabilityService(ctx).snapshot(principal), principal)
+    snapshot = NodeCapabilityService(ctx).snapshot(principal, probe=probe)
+    return _capabilities_info(snapshot, principal)
 
 
 @router.get("/config", response_model=NodeConfigInfo)
@@ -194,6 +198,8 @@ def _capabilities_info(
         node_id=capabilities.node_id,
         node_name=capabilities.node_name,
         node_roles=list(capabilities.node_roles) if capabilities.node_roles is not None else None,
+        readiness=NodeReadinessInfo.model_validate(asdict(capabilities.readiness))
+        if capabilities.readiness is not None else None,
     )
 
 
