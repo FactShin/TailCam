@@ -217,13 +217,14 @@ function Install-TailCam {
   }
 
   function Restore-Previous($why) {
+    Stop-TailCamProcesses
+    Disable-ScheduledTask -TaskName "TailCam" -ErrorAction SilentlyContinue | Out-Null
     Remove-Item -Recurse -Force $VenvDir -ErrorAction SilentlyContinue
     if ($HadPrevious) {
-      Move-Item $BackupDir $VenvDir -ErrorAction SilentlyContinue
-      Start-ScheduledTask -TaskName "TailCam" -ErrorAction SilentlyContinue
-      Warn "The previous TailCam install was restored and restarted."
+      Move-Item $BackupDir $VenvDir
+      Warn "Previous installation restored at $VenvDir; service left stopped."
     }
-    Fail $why
+    Fail "$why Repair the saved config before running: tailcam install-service"
   }
 
   Info "Creating virtualenv at $VenvDir"
@@ -258,20 +259,30 @@ function Install-TailCam {
   if ($NodeName) { $SetupArgs += @("--node-name", $NodeName) }
   if ($Port) { $SetupArgs += @("--port", "$Port") }
   $SetupText = & $VenvPy -m tailcam setup @SetupArgs
-  if ($LASTEXITCODE -ne 0) {
-    Remove-Item -Recurse -Force $VenvDir -ErrorAction SilentlyContinue
-    if ($HadPrevious) { Move-Item $BackupDir $VenvDir }
-    Fail "Setup failed; previous install restored but left stopped. Repair configuration before starting."
-  }
-  $NodeSetup = $SetupText | ConvertFrom-Json
+  if ($LASTEXITCODE -ne 0) { Restore-Previous "Setup failed." }
+  try { $NodeSetup = $SetupText | ConvertFrom-Json }
+  catch { Restore-Previous "Setup returned an invalid result." }
   Info ("Workloads: " + ($NodeSetup.roles -join ", "))
   Info ("Dashboard when running: " + $NodeSetup.url)
 
-  # New install verified: the old one can go, along with the pre-rename AnyCam venv.
-  if ($HadPrevious) { Remove-Item -Recurse -Force $BackupDir -ErrorAction SilentlyContinue }
+  # New install verified only after registration AND local startup succeed.
+  if (-not $NoService) {
+    try {
+      Info "Registering logon task"
+      & $VenvPy -m tailcam install-service
+      if ($LASTEXITCODE -ne 0) { throw "Service registration failed." }
+      & $VenvPy -m tailcam.service.readiness --timeout 30
+      if ($LASTEXITCODE -ne 0) { throw "Service startup verification failed; inspect the service and install logs." }
+    } catch { Restore-Previous $_.Exception.Message }
+    if ($HadPrevious) { Remove-Item -Recurse -Force $BackupDir -ErrorAction SilentlyContinue }
+  } else {
+    Warn "Service not started (-NoService); startup has not been verified."
+    if ($HadPrevious) { Warn "Previous installation retained at $BackupDir." }
+  }
+
+  # Legacy binaries can be removed after the new installation is ready.
   if (Test-Path $LegacyVenvDir) {
     Info "Removing old AnyCam virtualenv at $LegacyVenvDir"
-    Stop-TailCamProcesses
     Remove-Item -Recurse -Force $LegacyVenvDir -ErrorAction SilentlyContinue
   }
 
@@ -295,13 +306,6 @@ function Install-TailCam {
     [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
     Info "Added TailCam to your PATH  -  open a NEW terminal to use the 'tailcam' command."
   }
-
-  # --- background service (logon Scheduled Task) ------------------------------
-  # Persist the chosen port so the service and `tailscale serve` both use it.
-  if (-not $NoService) {
-    Info "Registering logon task"
-    & $VenvPy -m tailcam install-service
-  } else { Warn "Skipping service registration (-NoService)." }
 
   # --- Tailscale serve --------------------------------------------------------
   function Find-Tailscale {
@@ -437,7 +441,7 @@ function Install-TailCam {
   # has the tray set to start at logon, bring it back now rather than leaving
   # it gone until the next sign-in.
   $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
-  if ((Get-ItemProperty -Path $runKey -Name "TailCam" -ErrorAction SilentlyContinue).TailCam) {
+  if (-not $NoService -and (Get-ItemProperty -Path $runKey -Name "TailCam" -ErrorAction SilentlyContinue).TailCam) {
     $pythonw = Join-Path $VenvDir "Scripts\pythonw.exe"
     if (-not (Test-Path $pythonw)) { $pythonw = "pythonw" }
     try {
@@ -450,7 +454,8 @@ function Install-TailCam {
   Info "TailCam installed."
   & $VenvPy -m tailcam status
   Write-Host ""
-  Info "Open the web UI at one of the URLs above."
+  if ($NoService) { Warn "Service not started. Start it when ready with: tailcam install-service" }
+  else { Info "Open the web UI at one of the URLs above." }
   Info "Manage it with: $TailcamBin <command>   (status, tailscale serve, uninstall-service, ...)"
   Info "Install log: $LogPath"
 }
@@ -473,6 +478,8 @@ try {
   if (-not $NonInteractive -and -not $env:TAILCAM_INSTALL_NONINTERACTIVE -and [Environment]::UserInteractive) {
     try { Read-Host "Press Enter to close" | Out-Null } catch { }
   }
+  # Preserve a failed process exit code without closing an interactive `iex` host.
+  throw
 } finally {
   if ($TranscriptStarted) { try { Stop-Transcript | Out-Null } catch { } }
 }

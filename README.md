@@ -413,10 +413,12 @@ Roles take effect on server restart; Settings shows saved and active roles.
 Valid older configs keep all four roles. The node UUID survives config changes
 and restarts, while existing host/proxy links keep working. These are workload
 roles, separate from viewer/operator/admin permissions. Hub startup skips camera
-scans and local models; the base package still includes OpenCV. Role-aware OS
-installer prompts and lean packaging remain follow-up work. The current OS
-installers start all-in-one on a fresh install; use manual setup for a hub's
-first startup.
+scans and local models; the base package still includes OpenCV. The 1.9.1
+installers save the selected purpose before service startup: pass `--preset hub`
+on Linux, macOS, or Docker, or `-Preset hub` on Windows. Linux/macOS can also
+ask interactively; unattended installs accept `--non-interactive`. Use
+`tailcam setup --dry-run --json` to preview configuration without moving legacy
+data or writing settings. Lean packaging remains follow-up work.
 
 ### Storage node: record on the machine with the disk
 

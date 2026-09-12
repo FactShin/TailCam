@@ -96,6 +96,7 @@ jobs:
           tests/test_storage.py tests/test_cluster.py tests/test_mcp.py
           tests/test_node_config.py tests/test_node_lifecycle.py
           tests/test_setup.py tests/test_release_workflow.py
+          tests/test_native_install_readiness.py tests/test_service_readiness.py
 
   container-hub:
     runs-on: ubuntu-latest

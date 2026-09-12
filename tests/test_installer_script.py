@@ -67,16 +67,21 @@ def test_venv_is_built_at_its_final_path():
 
 def test_failed_install_restores_previous():
     # A failed pip run must put the old venv back (rename back = launchers
-    # valid again, since the path is restored) and restart the service.
+    # valid again, since the path is restored), leaving the service stopped.
     assert "function Restore-Previous" in SCRIPT
-    body = SCRIPT[SCRIPT.index("function Restore-Previous"):]
+    body = SCRIPT[
+        SCRIPT.index("function Restore-Previous"):SCRIPT.index('  Info "Creating virtualenv')
+    ]
     assert "Move-Item $BackupDir $VenvDir" in body
-    assert 'Start-ScheduledTask -TaskName "TailCam"' in body
+    assert "Stop-TailCamProcesses" in body
+    assert 'Disable-ScheduledTask -TaskName "TailCam"' in body
+    assert "Start-ScheduledTask" not in body
     # Every install failure path routes through the restore helper.
     assert SCRIPT.count("Restore-Previous ") >= 3  # venv fail, pip fail(s), exe missing
     # The backup is only discarded after tailcam.exe is verified present.
     discard = SCRIPT.index("if ($HadPrevious) { Remove-Item -Recurse -Force $BackupDir")
     assert SCRIPT.index("Test-Path $TailcamBin") < discard
+    assert SCRIPT.index("-m tailcam.service.readiness --timeout 30") < discard
 
 
 def test_setup_runs_via_python_m_not_launcher_exes():

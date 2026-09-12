@@ -90,12 +90,14 @@ IMAGE="$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE")"
 [ -n "$IMAGE" ] && [ "$IMAGE" != '<no value>' ] || { err "No immutable image digest"; exit 1; }
 log "Using ${IMAGE}"
 
-# Shared setup validates preserved config before touching a running container.
-# An older image without role-aware setup fails here, leaving that container intact.
-SETUP="$(docker run --rm --entrypoint python \
-    -v tailcam-data:/data -v tailcam-config:/config \
-    -e "TAILCAM_PRESET=$PRESET" -e "TAILCAM_NODE_NAME=$NODE_NAME" -e "TAILCAM_DEVICES=$DEVICES" \
-    "$IMAGE" -c '
+# Shared setup validates before stopping a running container, then applies only
+# after it stops. Otherwise a save from the old process can overwrite new roles.
+configure_node() {
+    docker run --rm --entrypoint python \
+        -v tailcam-data:/data -v tailcam-config:/config \
+        -e "TAILCAM_PRESET=$PRESET" -e "TAILCAM_NODE_NAME=$NODE_NAME" \
+        -e "TAILCAM_DEVICES=$DEVICES" -e "TAILCAM_SETUP_DRY_RUN=$1" \
+        "$IMAGE" -c '
 import os
 from tailcam.setup import configure
 options = dict(preset=os.environ.get("TAILCAM_PRESET") or None,
@@ -103,25 +105,48 @@ options = dict(preset=os.environ.get("TAILCAM_PRESET") or None,
 r = configure(dry_run=True, **options)
 if "capture" not in r["roles"] and os.environ["TAILCAM_DEVICES"]:
     raise SystemExit("Camera devices require the capture role")
-configure(**options)
-print("capture=" + str(int("capture" in r["roles"])))')" || {
-    err "Node setup failed; existing container was left untouched."; exit 1;
+if os.environ["TAILCAM_SETUP_DRY_RUN"] != "1":
+    r = configure(**options)
+print("capture=" + str(int("capture" in r["roles"])))'
 }
-if ! printf '%s\n' "$SETUP" | grep -qx 'capture=1'; then
-    HOTPLUG=0
-    [ -z "$DEVICES" ] || { err "Camera devices require the capture role"; exit 2; }
-fi
 
 PREVIOUS="${NAME}-previous"
 HAD_PREVIOUS=0
 if docker ps -a --format '{{.Names}}' | grep -qx "$PREVIOUS"; then
     err "${PREVIOUS} exists from an earlier recovery; inspect it before retrying."; exit 1
 fi
+# An older image without role-aware setup fails here without replacing anything.
+if ! configure_node 1 >/dev/null; then
+    err "Node setup failed; existing container was left untouched."; exit 1
+fi
 if docker ps -a --format '{{.Names}}' | grep -qx "$NAME"; then
     log "Stopping existing container (config, data and identity volumes are preserved)"
     docker stop "$NAME" >/dev/null
     docker rename "$NAME" "$PREVIOUS"
     HAD_PREVIOUS=1
+fi
+
+restore_previous() {
+    docker rm -f "$NAME" >/dev/null 2>&1 || true
+    if [ "$HAD_PREVIOUS" = 1 ]; then
+        docker rename "$PREVIOUS" "$NAME"
+        # Setup may have changed roles; an older image may not enforce them.
+        warn "Previous container restored and left stopped; inspect config before starting."
+    fi
+}
+
+SETUP="$(configure_node 0)" || {
+    restore_previous
+    err "Node setup failed after stopping the container. Persistent volumes were preserved."; exit 1;
+}
+# The final saved result controls device access, including changes made to the
+# old process between preflight and shutdown when no explicit preset was given.
+if ! printf '%s\n' "$SETUP" | grep -qx 'capture=1'; then
+    HOTPLUG=0
+    if [ -n "$DEVICES" ]; then
+        restore_previous
+        err "Camera devices require the capture role"; exit 2
+    fi
 fi
 
 # Assemble the run arguments.
@@ -156,14 +181,15 @@ set -- "$@" "$IMAGE"
 
 log "Starting TailCam…"
 if ! docker run "$@" >/dev/null; then
-    docker rm -f "$NAME" >/dev/null 2>&1 || true
-    if [ "$HAD_PREVIOUS" = 1 ]; then
-        docker rename "$PREVIOUS" "$NAME"
-        # Setup may have changed roles; avoid restarting an older image that
-        # cannot enforce them. Keep the previous container available for recovery.
-        warn "Previous container restored and left stopped; inspect config before starting."
-    fi
+    restore_previous
     err "Container startup failed. Persistent volumes were preserved."; exit 1
+fi
+log "Waiting for TailCam to report its configured roles and installed version…"
+# Detached creation succeeds before the entrypoint runs. Check from inside the
+# replacement, with a bounded wait, so an unrelated host service cannot pass.
+if ! docker exec "$NAME" python -m tailcam.service.readiness --timeout 30 --host 127.0.0.1; then
+    restore_previous
+    err "TailCam did not become ready. Persistent volumes were preserved."; exit 1
 fi
 if [ "$HAD_PREVIOUS" = 1 ]; then docker rm "$PREVIOUS" >/dev/null; fi
 

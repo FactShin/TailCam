@@ -104,6 +104,20 @@ node_has_role() {
     "${VENV_DIR}/bin/python" -c 'import sys; from tailcam.config import AppConfig; sys.exit(0 if sys.argv[1] in AppConfig.load().node.roles else 1)' "$1"
 }
 
+rollback_install() {
+    local plist="$HOME/Library/LaunchAgents/com.tailcam.plist"
+    launchctl unload "$plist" 2>/dev/null || true
+    # Prevent RunAtLoad from starting the restored build on the next login.
+    [ ! -f "$plist" ] || mv "$plist" "${plist}.failed"
+    rm -rf "$VENV_DIR"
+    if [ -d "${VENV_DIR}.bak" ]; then
+        mv "${VENV_DIR}.bak" "$VENV_DIR"
+        warn "Previous installation restored at $VENV_DIR; service left stopped."
+    fi
+    err "$1 Repair the saved config before running: tailcam install-service"
+    exit 1
+}
+
 install_tailcam() {
     local spec backup="${VENV_DIR}.bak"
     # `git` on a fresh Mac is a stub that pops the Xcode Command Line Tools
@@ -127,22 +141,12 @@ install_tailcam() {
     if ! ( "$PYTHON" -m venv "$VENV_DIR" \
            && "${VENV_DIR}/bin/pip" install --upgrade pip >/dev/null \
            && { log "Installing TailCam ($spec)"; "${VENV_DIR}/bin/pip" install "$spec"; } ); then
-        rm -rf "$VENV_DIR"
-        if [ -d "$backup" ]; then
-            mv "$backup" "$VENV_DIR"
-            launchctl load "$HOME/Library/LaunchAgents/com.tailcam.plist" 2>/dev/null || true
-            warn "Install failed — restored the previous version."
-        fi
-        err "TailCam installation failed (see the pip output above)."
-        exit 1
+        rollback_install "TailCam installation failed (see the pip output above)."
     fi
     if ! configure_node; then
-        rm -rf "$VENV_DIR"
-        if [ -d "$backup" ]; then mv "$backup" "$VENV_DIR"; fi
-        err "Setup failed; previous install restored but left stopped. Repair config before starting."
-        exit 1
+        rollback_install "Setup failed."
     fi
-    rm -rf "$backup"
+    # Keep the backup until the new service proves it can start with saved roles.
     TAILCAM_BIN="${VENV_DIR}/bin/tailcam"
 }
 
@@ -171,10 +175,19 @@ link_cli() {
 }
 
 setup_service() {
-    [ "$DO_SERVICE" -eq 0 ] && { warn "Skipping service (--no-service)."; return 0; }
+    if [ "$DO_SERVICE" -eq 0 ]; then
+        warn "Service not started (--no-service); startup has not been verified."
+        [ ! -d "${VENV_DIR}.bak" ] || warn "Previous installation retained at ${VENV_DIR}.bak."
+        return 0
+    fi
     log "Registering launchd agent"
-    "$TAILCAM_BIN" install-service \
-        || warn "Service registration FAILED (see above). TailCam is installed but not running as a service; fix the cause, then run: tailcam install-service"
+    if ! "$TAILCAM_BIN" install-service; then
+        rollback_install "Service registration failed."
+    fi
+    if ! "${VENV_DIR}/bin/python" -m tailcam.service.readiness --timeout 30; then
+        rollback_install "Service startup verification failed; inspect the service and install logs."
+    fi
+    rm -rf "${VENV_DIR}.bak"
     if node_has_role capture; then warn "First run may prompt for camera access — approve it in System Settings › Privacy."; fi
 }
 
@@ -218,7 +231,9 @@ install_tailscale() {
         if brew install tailscale; then
             # The Homebrew CLI needs its daemon registered once (asks for sudo;
             # sudo prompts on /dev/tty, so this works under `curl | bash` too).
-            if [ -c /dev/tty ]; then
+            if [ "$NONINTERACTIVE" != 0 ]; then
+                sudo -n tailscaled install-system-daemon </dev/null || warn "Passwordless sudo unavailable; run: sudo tailscaled install-system-daemon"
+            elif [ -c /dev/tty ]; then
                 sudo tailscaled install-system-daemon </dev/tty || warn "Could not register tailscaled; run: sudo tailscaled install-system-daemon"
             else
                 warn "Run once to start the Tailscale daemon:  sudo tailscaled install-system-daemon"
@@ -343,9 +358,9 @@ log "TAILCAM / Prepare, install, configure, start"
 log "Installing TailCam on macOS (ref=${REF}, port=${PORT})"
 ensure_python
 install_tailcam
-remove_legacy_anycam
 link_cli
 setup_service
+remove_legacy_anycam
 setup_desktop_app
 ensure_tailscale
 ensure_ai_hint
@@ -353,4 +368,8 @@ echo
 log "TailCam installed."
 "$TAILCAM_BIN" status || true
 echo
-log "Open the web UI at one of the URLs above."
+if [ "$DO_SERVICE" -eq 1 ]; then
+    log "Open the web UI at one of the URLs above."
+else
+    warn "Service not started. Start it when ready with: tailcam install-service"
+fi

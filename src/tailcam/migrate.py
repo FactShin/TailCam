@@ -79,6 +79,26 @@ def needs_migration() -> bool:
     )
 
 
+def pending_config_file() -> Path | None:
+    """Return the legacy config eligible to move, without changing any files.
+
+    Media can need migration even when the config destination already has its
+    own config or recovery file. Apply the config pair's exact marker rules so
+    a setup preview reads the same configuration a real migration would use.
+    """
+    if _paths_overridden():
+        return None
+    legacy, target = paths.legacy_config_dir(), paths.config_dir()
+    config = legacy / "config.toml"
+    if (
+        _has_data(legacy, _CONFIG_MARKERS)
+        and not _has_data(target, _CONFIG_MARKERS)
+        and config.is_file()
+    ):
+        return config
+    return None
+
+
 def _skip(item: Path) -> bool:
     return item.name in _SKIP_NAMES or item.suffix in _SKIP_SUFFIXES
 

@@ -201,6 +201,17 @@ node_has_role() {
     "${VENV_DIR}/bin/python" -c 'import sys; from tailcam.config import AppConfig; sys.exit(0 if sys.argv[1] in AppConfig.load().node.roles else 1)' "$1"
 }
 
+rollback_install() {
+    systemctl --user disable --now tailcam.service 2>/dev/null || true
+    rm -rf "$VENV_DIR"
+    if [ -d "${VENV_DIR}.bak" ]; then
+        mv "${VENV_DIR}.bak" "$VENV_DIR"
+        warn "Previous installation restored at $VENV_DIR; service left stopped."
+    fi
+    err "$1 Repair the saved config before running: tailcam install-service"
+    exit 1
+}
+
 install_tailcam() {
     local spec backup="${VENV_DIR}.bak"
     local venv_opts=""
@@ -231,22 +242,12 @@ install_tailcam() {
     if ! ( "$PYTHON" -m venv $venv_opts "$VENV_DIR" \
            && "${VENV_DIR}/bin/pip" install --upgrade pip >/dev/null \
            && { log "Installing TailCam ($spec)"; "${VENV_DIR}/bin/pip" install "$spec"; } ); then
-        rm -rf "$VENV_DIR"
-        if [ -d "$backup" ]; then
-            mv "$backup" "$VENV_DIR"
-            systemctl --user start tailcam.service 2>/dev/null || true
-            warn "Install failed — restored and restarted the previous version."
-        fi
-        err "TailCam installation failed (see the pip output above)."
-        exit 1
+        rollback_install "TailCam installation failed (see the pip output above)."
     fi
     if ! configure_node; then
-        rm -rf "$VENV_DIR"
-        if [ -d "$backup" ]; then mv "$backup" "$VENV_DIR"; fi
-        err "Setup failed; previous install restored but left stopped. Repair config before starting."
-        exit 1
+        rollback_install "Setup failed."
     fi
-    rm -rf "$backup"
+    # Keep the backup until the new service proves it can start with saved roles.
     TAILCAM_BIN="${VENV_DIR}/bin/tailcam"
 }
 
@@ -276,12 +277,21 @@ link_cli() {
 }
 
 setup_service() {
-    [ "$DO_SERVICE" -eq 0 ] && { warn "Skipping service (--no-service)."; return 0; }
+    if [ "$DO_SERVICE" -eq 0 ]; then
+        warn "Service not started (--no-service); startup has not been verified."
+        [ ! -d "${VENV_DIR}.bak" ] || warn "Previous installation retained at ${VENV_DIR}.bak."
+        return 0
+    fi
     log "Registering systemd --user service"
     # install-service exits non-zero (and prints FAILED: …) when systemctl
     # refuses; surface it instead of moving on as if the service were live.
-    "$TAILCAM_BIN" install-service \
-        || warn "Service registration FAILED (see above). TailCam is installed but not running as a service; fix the cause, then run: tailcam install-service"
+    if ! "$TAILCAM_BIN" install-service; then
+        rollback_install "Service registration failed."
+    fi
+    if ! "${VENV_DIR}/bin/python" -m tailcam.service.readiness --timeout 30; then
+        rollback_install "Service startup verification failed; inspect the service and install logs."
+    fi
+    rm -rf "${VENV_DIR}.bak"
     # Lingering lets the user service start at boot without an interactive login
     # (important for a headless Pi). Remember when *we* turned it on so the
     # uninstaller can turn it back off.
@@ -474,9 +484,9 @@ install_tailcam
 # After install_tailcam (which stops the service) and before setup_service
 # (which restarts it): the uvcvideo reload only works while no camera is open.
 tune_raspberry_pi
-remove_legacy_anycam
 link_cli
 setup_service
+remove_legacy_anycam
 setup_desktop_app
 ensure_tailscale
 ensure_ai_hint
@@ -484,4 +494,8 @@ echo
 log "TailCam installed."
 "$TAILCAM_BIN" status || true
 echo
-log "Open the web UI at one of the URLs above."
+if [ "$DO_SERVICE" -eq 1 ]; then
+    log "Open the web UI at one of the URLs above."
+else
+    warn "Service not started. Start it when ready with: tailcam install-service"
+fi

@@ -43,6 +43,7 @@ def _version_callback(value: bool) -> None:
 
 @app.callback()
 def _root(
+    ctx: typer.Context,
     version: bool = typer.Option(
         False,
         "--version",
@@ -57,13 +58,22 @@ def _root(
     Run [bold]tailcam run[/bold] to start the server, or [bold]tailcam status[/bold]
     to see your cameras and tailnet nodes.
     """
+    # Setup owns its preflight and migration ordering: its dry-run must never
+    # move legacy configuration, media, or the database.
+    if ctx.invoked_subcommand == "setup":
+        return
+    _migrate_legacy()
+
+
+def _migrate_legacy(*, quiet: bool = False) -> None:
     # First run after a clean reinstall from the old AnyCam build: pull the old
     # config/media/database across. Cheap marker check, then a one-time move.
     from tailcam import migrate
 
     if migrate.needs_migration():
         for line in migrate.migrate():
-            Console(stderr=True).print(f"[dim]· {line}[/dim]")
+            if not quiet:
+                Console(stderr=True).print(f"[dim]· {line}[/dim]")
 
 
 @app.command()
@@ -95,10 +105,18 @@ def setup(
         typer.echo("compute: analysis + training | all-in-one: all four workloads")
         preset = typer.prompt("Preset (leave blank to keep existing settings)", default="") or None
     try:
+        # Validate both options and the config that would be migrated before
+        # moving any files. The preview reads legacy config without changing it.
         result = configure(
             preset=preset, roles=roles, node_name=node_name, port=port,
-            if_missing=if_missing, dry_run=dry_run,
+            if_missing=if_missing, dry_run=True,
         )
+        if not dry_run:
+            _migrate_legacy(quiet=quiet)
+            result = configure(
+                preset=preset, roles=roles, node_name=node_name, port=port,
+                if_missing=if_missing,
+            )
     except (NodeConfigError, OSError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     if json_output:

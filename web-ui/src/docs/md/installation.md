@@ -68,7 +68,8 @@ The installers configure the chosen preset before starting a service. For a hub,
 pass `--preset hub` (Windows `-Preset hub`) or set `TAILCAM_PRESET=hub`. Omitted
 answers preserve existing settings; a new node without a choice uses all-in-one.
 Use `tailcam setup --interactive` for guided selection or `--roles capture` for a
-custom combination. `--dry-run --json` previews configuration without saving;
+custom combination. `--dry-run --json` previews configuration without saving or
+moving legacy AnyCam data;
 `--quiet` prints only errors. Setup performs no camera discovery or model downloads.
 
 ## OS installers (GitHub main)
@@ -97,8 +98,12 @@ shell is included on macOS/Windows; Linux opts in with `--desktop`.
 
 Reruns preserve roles and the server port unless explicitly changed. Media and
 node identities stay in place. Logs are stored beside the virtualenv on POSIX
-and under `%LOCALAPPDATA%\TailCam` on Windows. A setup failure restores the previous
-installation and leaves it stopped: repair its config before starting it.
+and under `%LOCALAPPDATA%\TailCam` on Windows. Setup, service registration, or
+startup verification failure restores the previous installation and leaves it
+stopped: inspect the log and repair its config before starting it. Startup
+verification uses the local API and checks the installed version, node identity,
+and active roles; it does not test cameras or models. With `--no-service`, the
+installer retains the backup and leaves startup to you.
 
 ## Optional features: use TailCam's environment
 

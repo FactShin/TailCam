@@ -25,8 +25,12 @@ video4linux device, so webcams can be plugged in later and a missing
 `/dev/video0` doesn't stop the container. It replaces any existing container and
 keeps your data in named volumes. Hubs, storage nodes and compute nodes get no
 camera mounts. The pulled image is resolved to an immutable digest, then shared
-setup runs before any existing container is stopped. Images older than 1.9.1
-lack this setup command and fail without replacing the running container.
+setup first validates a preview while the existing container keeps running.
+The installer then stops the old container, saves the chosen roles, and starts
+the replacement. It checks the replacement's local API, version, identity, and
+active roles before removing the old container. A failed start restores the
+previous container stopped, with data volumes preserved for repair. Images older
+than 1.9.1 lack this setup command and fail before replacing the running container.
 
 ## Prebuilt image
 
@@ -69,7 +73,8 @@ host loopback at `http://127.0.0.1:8088/`. Stop another container using that por
 or choose another host port first. Tailscale uses userspace networking when enabled.
 
 For the installer path, use `bash install-docker.sh --preset hub`. It preserves
-the standard `tailcam-*` volumes and writes the hub role before replacement.
+the standard `tailcam-*` volumes and writes the hub role after stopping the old
+container and before starting its replacement.
 
 `TAILCAM_PRESET` and `TAILCAM_NODE_NAME` initialize new container configuration
 only. Saved settings survive restarts; changing environment variables later does

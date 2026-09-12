@@ -62,7 +62,7 @@ def test_installer_setup_uses_shared_config_and_preserves_reruns(platform, tmp_p
 @pytest.mark.parametrize("platform", ["linux", "macos"])
 def test_failed_config_restores_install_but_never_starts_old_service(platform, tmp_path):
     script = (ROOT / f"install-{platform}.sh").read_text()
-    start = script.index("install_tailcam() {")
+    start = script.index("rollback_install() {")
     end = script.index("\n# Remove a pre-rename", start)
     venv = tmp_path / "venv"
     venv.mkdir()
@@ -98,6 +98,7 @@ install_tailcam
         DO_DESKTOP="0",
         PYTHON=str(fake_python),
         SERVICE_CALLS=str(service_calls),
+        HOME=str(tmp_path),
     )
     result = subprocess.run(["bash", "-c", body], env=env, text=True, capture_output=True)
     assert result.returncode != 0

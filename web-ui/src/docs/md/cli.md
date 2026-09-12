@@ -35,6 +35,13 @@ Everything TailCam does from the terminal goes through the `tailcam` command. Ru
 
 | Command | What it does |
 | --- | --- |
+| `tailcam setup --preset hub` | Configure a hub before its first startup; preserve other settings. |
+| `tailcam setup --roles capture,storage` | Choose a custom workload combination. |
+| `tailcam setup --interactive` | Choose a purpose at the terminal. |
+| `tailcam setup --node-name "Workshop" --port 8088` | Set a friendly name and local port. |
+| `tailcam setup --if-missing` | Initialize a new config; validate and preserve an existing one. |
+| `tailcam setup --dry-run --json` | Preview effective setup without saving or migrating legacy data. |
+| `tailcam setup --quiet` | Apply setup and print only errors. |
 | `tailcam config` | Show the current config. |
 | `tailcam config --init` | Write a default config file if none exists. |
 | `tailcam config --reset` | Reset to defaults. |
@@ -44,6 +51,8 @@ Everything TailCam does from the terminal goes through the `tailcam` command. Ru
 | `tailcam config --host <addr>` | Set the bind address. |
 
 See the [Configuration reference](configuration) for every setting.
+Setup never starts cameras, models, or a service. Start or restart TailCam to
+apply the saved roles. Invalid preserved settings stop setup for repair.
 
 ## Tailscale
 

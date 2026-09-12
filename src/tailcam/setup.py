@@ -7,6 +7,11 @@ from tailcam.config import AppConfig, NodeConfig
 from tailcam.node import ROLE_PRESETS, NodeConfigError, validate_node_name, validate_roles
 
 
+def _validate_port(value: object) -> None:
+    if type(value) is not int or not 1 <= value <= 65535:
+        raise NodeConfigError("Port must be an integer between 1 and 65535")
+
+
 def configure(
     *,
     preset: str | None = None,
@@ -27,13 +32,24 @@ def configure(
         selected = validate_roles([item.strip() for item in roles.split(",")] if roles else [])
     if node_name is not None:
         node_name = validate_node_name(node_name)
-    if port is not None and not 1 <= port <= 65535:
-        raise NodeConfigError("Port must be between 1 and 65535")
+    if port is not None:
+        _validate_port(port)
 
     # Even --if-missing validates existing files: never start defaults on a hub
     # whose configuration is corrupt. Loading does not discover cameras/models.
-    existing = paths.config_file().exists()
-    cfg = AppConfig.load()
+    config_path = paths.config_file()
+    existing = config_path.exists()
+    if dry_run and not existing:
+        from tailcam import migrate
+
+        # Match a real setup's upcoming migration without moving any files.
+        # Use the config pair's own eligibility; pending media migration alone
+        # does not mean the legacy config will be copied.
+        legacy_config = migrate.pending_config_file()
+        if legacy_config is not None:
+            config_path = legacy_config
+            existing = True
+    cfg = AppConfig.load(config_path)
     changed = False
     if not (existing and if_missing):
         node = NodeConfig(
@@ -44,6 +60,9 @@ def configure(
         cfg.node = node
         if port is not None:
             cfg.server.port = port
+    # Validate the effective value even when preserving an existing config.
+    # A provided valid override may repair it; --if-missing must not bypass it.
+    _validate_port(cfg.server.port)
     if not dry_run and (not existing or changed):
         cfg.save()
     host = cfg.server.host
