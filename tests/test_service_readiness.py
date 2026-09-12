@@ -29,6 +29,8 @@ def startup_server(store):
         def do_GET(self):
             state["paths"].append(self.path)
             body = state["body"]
+            if callable(body):
+                body = body()
             raw = body if isinstance(body, bytes) else json.dumps(body).encode()
             self.send_response(state["status"])
             if state["status"] == 302:
@@ -81,7 +83,9 @@ def test_wrong_running_installation_never_passes(startup_server, field, value):
     assert not readiness.wait_ready(timeout_seconds=0.05, poll_interval=0.01)
 
 
-@pytest.mark.parametrize("body", [b"not json", b"[]", b"x" * 65537])
+@pytest.mark.parametrize(
+    "body", [b"not json", b"[]", b"x" * 65537], ids=["invalid-json", "array", "oversize"],
+)
 def test_invalid_or_oversize_metadata_fails_bounded(startup_server, body):
     startup_server["body"] = body
     assert not readiness.wait_ready(timeout_seconds=0.05, poll_interval=0.01)
@@ -107,14 +111,13 @@ def test_error_and_redirect_never_count_as_startup(startup_server, status, monke
 
 def test_startup_retries_until_installed_roles_are_active(startup_server):
     correct = startup_server["body"]
-    startup_server["body"] = dict(correct, node_roles=["capture"])
-    timer = threading.Timer(0.04, startup_server.update, kwargs={"body": correct})
-    timer.start()
-    try:
-        assert readiness.wait_ready(timeout_seconds=1, poll_interval=0.01)
-    finally:
-        timer.join()
-    assert len(startup_server["paths"]) >= 2
+    # Change after the first response, not after a wall-clock timer: slow CI
+    # startup must still exercise the mismatched-role response and retry.
+    startup_server["body"] = lambda: (
+        dict(correct, node_roles=["capture"]) if len(startup_server["paths"]) == 1 else correct
+    )
+    assert readiness.wait_ready(timeout_seconds=2, poll_interval=0.01)
+    assert len(startup_server["paths"]) == 2
 
 
 def test_explicit_loopback_overrides_saved_ipv6_bind_for_container(startup_server):
