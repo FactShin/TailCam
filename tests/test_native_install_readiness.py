@@ -194,3 +194,44 @@ function Install-TailCam { throw "Mock service registration failed" }
     assert "Mock service registration failed" in result.stdout + result.stderr
     assert "Full install log" in result.stdout
     assert "Unexpected interactive prompt" not in result.stdout + result.stderr
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows PowerShell installer")
+@pytest.mark.parametrize("layout", ["current", "legacy", "both", "fresh"])
+def test_windows_stops_legacy_only_install_before_migration(layout, tmp_path):
+    script = (ROOT / "install.ps1").read_text()
+    block = script[
+        script.index("  $HadPrevious = $false"):script.index("  function Restore-Previous")
+    ]
+    venv = tmp_path / "venv"
+    legacy = tmp_path / "anycam-venv"
+    backup = tmp_path / "venv.old"
+    if layout in {"current", "both"}:
+        venv.mkdir()
+        (venv / "current").write_text("keep")
+    if layout in {"legacy", "both"}:
+        legacy.mkdir()
+        (legacy / "legacy").write_text("keep")
+    harness = tmp_path / "stop-before-migration.ps1"
+    harness.write_text('''
+$ErrorActionPreference = "Stop"
+$VenvDir = $env:TEST_VENV; $LegacyVenvDir = $env:TEST_LEGACY; $BackupDir = $env:TEST_BACKUP
+function Info($text) { }; function Fail($text) { throw $text }
+function Stop-TailCamProcesses {
+  if (Test-Path $BackupDir) { throw "Stop happened after the current venv moved" }
+  Add-Content $env:TEST_CALLS "stop"
+}
+''' + block + 'Add-Content $env:TEST_CALLS "configure-next"\n')
+    result = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-File", str(harness)],
+        env=dict(os.environ, TEST_VENV=str(venv), TEST_LEGACY=str(legacy),
+                 TEST_BACKUP=str(backup), TEST_CALLS=str(tmp_path / "calls")),
+        text=True, capture_output=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = (tmp_path / "calls").read_text().splitlines()
+    assert calls == (["configure-next"] if layout == "fresh" else ["stop", "configure-next"])
+    if layout in {"legacy", "both"}:
+        assert (legacy / "legacy").read_text() == "keep"
+    if layout in {"current", "both"}:
+        assert (backup / "current").read_text() == "keep"

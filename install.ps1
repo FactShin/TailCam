@@ -203,9 +203,13 @@ function Install-TailCam {
   New-Item -ItemType Directory -Force -Path $AppDir | Out-Null
   if (Test-Path $BackupDir) { Remove-Item -Recurse -Force $BackupDir -ErrorAction SilentlyContinue }
   $HadPrevious = $false
-  if (Test-Path $VenvDir) {
-    Info "Stopping TailCam service"
+  # A legacy-only install can still write config or hold venv files open.
+  # Stop both layouts before configuration migration or starting the new build.
+  if ((Test-Path $VenvDir) -or (Test-Path $LegacyVenvDir)) {
+    Info "Stopping TailCam and legacy AnyCam processes"
     Stop-TailCamProcesses
+  }
+  if (Test-Path $VenvDir) {
     Info "Setting the current install aside (restored automatically if this run fails)"
     try {
       Move-Item $VenvDir $BackupDir
