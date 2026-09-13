@@ -127,16 +127,29 @@ def test_windows_phases_keep_required_job_name_and_use_watchdog():
     workflow = yaml.load(
         (SCRIPT.parents[1] / "workflows/tests.yml").read_text(), Loader=yaml.BaseLoader,
     )
-    steps = workflow["jobs"]["test-windows"]["steps"]
-    phases = [step for step in steps if step.get("name", "").startswith("Windows ")]
-    assert phases
-    commands = " ".join(step["run"] for step in phases)
+    matrix_job = workflow["jobs"]["windows-phases"]
+    assert matrix_job["strategy"]["fail-fast"] == "false"
+    phases = matrix_job["strategy"]["matrix"]["phase"]
+    commands = " ".join(phase["tests"] for phase in phases).split()
     for required in (
-        "tests/test_artifact_transfers.py", "tests/test_workload_execution.py",
-        "tests/test_artifact_pins.py", "tests/test_training_supervisor.py",
+        "tests/test_windows.py", "tests/test_api.py", "tests/test_node_lifecycle.py",
+        "tests/test_storage_contracts.py", "tests/test_artifact_transfers.py",
+        "tests/test_storage_http.py", "tests/test_storage_processes.py",
+        "tests/test_training_export_security.py", "tests/test_pytest_watchdog.py",
+        "tests/test_workload_execution.py", "tests/test_artifact_pins.py",
+        "tests/test_training_supervisor.py", "tests/test_legacy_admin_security.py",
+        "tests/test_live_worker_readiness.py",
     ):
-        assert required in commands.split(), f"Windows coverage omitted {required}"
-    assert all("pytest_watchdog.py --timeout 300 --dump-after 60" in step["run"]
-               and "--log artifacts/" in step["run"] for step in phases)
+        assert required in commands, f"Windows coverage omitted {required}"
+    assert len(commands) == len(set(commands)), "Windows phases must not duplicate test files"
+    assert len({phase["id"] for phase in phases}) == len(phases)
+    steps = matrix_job["steps"]
+    assert any("pytest_watchdog.py --timeout 300 --dump-after 60" in step.get("run", "")
+               and "--log artifacts/" in step["run"] for step in steps)
     assert any(step.get("uses") == "actions/upload-artifact@v4"
                and step.get("if") == "always()" for step in steps)
+    gate = workflow["jobs"]["test-windows"]
+    assert gate["needs"] == "windows-phases" and "always()" in gate["if"]
+    check = gate["steps"][0]
+    assert check["env"]["WINDOWS_PHASES_RESULT"] == "${{ needs.windows-phases.result }}"
+    assert check["run"] == 'test "$WINDOWS_PHASES_RESULT" = success'
