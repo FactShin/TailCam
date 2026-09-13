@@ -30,6 +30,7 @@ from tailcam.ai.detector import BuiltinDetector
 from tailcam.ai.remote import RemoteDetector
 from tailcam.config import TrainingConfig
 from tailcam.logging_setup import get_logger
+from tailcam.node import RoleDisabledError
 from tailcam.persistence.store import Store
 from tailcam.storage.models import StorageError
 
@@ -41,9 +42,10 @@ log = get_logger(__name__)
 class LocalClassifier:
     """Lazy-loaded Ultralytics classification model."""
 
-    def __init__(self, model_path: str, classes: list[str]) -> None:
+    def __init__(self, model_path: str, classes: list[str], *, device: str | None = None) -> None:
         self.model_path = model_path
         self.classes = classes
+        self.device = device
         self._model = None
 
     def load(self) -> bool:
@@ -63,7 +65,9 @@ class LocalClassifier:
         if model is None:  # pragma: no cover - load() guaranteed it
             return None
         try:
-            result = model.predict(image, verbose=False)[0]
+            result = model.predict(
+                image, verbose=False, **({"device": self.device} if self.device else {})
+            )[0]
             probs = result.probs
             idx = int(probs.top1)
             conf = float(probs.top1conf)
@@ -78,9 +82,10 @@ class LocalClassifier:
 class LocalDetector:
     """Lazy-loaded Ultralytics detection model returning bounding boxes."""
 
-    def __init__(self, model_path: str, conf: float = 0.35) -> None:
+    def __init__(self, model_path: str, conf: float = 0.35, *, device: str | None = None) -> None:
         self.model_path = model_path
         self.conf = conf
+        self.device = device
         self._model = None
 
     def load(self) -> bool:
@@ -100,7 +105,12 @@ class LocalDetector:
         if model is None:  # pragma: no cover - load() guaranteed it
             return None
         try:
-            result = model.predict(image, verbose=False, conf=self.conf)[0]
+            result = model.predict(
+                image,
+                verbose=False,
+                conf=self.conf,
+                **({"device": self.device} if self.device else {}),
+            )[0]
         except Exception as exc:  # pragma: no cover - inference failure
             log.warning("detection inference failed: %s", exc)
             return None
@@ -250,7 +260,9 @@ class ManagedModelLease:
 class LocalVisionDetector:
     """Use a managed VLM directory through its existing backend adapter."""
 
-    def __init__(self, path: str, backend: str, *, managed: bool = False) -> None:
+    def __init__(
+        self, path: str, backend: str, *, managed: bool = False, device: str | None = None
+    ) -> None:
         if backend == "florence2":
             from tailcam.activelearning.florence import Florence2Backend
 
@@ -258,6 +270,7 @@ class LocalVisionDetector:
                 model_path=path,
                 cache_dir=str(Path(path).parent / "cache"),
                 local_files_only=managed,
+                device=device,
             )
         else:
             from tailcam.activelearning.qwen import QwenVLBackend
@@ -266,6 +279,7 @@ class LocalVisionDetector:
                 model_path=path,
                 cache_dir=str(Path(path).parent / "cache"),
                 local_files_only=managed,
+                device=device,
             )
 
     def load(self) -> bool:
@@ -290,9 +304,12 @@ class InferenceRouter:
         remote: Callable[[], RemoteDetector | None] | None = None,
         role_enabled: Callable[[], bool] | None = None,
         storage_service=None,
+        workload_service=None,
     ) -> None:
         self._store = store
         self._storage_service = storage_service
+        self._workload_service = workload_service
+        self._workload_error = ""
         self._model_lease: ManagedModelLease | None = None
         self._config = config
         self._ollama = ollama
@@ -311,6 +328,8 @@ class InferenceRouter:
         """Load (and cache) the active model as a classifier or detector, by task.
         Caller holds ``self._lock``. Records why a model ISN'T running in
         ``_load_error`` so the UI can say so instead of silently falling back."""
+        if self._workload_service is not None:
+            return  # model loading belongs to the isolated worker
         # Even status endpoints call this method. Disabled analysis must not
         # load an old selected model just because someone opens the dashboard.
         if not self._role_enabled():
@@ -391,8 +410,28 @@ class InferenceRouter:
             self._refresh_active()
             return self._detector
 
+    def _source_role_enabled(self) -> bool:
+        if self._role_enabled():
+            return True
+        jobs = getattr(self._workload_service, "jobs", None)
+        return "capture" in getattr(jobs, "active_roles", ())
+
+    def _legacy_remote(self, task: str):
+        if not self._source_role_enabled() or self._workload_service is None:
+            return None
+        if task in self._workload_service.jobs.get_policy().routes:
+            return None
+        if task == "motion_description" and self._workload_service.config.ai.enabled:
+            return None
+        return self._remote()
+
     @property
     def enabled(self) -> bool:
+        if self._workload_service is not None:
+            if not self._source_role_enabled():
+                return False
+            cfg = self._workload_service.config
+            return bool(cfg.ai.enabled or cfg.detection.enabled or cfg.training.active_model_id)
         with self._lock:
             self._refresh_active()
             local = self._classifier is not None or self._detector is not None
@@ -407,6 +446,10 @@ class InferenceRouter:
     def detection_active(self) -> bool:
         """True when something produces bounding boxes (for the UI overlay) —
         a trained detection model, a detection node, or the built-in detector."""
+        if self._workload_service is not None:
+            return self._source_role_enabled() and bool(
+                self._workload_service.config.detection.enabled
+            )
         if self._active_detector() is not None:
             return True
         if self._remote() is not None:
@@ -416,6 +459,8 @@ class InferenceRouter:
     def detection_note(self) -> str:
         """Status line for the overlay badge while the built-in detector is
         provisioning itself ("downloading model 42%") or failing."""
+        if self._workload_service is not None:
+            return self._workload_error
         if self._active_detector() is not None:
             return ""
         remote = self._remote()
@@ -440,6 +485,42 @@ class InferenceRouter:
         (falling back to / using the Ollama analyzer), or ``off``. When a local
         model was selected but isn't running, ``error`` says why.
         """
+        if self._workload_service is not None:
+            if not self.enabled:
+                return {"mode": "off", "model_name": "", "task": "", "error": ""}
+            remote = self._legacy_remote("live_detection")
+            if remote is not None:
+                return {
+                    "mode": "remote",
+                    "model_name": remote.model_name(),
+                    "task": "detection",
+                    "error": "" if remote.available else remote.last_error,
+                }
+            config = self._workload_service.config
+            active = (
+                self._store.get_model(config.training.active_model_id)
+                if (config.training.active_model_id)
+                else None
+            )
+            error = self._workload_error
+            if config.training.active_model_id and active is None:
+                error = "Selected model no longer exists"
+            mode = "local" if active else "ollama" if config.ai.enabled else "builtin"
+            name = (
+                active.name
+                if active
+                else config.ai.model
+                if config.ai.enabled
+                else (config.detection.model or "Built-in detector")
+            )
+            if config.detection.node or self._workload_service.jobs.get_policy().routes:
+                mode, name = "remote", "Placed worker"
+            return {
+                "mode": mode,
+                "model_name": name,
+                "task": active.task if active else "detection",
+                "error": error,
+            }
         with self._lock:
             self._refresh_active()
             clf, det = self._classifier, self._detector
@@ -478,6 +559,13 @@ class InferenceRouter:
         return {"mode": "off", "model_name": "", "task": "", "error": err}
 
     def analyze(self, image: np.ndarray) -> Analysis | None:
+        if self._workload_service is not None:
+            if not self._source_role_enabled():
+                return None
+            remote = self._legacy_remote("motion_description")
+            if remote is not None:
+                return remote.analyze(image)
+            return self._routed_analysis(image)
         with self._lock:
             self._refresh_active()
             clf = self._classifier
@@ -523,10 +611,17 @@ class InferenceRouter:
                 return Analysis(label="nothing", description="no objects", confidence=0.0)
         return None
 
-    def detect(self, image: np.ndarray) -> list[Detection] | None:
+    def detect(self, image: np.ndarray, *, camera_id: str = "") -> list[Detection] | None:
         """Bounding boxes from the active detection model, else the built-in
         detector. Returns None only when no box source exists at all (the live
         overlay treats that as 'detection unavailable')."""
+        if self._workload_service is not None:
+            if not self._source_role_enabled():
+                return None
+            remote = self._legacy_remote("live_detection")
+            if remote is not None:
+                return remote.detect(image)
+            return self._routed_detection(image, camera_id=camera_id)
         with self._lock:
             self._refresh_active()
             det = self._detector
@@ -535,7 +630,97 @@ class InferenceRouter:
         remote = self._remote()
         if remote is not None:
             boxes = remote.detect(image)
-            return boxes if boxes is not None else []
+            return boxes  # None means unavailable; [] means a successful empty result.
         if self._role_enabled() and self._builtin is not None and self._builtin.enabled:
             return self._builtin.detect(image)
+        return None
+
+    def _routed_detection(self, image, *, local_only: bool = False, camera_id: str = ""):
+        from tailcam.jobs.models import JobError
+        from tailcam.workloads.process import ExecutionError
+
+        try:
+            result = self._workload_service.detect(
+                image, local_only=local_only, camera_id=camera_id
+            )
+            if result.get("available") is not True:
+                return None
+            self._workload_error = ""
+            return [
+                Detection(**box)
+                for prediction in result.get("predictions", [])
+                for box in prediction.get("boxes", [])
+            ]
+        except (JobError, ExecutionError) as exc:
+            self._workload_error = exc.detail
+            return None
+        except RoleDisabledError as exc:
+            self._workload_error = str(exc)
+            return None
+
+    def workload_status(self, camera_id: str = "") -> dict:
+        if self._workload_service is None:
+            return {}
+        if not camera_id.startswith("local:"):
+            remote = self._legacy_remote("live_detection")
+            if remote is not None:
+                status: dict[str, Any] = getattr(remote, "status", lambda: {})()
+                return {
+                    key: status[key] for key in ("model_name", "round_trip_ms") if key in status
+                }
+        return self._workload_service.status(camera_id)
+
+    def _routed_analysis(self, image, *, local_only: bool = False):
+        from tailcam.jobs.models import JobError
+        from tailcam.workloads.process import ExecutionError
+
+        try:
+            result = self._workload_service.analyze(image, local_only=local_only)
+            predictions = result.get("predictions", [])
+            if not predictions:
+                return None
+            prediction = predictions[0]
+            if "boxes" in prediction:
+                boxes = prediction["boxes"]
+                if not boxes:
+                    return Analysis("nothing", "No objects detected", 1.0)
+                best = max(boxes, key=lambda box: box["confidence"])
+                return Analysis(best["label"], "Detected " + best["label"], best["confidence"])
+            if "label" not in prediction:
+                return None
+            self._workload_error = ""
+            return Analysis(
+                prediction["label"], prediction["description"], prediction["confidence"]
+            )
+        except (JobError, ExecutionError) as exc:
+            self._workload_error = exc.detail
+            return None
+        except RoleDisabledError as exc:
+            self._workload_error = str(exc)
+            return None
+
+    def detect_local(self, image):
+        if not self._role_enabled():
+            return None
+        if self._workload_service is not None:
+            return self._routed_detection(image, local_only=True)
+        with self._lock:
+            detector = self._active_detector()
+            if detector is not None:
+                return detector.detect(image)
+            if self._role_enabled() and self._builtin is not None and self._builtin.ready:
+                return self._builtin.detect(image)
+        return None
+
+    def analyze_local(self, image):
+        if not self._role_enabled():
+            return None
+        if self._workload_service is not None:
+            return self._routed_analysis(image, local_only=True)
+        with self._lock:
+            classifier = self._active_classifier()
+            if classifier is not None:
+                return classifier.analyze(image)
+        if self._role_enabled() and self._ollama.enabled:
+            return self._ollama.analyze(image)
         return None

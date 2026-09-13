@@ -21,6 +21,8 @@ from tailcam.cluster.service import ClusterService, resolve_local_host
 from tailcam.config import AIConfig, AppConfig
 from tailcam.integrations.homeassistant import MqttPublisher
 from tailcam.integrations.homekit import HomeKitBridge
+from tailcam.jobs.service import JobService
+from tailcam.jobs.transport import JobTransport
 from tailcam.logging_setup import get_logger
 from tailcam.management.readiness import NodeReadinessService
 from tailcam.media.capture_router import CaptureRouter
@@ -44,7 +46,11 @@ from tailcam.timelapse.analyzer import PrinterAnalyzer, TimelapseAnalysisQueue
 from tailcam.timelapse.service import TimelapseService
 from tailcam.training.inference import InferenceRouter
 from tailcam.training.service import TrainingService
+from tailcam.training.supervisor import TrainingSupervisor
 from tailcam.web.storage_peers import StoragePeerDirectory
+from tailcam.web.workload_peers import WorkerDirectory
+from tailcam.workloads.executor import ProcessExecutor
+from tailcam.workloads.live import WorkloadService
 
 if TYPE_CHECKING:
     import numpy as np
@@ -145,18 +151,49 @@ class AppContext:
         analysis_enabled = partial(self.has_role, "analysis")
         self.storage_peers = StoragePeerDirectory(self)
         self.storage_service = StorageService(
-            config, self.store, self.node_id,
-            resolve_peer=self.storage_peers.resolve, role_check=storage_check,
+            config,
+            self.store,
+            self.node_id,
+            resolve_peer=self.storage_peers.resolve,
+            role_check=storage_check,
         )
         self.storage_migration = MigrationService(
-            self.storage_service, self.store, resolve_peer=self.storage_peers.resolve,
+            self.storage_service,
+            self.store,
+            resolve_peer=self.storage_peers.resolve,
+        )
+        self.job_transport = JobTransport(self.storage_peers.resolve)
+        self.job_executor = ProcessExecutor(
+            self.storage_service, node_id=self.node_id, config=config
+        )
+        self.jobs = JobService(
+            config,
+            self.store,
+            self.node_id,
+            self.storage_service,
+            executor=self.job_executor,
+            role_check=self.require_role,
+            transport=self.job_transport,
+        )
+        self.workload_peers = WorkerDirectory(self)
+        self.jobs.placement._workers = self.workload_peers.workers
+        self.workloads = WorkloadService(
+            self.jobs,
+            self.storage_service,
+            self.store,
+            config,
+            resolve_legacy_node=self.storage_peers.identity_for_legacy_node,
         )
         self.snapshots = SnapshotService(
-            self.manager, self.store, role_check=storage_check,
+            self.manager,
+            self.store,
+            role_check=storage_check,
             storage_service=self.storage_service,
         )
         self.recorder = RecordingService(
-            self.manager, self.store, role_check=storage_check,
+            self.manager,
+            self.store,
+            role_check=storage_check,
             storage_service=self.storage_service,
         )
         self.gallery = MediaGallery(self.store, storage_service=self.storage_service)
@@ -178,7 +215,11 @@ class AppContext:
         else:
             self.analyzer = _DisabledAnalyzer(config.ai, analysis_check)
         self.pulls = ModelPuller(config.ai, role_check=analysis_check)
-        self.printer_analyzer = PrinterAnalyzer(config.ai, role_enabled=analysis_enabled)
+        self.printer_analyzer = PrinterAnalyzer(
+            config.ai,
+            role_enabled=analysis_enabled,
+            workload_service=self.workloads,
+        )
         self.timelapse_analysis = TimelapseAnalysisQueue(
             self.store, self.printer_analyzer, role_check=analysis_check
         )
@@ -190,6 +231,7 @@ class AppContext:
             role_check=storage_check,
             analysis_role_check=analysis_check,
             storage_service=self.storage_service,
+            job_service=self.jobs,
         )
         self.tailscale = TailscaleClient()
         self.mjpeg = MJPEGBackend()
@@ -203,33 +245,54 @@ class AppContext:
         self.homekit = HomeKitBridge(self)
         self.ha_mqtt: MqttPublisher | None = (
             MqttPublisher(self)
-            if self.has_role("capture") and config.homeassistant.enabled else None
+            if self.has_role("capture") and config.homeassistant.enabled
+            else None
         )
         self._ha_mqtt_lock = threading.Lock()
         self._motion_fanout = _MotionFanout(self.notifications, self)
         self.training = TrainingService(
-            self.manager, self.store, config.training, self.analyzer, self.local_host,
+            self.manager,
+            self.store,
+            config.training,
+            self.analyzer,
+            self.local_host,
             notifier=self.notifications,
-            role_check=training_check, analysis_check=analysis_check,
+            role_check=training_check,
+            analysis_check=analysis_check,
             storage_service=self.storage_service,
+            job_service=self.jobs,
         )
+        self.supervisor = TrainingSupervisor(self.store, self.jobs, self.training, self.node_id)
         # Built-in plug-and-play object detection (boxes + labels, zero setup).
         # Provisions itself in the background on first use.
         self.detector = BuiltinDetector(config.detection, role_enabled=analysis_enabled)
         # Human-in-the-loop active learning: watch frames, auto-label confident
         # detections, send uncertain ones to Label Studio for review.
         self.active_learning = ActiveLearningService(
-            self.manager, self.store, config, self.detector, self.analyzer,
-            self.training, self.local_host,
-            role_check=training_check, analysis_check=analysis_check,
+            self.manager,
+            self.store,
+            config,
+            self.detector,
+            self.analyzer,
+            self.training,
+            self.local_host,
+            role_check=training_check,
+            analysis_check=analysis_check,
             storage_service=self.storage_service,
+            workload_service=self.workloads,
         )
         self.cluster = ClusterService(
-            config.peers, self.tailscale, self.local_host, config.tailscale.serve_port,
+            config.peers,
+            self.tailscale,
+            self.local_host,
+            config.tailscale.serve_port,
             # Explicit storage URLs need discovery too: media routes use the
             # destination's node key, never the URL itself as a proxy key.
-            extra_urls=lambda: [config.storage.node.strip()]
-            if config.storage.node.strip().startswith(("http://", "https://")) else [],
+            extra_urls=lambda: (
+                [config.storage.node.strip()]
+                if config.storage.node.strip().startswith(("http://", "https://"))
+                else []
+            ),
         )
         # Detection node: when [detection] node points at a peer, boxes and
         # motion labels come from that node's /api/detect-image.
@@ -238,10 +301,14 @@ class AppContext:
         # Motion analysis routes through the active trained/BYO model if set,
         # else Ollama, else the detection node, else the built-in detector.
         self.inference = InferenceRouter(
-            self.store, config.training, self.analyzer, builtin=self.detector,
+            self.store,
+            config.training,
+            self.analyzer,
+            builtin=self.detector,
             remote=self.remote_detector,
             storage_service=self.storage_service,
             role_enabled=analysis_enabled,
+            workload_service=self.workloads,
         )
         # Per-camera detection result cache: N open viewers of one camera share
         # a single inference per second instead of each running their own.
@@ -278,7 +345,9 @@ class AppContext:
         prof = hostinfo.profile()
         log.info(
             "Host: %s · %.1f GB RAM · %d CPU · profile=%s",
-            prof.model or "generic", prof.total_ram_gb, prof.cpu_count,
+            prof.model or "generic",
+            prof.total_ram_gb,
+            prof.cpu_count,
             "low-power" if prof.low_power else "standard",
         )
         if prof.low_power:
@@ -290,14 +359,8 @@ class AppContext:
                 cv2.setNumThreads(2)
             except Exception as exc:  # pragma: no cover - defensive
                 log.debug("cv2.setNumThreads: %s", exc)
-        # Warm the built-in detector at boot so the model is downloaded and
-        # loaded before anyone opens a camera view (no-op once provisioned).
-        # Skipped in synthetic mode (CI/tests) — there it provisions lazily on
-        # the first real detect request instead of hitting the network per run
-        # — and when detection is off or routed to another node (a Pi that
-        # ships frames elsewhere never loads a model into its 1 GB).
-        if self.has_role("analysis") and not use_synthetic() and self.detector.enabled:
-            self.detector.ensure_ready()
+        # Model provisioning and initialization now happen only in admitted
+        # worker children. Starting a camera or hub never loads a model here.
         stale = self.store.close_stale_motion_events()
         if stale:
             log.info("Closed %d orphaned motion event(s) from a previous run", stale)
@@ -323,6 +386,9 @@ class AppContext:
             log.info("Motion detection restored on %d camera(s)", restored)
         self._prune_media()  # enforce the retention budget on boot
         self.storage_service.start()
+        self.jobs.start()
+        self.workloads.start()
+        self.supervisor.start()
         self._start_notify_monitor()
         if self.has_role("capture") and self.config.homekit.enabled:
             self.homekit.start()
@@ -340,6 +406,9 @@ class AppContext:
 
     def shutdown(self) -> None:
         self._stop_notify_monitor()
+        self.supervisor.close()
+        self.workloads.close()
+        self.jobs.close()
         self.storage_migration.shutdown()
         self.homekit.stop()
         if self.ha_mqtt is not None:
@@ -401,9 +470,7 @@ class AppContext:
                         # self.ha_mqtt to None between check and call.
                         mqtt = self.ha_mqtt
                         if mqtt is not None:
-                            mqtt.publish_camera_state(
-                                camera_id=cid, online=(status == "online")
-                            )
+                            mqtt.publish_camera_state(camera_id=cid, online=(status == "online"))
                     self._cam_status[cid] = status
                 for peer in self.cluster.cached_peers():
                     prev_online = self._peer_online.get(peer.key)
@@ -432,8 +499,11 @@ class AppContext:
             return
         for key in self.recorder.session_keys():
             if "|" in key and key in stale:
-                log.warning("remote recording %s: no frames for %.0fs; finalizing",
-                            key, self._REMOTE_STALE_SECONDS)
+                log.warning(
+                    "remote recording %s: no frames for %.0fs; finalizing",
+                    key,
+                    self._REMOTE_STALE_SECONDS,
+                )
                 self.recorder.stop(key)
         for key in stale:
             if not self.recorder.is_recording(key):
@@ -452,8 +522,9 @@ class AppContext:
         now = time.monotonic()
         if now - self._last_rediscover < self._REDISCOVER_EVERY:
             return
-        if not any(self.manager.status(c.descriptor.id).value == "offline"
-                   for c in self.manager.list()):
+        if not any(
+            self.manager.status(c.descriptor.id).value == "offline" for c in self.manager.list()
+        ):
             return
         self._last_rediscover = now
         before = {c.descriptor.id for c in self.manager.list()}
@@ -537,15 +608,14 @@ class AppContext:
         node = (self.config.detection.node or "").strip()
         if (
             not (self.has_role("capture") or self.has_role("analysis"))
-            or not node or not self.config.detection.enabled
+            or not node
+            or not self.config.detection.enabled
         ):
             self._remote_detector = None
             self._remote_detector_for = ""
             return None
         if self._remote_detector is None or self._remote_detector_for != node:
-            self._remote_detector = RemoteDetector(
-                lambda: self.resolve_node_base(node), label=node
-            )
+            self._remote_detector = RemoteDetector(lambda: self.resolve_node_base(node), label=node)
             self._remote_detector_for = node
         return self._remote_detector
 
@@ -580,7 +650,11 @@ class AppContext:
             if buffer is None:
                 return False
             worker = MotionWorker(
-                camera_id, buffer, self.config.motion, self.event_log, self.capture,
+                camera_id,
+                buffer,
+                self.config.motion,
+                self.event_log,
+                self.capture,
                 analyzer=self.inference,
                 notifier=cast("NotificationService", self._motion_fanout),
                 reacquire=partial(self.manager.get_buffer, camera_id),

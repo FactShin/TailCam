@@ -12,6 +12,9 @@ from tailcam.camera.manager import ManagedCamera
 from tailcam.timelapse.presets import printer_presets
 from tailcam.web.context import AppContext
 from tailcam.web.deps import get_context
+from tailcam.web.legacy_admin import require_storage_admin
+from tailcam.web.routes_node_v1 import require_admin
+from tailcam.web.routes_storage_v1 import _bounded_body, require_operator
 from tailcam.web.schemas import (
     AIInfo,
     AIModelRequest,
@@ -86,6 +89,7 @@ from tailcam.web.schemas import (
     TrainRequest,
     TransformModel,
     UpdateInfo,
+    WorkloadExecutionInfo,
 )
 
 router = APIRouter(prefix="/api")
@@ -351,11 +355,11 @@ async def detect_objects(
             frame = buffer.await_latest(-1, 2.0)
             if frame is None:
                 raise HTTPException(status_code=503, detail="no frame available")
-            detections = ctx.inference.detect(frame.image)
+            detections = ctx.inference.detect(frame.image, camera_id=camera_id)
             result = DetectionResult(
                 camera_id=camera_id,
-                detector_active=True,
-                model_name=_detection_model_name(ctx),
+                detector_active=detections is not None,
+                model_name=_detection_model_name(ctx, camera_id),
                 boxes=[
                     DetectionBox(
                         label=d.label, confidence=d.confidence, cx=d.cx, cy=d.cy, w=d.w, h=d.h
@@ -363,6 +367,7 @@ async def detect_objects(
                     for d in (detections or [])
                 ],
                 note=ctx.inference.detection_note(),
+                workload=_workload_observation(ctx, camera_id),
             )
             ctx.store_detection(camera_id, result)
             return result
@@ -370,7 +375,14 @@ async def detect_objects(
     return await anyio.to_thread.run_sync(_run)
 
 
-def _detection_model_name(ctx: AppContext) -> str | None:
+def _workload_observation(ctx: AppContext, camera_id: str) -> WorkloadExecutionInfo | None:
+    status = ctx.inference.workload_status(camera_id)
+    return WorkloadExecutionInfo.model_validate(status) if status else None
+
+
+def _detection_model_name(ctx: AppContext, camera_id: str = "") -> str | None:
+    if ctx.inference._workload_service is not None:
+        return ctx.inference.workload_status(camera_id).get("model_name") or None
     active_model = ctx.store.active_model()
     if active_model is not None and getattr(active_model, "task", "") == "detection":
         return active_model.name
@@ -380,7 +392,9 @@ def _detection_model_name(ctx: AppContext) -> str | None:
     return ctx.detector.status().model or None
 
 
-@router.post("/detect-image", response_model=ImageAnalysisResult)
+@router.post(
+    "/detect-image", response_model=ImageAnalysisResult, dependencies=[Depends(require_operator)],
+)
 async def detect_image(
     request: Request,
     mode: str = Query("detect", pattern="^(detect|analyze)$"),
@@ -395,27 +409,34 @@ async def detect_image(
     import cv2
     import numpy as np
 
-    body = await request.body()
-    if not body or len(body) > 12 * 1024 * 1024:
+    from tailcam.streaming.image_validation import raster_dimensions
+
+    body = await _bounded_body(request, 12 * 1024 * 1024)
+    if not body:
         raise HTTPException(status_code=400, detail="image body required (max 12 MB)")
+    try:
+        raster_dimensions(body)
+    except ValueError:
+        raise HTTPException(400, "Invalid or oversized JPEG/PNG image") from None
     image = cv2.imdecode(np.frombuffer(body, dtype=np.uint8), cv2.IMREAD_COLOR)
     if image is None:
         raise HTTPException(status_code=400, detail="could not decode image")
     if mode == "analyze":
-        analysis = await anyio.to_thread.run_sync(ctx.inference.analyze, image)
+        analysis = await anyio.to_thread.run_sync(ctx.inference.analyze_local, image)
         return ImageAnalysisResult(
-            detector_active=ctx.inference.enabled,
-            model_name=_detection_model_name(ctx),
+            detector_active=analysis is not None,
+            model_name=_detection_model_name(ctx, "local:"),
             label=analysis.label if analysis else None,
             description=analysis.description if analysis else None,
             confidence=analysis.confidence if analysis else None,
         )
     if not ctx.inference.detection_active:
         return ImageAnalysisResult(detector_active=False)
-    detections = await anyio.to_thread.run_sync(ctx.inference.detect, image)
+    detections = await anyio.to_thread.run_sync(ctx.inference.detect_local, image)
     return ImageAnalysisResult(
-        detector_active=True,
-        model_name=_detection_model_name(ctx),
+        detector_active=detections is not None,
+        model_name=_detection_model_name(ctx, "local:"),
+        workload=_workload_observation(ctx, "local:"),
         boxes=[
             DetectionBox(label=d.label, confidence=d.confidence, cx=d.cx, cy=d.cy, w=d.w, h=d.h)
             for d in (detections or [])
@@ -853,7 +874,8 @@ def _sample_info(s, ann_count: int = 0) -> SampleInfo:
     )
 
 
-def _model_info(m) -> ModelInfo:
+def _model_info(m, storage=None) -> ModelInfo:
+    artifact = storage.catalog.resolve_alias("model", str(m.id), "file") if storage else None
     try:
         classes = json.loads(m.classes_json) or []
     except (ValueError, TypeError):
@@ -872,14 +894,18 @@ def _model_info(m) -> ModelInfo:
         classes=classes,
         metrics=metrics,
         created_ts=m.created_ts,
-        has_artifact=bool(m.path),
+        has_artifact=artifact.state in {"committed", "replicated"} if artifact else bool(m.path),
+        registry_node_id=storage.node_id if storage else None,
+        artifact_id=artifact.artifact_id if artifact else None,
+        artifact_owner_node_id=artifact.owner_node_id if artifact else None,
     )
 
 
 def _training_info(ctx: AppContext) -> TrainingInfo:
-    from tailcam.training.engine import engine_info
+    from tailcam.training.engine import engine_info, engine_metadata
 
-    info: dict = engine_info() if ctx.has_role("training") else {
+    probe = engine_metadata if ctx.training._job_service is not None else engine_info
+    info: dict = probe() if ctx.has_role("training") else {
         "available": False, "framework": "ultralytics", "version": None, "device": "disabled",
     }
     tc = ctx.config.training
@@ -908,7 +934,11 @@ def training_info(ctx: AppContext = Depends(get_context)) -> TrainingInfo:
     return _training_info(ctx)
 
 
-@router.post("/training/collection", response_model=TrainingInfo)
+@router.post(
+    "/training/collection",
+    response_model=TrainingInfo,
+    dependencies=[Depends(require_admin)],
+)
 def update_collection(
     upd: CollectionUpdate, ctx: AppContext = Depends(get_context)
 ) -> TrainingInfo:
@@ -939,7 +969,7 @@ def list_datasets(ctx: AppContext = Depends(get_context)) -> list[DatasetInfo]:
     return [_dataset_info(ctx, d) for d in ctx.store.list_datasets()]
 
 
-@router.post("/datasets", response_model=DatasetInfo)
+@router.post("/datasets", response_model=DatasetInfo, dependencies=[Depends(require_admin)])
 def create_dataset(body: DatasetCreate, ctx: AppContext = Depends(get_context)) -> DatasetInfo:
     ctx.require_role("training")
     record = ctx.training.create_dataset(body.name, body.note, body.task)
@@ -955,7 +985,11 @@ def get_dataset(dataset_id: int, ctx: AppContext = Depends(get_context)) -> Data
     return _dataset_info(ctx, d)
 
 
-@router.delete("/datasets/{dataset_id}", response_model=OkResponse)
+@router.delete(
+    "/datasets/{dataset_id}",
+    response_model=OkResponse,
+    dependencies=[Depends(require_admin)],
+)
 def delete_dataset(dataset_id: int, ctx: AppContext = Depends(get_context)) -> OkResponse:
     if not ctx.training.delete_dataset(dataset_id):
         raise HTTPException(status_code=404, detail="dataset not found")
@@ -963,7 +997,11 @@ def delete_dataset(dataset_id: int, ctx: AppContext = Depends(get_context)) -> O
     return OkResponse(detail="deleted")
 
 
-@router.post("/datasets/{dataset_id}/import-events", response_model=DatasetInfo)
+@router.post(
+    "/datasets/{dataset_id}/import-events",
+    response_model=DatasetInfo,
+    dependencies=[Depends(require_admin)],
+)
 def import_events(dataset_id: int, ctx: AppContext = Depends(get_context)) -> DatasetInfo:
     """Add existing motion-event snapshots to the dataset as labeled samples."""
     ctx.require_role("training")
@@ -989,7 +1027,11 @@ def list_samples(
     ]
 
 
-@router.patch("/samples/{sample_id}", response_model=SampleInfo)
+@router.patch(
+    "/samples/{sample_id}",
+    response_model=SampleInfo,
+    dependencies=[Depends(require_admin)],
+)
 def relabel_sample(
     sample_id: int, body: SampleRelabel, ctx: AppContext = Depends(get_context)
 ) -> SampleInfo:
@@ -1002,7 +1044,11 @@ def relabel_sample(
     return _sample_info(updated, len(ctx.store.list_annotations(sample_id)))
 
 
-@router.delete("/samples/{sample_id}", response_model=OkResponse)
+@router.delete(
+    "/samples/{sample_id}",
+    response_model=OkResponse,
+    dependencies=[Depends(require_admin)],
+)
 def delete_sample(sample_id: int, ctx: AppContext = Depends(get_context)) -> OkResponse:
     if not ctx.training.delete_sample(sample_id):
         raise HTTPException(status_code=404, detail="sample not found")
@@ -1023,7 +1069,11 @@ def get_sample_annotations(
     return SampleAnnotations(sample_id=sample_id, boxes=boxes)
 
 
-@router.put("/samples/{sample_id}/annotations", response_model=SampleAnnotations)
+@router.put(
+    "/samples/{sample_id}/annotations",
+    response_model=SampleAnnotations,
+    dependencies=[Depends(require_admin)],
+)
 def set_sample_annotations(
     sample_id: int,
     body: SampleAnnotationsUpdate,
@@ -1044,20 +1094,24 @@ def set_sample_annotations(
 
 @router.get("/models", response_model=list[ModelInfo])
 def list_models(ctx: AppContext = Depends(get_context)) -> list[ModelInfo]:
-    return [_model_info(m) for m in ctx.store.list_models()]
+    return [_model_info(m, ctx.storage_service) for m in ctx.store.list_models()]
 
 
-@router.post("/models", response_model=ModelInfo)
+@router.post("/models", response_model=ModelInfo, dependencies=[Depends(require_admin)])
 def register_model(body: ModelRegister, ctx: AppContext = Depends(get_context)) -> ModelInfo:
     """Register a bring-your-own model file (.pt) by path."""
     ctx.require_role("analysis")
     record = ctx.training.register_byo(body.name, body.path, body.task)
     if record is None:
         raise HTTPException(status_code=400, detail="model file not found at that path")
-    return _model_info(record)
+    return _model_info(record, ctx.storage_service)
 
 
-@router.post("/models/{model_id}/activate", response_model=ModelInfo)
+@router.post(
+    "/models/{model_id}/activate",
+    response_model=ModelInfo,
+    dependencies=[Depends(require_admin)],
+)
 def activate_model(model_id: int, ctx: AppContext = Depends(get_context)) -> ModelInfo:
     ctx.require_role("analysis")
     m = ctx.store.get_model(model_id)
@@ -1065,10 +1119,10 @@ def activate_model(model_id: int, ctx: AppContext = Depends(get_context)) -> Mod
         raise HTTPException(status_code=404, detail="model not found")
     ctx.training.activate_model(model_id)
     ctx.config.save()
-    return _model_info(ctx.store.get_model(model_id))
+    return _model_info(ctx.store.get_model(model_id), ctx.storage_service)
 
 
-@router.post("/models/deactivate", response_model=OkResponse)
+@router.post("/models/deactivate", response_model=OkResponse, dependencies=[Depends(require_admin)])
 def deactivate_model(ctx: AppContext = Depends(get_context)) -> OkResponse:
     """Use the default analyzer (Ollama) instead of a trained/BYO model."""
     ctx.training.activate_model(None)
@@ -1076,7 +1130,11 @@ def deactivate_model(ctx: AppContext = Depends(get_context)) -> OkResponse:
     return OkResponse(detail="using default analyzer")
 
 
-@router.delete("/models/{model_id}", response_model=OkResponse)
+@router.delete(
+    "/models/{model_id}",
+    response_model=OkResponse,
+    dependencies=[Depends(require_admin)],
+)
 def delete_model(model_id: int, ctx: AppContext = Depends(get_context)) -> OkResponse:
     if not ctx.training.delete_model(model_id):
         raise HTTPException(status_code=400, detail="cannot delete (not found or base model)")
@@ -1105,14 +1163,19 @@ def _run_info(r) -> TrainingRunInfo:
     )
 
 
-@router.post("/training/runs", response_model=TrainingRunInfo)
+@router.post(
+    "/training/runs",
+    response_model=TrainingRunInfo,
+    dependencies=[Depends(require_admin)],
+)
 def start_run(body: TrainRequest, ctx: AppContext = Depends(get_context)) -> TrainingRunInfo:
-    """Fine-tune a model on a dataset (needs the training engine installed)."""
-    ctx.require_role("training")
-    from tailcam.training.engine import engine_available
+    """Fine-tune on the selected worker; its admission checks the execution runtime."""
+    if ctx.training._job_service is None:
+        ctx.require_role("training")
+        from tailcam.training.engine import engine_available
 
-    if not engine_available():
-        raise HTTPException(status_code=503, detail="training engine not installed")
+        if not engine_available():
+            raise HTTPException(status_code=503, detail="training engine not installed")
     try:
         run = ctx.training.train(body.dataset_id, body.base_model, body.epochs, body.image_size)
     except RuntimeError as exc:  # a run is already in progress
@@ -1124,18 +1187,24 @@ def start_run(body: TrainRequest, ctx: AppContext = Depends(get_context)) -> Tra
 
 @router.get("/training/runs", response_model=list[TrainingRunInfo])
 def list_runs(ctx: AppContext = Depends(get_context)) -> list[TrainingRunInfo]:
+    ctx.training.reconcile_jobs()
     return [_run_info(r) for r in ctx.store.list_runs()]
 
 
 @router.get("/training/runs/{run_id}", response_model=TrainingRunInfo)
 def get_run(run_id: int, ctx: AppContext = Depends(get_context)) -> TrainingRunInfo:
+    ctx.training.reconcile_jobs()
     r = ctx.store.get_run(run_id)
     if r is None:
         raise HTTPException(status_code=404, detail="run not found")
     return _run_info(r)
 
 
-@router.post("/training/runs/{run_id}/stop", response_model=TrainingRunInfo)
+@router.post(
+    "/training/runs/{run_id}/stop",
+    response_model=TrainingRunInfo,
+    dependencies=[Depends(require_admin)],
+)
 def stop_run(run_id: int, ctx: AppContext = Depends(get_context)) -> TrainingRunInfo:
     r = ctx.store.get_run(run_id)
     if r is None:
@@ -1242,7 +1311,7 @@ async def ai_info(ctx: AppContext = Depends(get_context)) -> AIInfo:
     return await _ai_info(ctx)
 
 
-@router.post("/ai", response_model=AIInfo)
+@router.post("/ai", response_model=AIInfo, dependencies=[Depends(require_admin)])
 async def update_ai(update: AIUpdate, ctx: AppContext = Depends(get_context)) -> AIInfo:
     """Enable/disable AI motion analysis and set the model/Ollama URL (persisted).
 
@@ -1330,7 +1399,7 @@ def _pull_status(state) -> AIPullStatus:
     )
 
 
-@router.post("/ai/pull", response_model=AIPullStatus)
+@router.post("/ai/pull", response_model=AIPullStatus, dependencies=[Depends(require_admin)])
 async def ai_pull(
     body: AIModelRequest, ctx: AppContext = Depends(get_context)
 ) -> AIPullStatus:
@@ -1353,7 +1422,7 @@ async def ai_pull_status(ctx: AppContext = Depends(get_context)) -> AIPullStatus
     return _pull_status(ctx.pulls.status())
 
 
-@router.post("/ai/load", response_model=AIInfo)
+@router.post("/ai/load", response_model=AIInfo, dependencies=[Depends(require_admin)])
 async def ai_load(body: AIModelRequest, ctx: AppContext = Depends(get_context)) -> AIInfo:
     """Warm a model into Ollama's memory ('start' it) for fast first inference."""
     ctx.require_role("analysis")
@@ -1378,13 +1447,21 @@ def _notifications_info(ctx: AppContext) -> NotificationsInfo:
     )
 
 
-@router.get("/notifications", response_model=NotificationsInfo)
+@router.get(
+    "/notifications",
+    response_model=NotificationsInfo,
+    dependencies=[Depends(require_admin)],
+)
 def notifications_info(ctx: AppContext = Depends(get_context)) -> NotificationsInfo:
     """Current notification settings + which channels are configured."""
     return _notifications_info(ctx)
 
 
-@router.post("/notifications", response_model=NotificationsInfo)
+@router.post(
+    "/notifications",
+    response_model=NotificationsInfo,
+    dependencies=[Depends(require_admin)],
+)
 def update_notifications(
     body: NotificationsUpdate, ctx: AppContext = Depends(get_context)
 ) -> NotificationsInfo:
@@ -1478,7 +1555,7 @@ def mcp_info(ctx: AppContext = Depends(get_context)) -> McpInfo:
     return _mcp_info(ctx)
 
 
-@router.post("/mcp", response_model=McpInfo)
+@router.post("/mcp", response_model=McpInfo, dependencies=[Depends(require_admin)])
 def update_mcp(update: McpUpdate, ctx: AppContext = Depends(get_context)) -> McpInfo:
     """Toggle the MCP server / its HTTP endpoint (persisted, effective
     immediately — the /mcp route checks config per request)."""
@@ -1533,7 +1610,11 @@ def plugins_market(
     return _market_info(ctx, force=refresh)
 
 
-@router.post("/plugins/market/install", response_model=PluginsMarketInfo)
+@router.post(
+    "/plugins/market/install",
+    response_model=PluginsMarketInfo,
+    dependencies=[Depends(require_admin)],
+)
 def plugins_market_install(
     body: PluginInstallRequest, ctx: AppContext = Depends(get_context)
 ) -> PluginsMarketInfo:
@@ -1548,7 +1629,11 @@ def plugins_market_install(
     return _market_info(ctx)
 
 
-@router.delete("/plugins/installed/{stem}", response_model=PluginsMarketInfo)
+@router.delete(
+    "/plugins/installed/{stem}",
+    response_model=PluginsMarketInfo,
+    dependencies=[Depends(require_admin)],
+)
 def plugins_uninstall(stem: str, ctx: AppContext = Depends(get_context)) -> PluginsMarketInfo:
     """Remove a drop-in plugin file and unload it."""
     from tailcam.plugins.market import MarketError
@@ -1566,7 +1651,11 @@ def plugins_uninstall(stem: str, ctx: AppContext = Depends(get_context)) -> Plug
     return _market_info(ctx)
 
 
-@router.post("/plugins/installed/{stem}/toggle", response_model=PluginsMarketInfo)
+@router.post(
+    "/plugins/installed/{stem}/toggle",
+    response_model=PluginsMarketInfo,
+    dependencies=[Depends(require_admin)],
+)
 def plugins_toggle(
     stem: str, body: PluginToggleRequest, ctx: AppContext = Depends(get_context)
 ) -> PluginsMarketInfo:
@@ -1581,7 +1670,11 @@ def plugins_toggle(
     return _market_info(ctx)
 
 
-@router.post("/plugins/reload", response_model=PluginsMarketInfo)
+@router.post(
+    "/plugins/reload",
+    response_model=PluginsMarketInfo,
+    dependencies=[Depends(require_admin)],
+)
 def plugins_reload(ctx: AppContext = Depends(get_context)) -> PluginsMarketInfo:
     """Re-scan the drop-in folder (after manual file edits)."""
     ctx.reload_plugins()
@@ -1613,7 +1706,7 @@ def _homeassistant_status(ctx: AppContext) -> HomeAssistantStatus:
     )
 
 
-@router.get("/integrations", response_model=IntegrationsInfo)
+@router.get("/integrations", response_model=IntegrationsInfo, dependencies=[Depends(require_admin)])
 def integrations_info(ctx: AppContext = Depends(get_context)) -> IntegrationsInfo:
     """Apple HomeKit + Home Assistant integration status, pairing info, and the
     ready-to-paste Home Assistant camera config."""
@@ -1623,7 +1716,11 @@ def integrations_info(ctx: AppContext = Depends(get_context)) -> IntegrationsInf
     )
 
 
-@router.post("/integrations/homekit", response_model=HomeKitStatus)
+@router.post(
+    "/integrations/homekit",
+    response_model=HomeKitStatus,
+    dependencies=[Depends(require_admin)],
+)
 def update_homekit(update: HomeKitUpdate, ctx: AppContext = Depends(get_context)) -> HomeKitStatus:
     """Enable/configure the Apple HomeKit bridge (persisted). Re-(starts) the
     bridge so changes (cameras, name, pin) take effect immediately."""
@@ -1648,14 +1745,22 @@ def update_homekit(update: HomeKitUpdate, ctx: AppContext = Depends(get_context)
     return HomeKitStatus(**ctx.homekit.status())
 
 
-@router.post("/integrations/homekit/reset", response_model=HomeKitStatus)
+@router.post(
+    "/integrations/homekit/reset",
+    response_model=HomeKitStatus,
+    dependencies=[Depends(require_admin)],
+)
 def reset_homekit(ctx: AppContext = Depends(get_context)) -> HomeKitStatus:
     """Forget all paired controllers so HomeKit can be paired from scratch."""
     ctx.homekit.reset_pairing()
     return HomeKitStatus(**ctx.homekit.status())
 
 
-@router.post("/integrations/homeassistant", response_model=HomeAssistantStatus)
+@router.post(
+    "/integrations/homeassistant",
+    response_model=HomeAssistantStatus,
+    dependencies=[Depends(require_admin)],
+)
 def update_homeassistant(
     update: HomeAssistantUpdate, ctx: AppContext = Depends(get_context)
 ) -> HomeAssistantStatus:
@@ -1784,7 +1889,7 @@ async def storage_info(
     return info
 
 
-@router.post("/storage", response_model=StorageInfo)
+@router.post("/storage", response_model=StorageInfo, dependencies=[Depends(require_storage_admin)])
 async def update_storage(
     update: StorageUpdate, ctx: AppContext = Depends(get_context)
 ) -> StorageInfo:

@@ -631,6 +631,15 @@ class DetectionBox(AnnotationBox):
     confidence: float = Field(ge=0.0, le=1.0)
 
 
+class WorkloadExecutionInfo(BaseModel):
+    worker_node_id: str | None = None
+    model_name: str = ""
+    session_id: str | None = None
+    execution_ms: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    queue_ms: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    round_trip_ms: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+
 class DetectionResult(BaseModel):
     camera_id: str
     detector_active: bool  # False = no detection model is active
@@ -639,6 +648,7 @@ class DetectionResult(BaseModel):
     # Overlay badge status while the built-in detector provisions itself
     # ("downloading model 42%") or fails — empty when detection is just running.
     note: str = ""
+    workload: WorkloadExecutionInfo | None = None
 
 
 class DetectionInfo(BaseModel):
@@ -680,6 +690,7 @@ class ImageAnalysisResult(BaseModel):
     label: str | None = None
     description: str | None = None
     confidence: float | None = None
+    workload: WorkloadExecutionInfo | None = None
 
 
 class ModelInfo(BaseModel):
@@ -693,6 +704,9 @@ class ModelInfo(BaseModel):
     metrics: dict = {}
     created_ts: float
     has_artifact: bool = False
+    registry_node_id: str | None = None
+    artifact_id: str | None = None
+    artifact_owner_node_id: str | None = None
 
 
 class ModelRegister(BaseModel):

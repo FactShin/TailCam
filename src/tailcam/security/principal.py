@@ -36,6 +36,13 @@ _NO_ROLES: frozenset[TailCamRole] = frozenset()
 def principal_from_request(request: Request) -> RequestPrincipal:
     """Return the verified TailCam principal represented by a request."""
 
+    # Only the in-process MCP transport can set this ASGI scope value. HTTP
+    # headers cannot supply it. Preserve the remote caller at the REST boundary
+    # instead of silently promoting every MCP call to local administrator.
+    internal = request.scope.get("tailcam.internal_principal")
+    if isinstance(internal, RequestPrincipal):
+        return internal
+
     client_host = request.client.host if request.client else ""
     if not _is_loopback(client_host):
         return _unverified()

@@ -39,7 +39,8 @@ def test_detect_results_are_cached_per_camera(client, context, monkeypatch):
     cam_id = _cam(client)
     calls = []
 
-    def fake_detect(image):
+    def fake_detect(image, *, camera_id=""):
+        assert camera_id == cam_id
         calls.append(1)
         return [Detection(label="cup", confidence=0.9, cx=0.5, cy=0.5, w=0.2, h=0.2)]
 
@@ -57,7 +58,7 @@ def test_detect_image_endpoint_runs_local_pipeline(client, context, monkeypatch)
 
     monkeypatch.setattr(type(context.inference), "detection_active", property(lambda self: True))
     monkeypatch.setattr(
-        context.inference, "detect",
+        context.inference, "detect_local",
         lambda img: [Detection(label="person", confidence=0.8, cx=0.4, cy=0.4, w=0.1, h=0.3)],
     )
     ok, buf = cv2.imencode(".jpg", np.zeros((120, 160, 3), np.uint8))
@@ -106,6 +107,8 @@ def test_remote_detector_round_trip_and_backoff():
 
 
 def test_detection_node_routes_and_skips_local_provisioning(client, context, monkeypatch):
+    # Exercise the legacy peer adapter; UUID workload placement has separate coverage.
+    context.inference._workload_service = None
     cam_id = _cam(client)
     provisioned = []
     monkeypatch.setattr(context.detector, "ensure_ready", lambda: provisioned.append(1))
@@ -117,7 +120,7 @@ def test_detection_node_routes_and_skips_local_provisioning(client, context, mon
 
     # Unknown peer: the overlay says so instead of silently showing nothing.
     res = client.post(f"/api/cameras/{cam_id}/detect").json()
-    assert res["detector_active"] is True and "unreachable" in res["note"]
+    assert res["detector_active"] is False and "unreachable" in res["note"]
 
     # Once the peer is known, frames go there.
     from tailcam.cluster.service import Peer

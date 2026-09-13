@@ -258,6 +258,8 @@ def test_annotation_api_roundtrip(client):
 
 
 def test_detection_train_lifecycle_uses_detection_export(context, client, tmp_path, monkeypatch):
+    # This fixture mocks the direct legacy trainer; durable projection has separate coverage.
+    context.training._job_service = None
     import time
 
     from tailcam.persistence.models import DatasetSampleRecord, SampleAnnotationRecord

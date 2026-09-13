@@ -148,9 +148,10 @@ async def remote_timelapse_start(
     )
     smooth = ctx.config.timelapse.auto_smooth if body.auto_smooth is None else body.auto_smooth
     engine = body.smooth_engine or ctx.config.timelapse.smooth_engine
-    if analysis_enabled or (smooth and engine == "rife"):
+    routed = getattr(ctx, "workloads", None) is not None
+    if not routed and (analysis_enabled or (smooth and engine == "rife")):
         ctx.require_role("analysis")
-    if analysis_enabled and not ctx.printer_analyzer.config.enabled:
+    if not routed and analysis_enabled and not ctx.printer_analyzer.config.enabled:
         raise HTTPException(
             status_code=409,
             detail="printer analysis needs Ollama enabled on the storage node",

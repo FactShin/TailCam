@@ -129,7 +129,13 @@ def test_windows_phases_keep_required_job_name_and_use_watchdog():
     )
     steps = workflow["jobs"]["test-windows"]["steps"]
     phases = [step for step in steps if step.get("name", "").startswith("Windows ")]
-    assert len(phases) == 7
+    assert phases
+    commands = " ".join(step["run"] for step in phases)
+    for required in (
+        "tests/test_artifact_transfers.py", "tests/test_workload_execution.py",
+        "tests/test_artifact_pins.py", "tests/test_training_supervisor.py",
+    ):
+        assert required in commands.split(), f"Windows coverage omitted {required}"
     assert all("pytest_watchdog.py --timeout 300 --dump-after 60" in step["run"]
                and "--log artifacts/" in step["run"] for step in phases)
     assert any(step.get("uses") == "actions/upload-artifact@v4"

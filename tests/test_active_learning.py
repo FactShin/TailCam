@@ -268,6 +268,8 @@ def _start_loop(context, monkeypatch, detections, ls_service):
     monkeypatch.setattr(
         service_mod, "build_labeling_backend", lambda *a, **k: _StubBackend(detections)
     )
+    # Preserve coverage of the direct legacy backend mocked in this helper.
+    context.active_learning._workload_service = None
     context.active_learning.start()
 
 
@@ -450,7 +452,8 @@ def test_api_train_vlm_unavailable_explains(client, context):
     r = client.post("/api/active-learning/train", json={})
     assert r.status_code == 409
     detail = r.json()["detail"]
-    assert "unavailable" in detail and ("CUDA" in detail or "unsloth" in detail.lower())
+    assert r.json()["code"] == "model_unavailable"
+    assert "unavailable" in detail and "preprovisioned model artifact" in detail
 
 
 def test_api_sync_route(client, ls_service):

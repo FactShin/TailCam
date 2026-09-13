@@ -1,6 +1,8 @@
 """Workload boundaries across real nodes and every HTTP work entry point."""
 
+import json
 import sqlite3
+import time
 from types import SimpleNamespace
 
 import httpx
@@ -39,15 +41,25 @@ def _assert_disabled(response, role):
     assert response.json()["role"] == role, response.text
 
 
-def test_capture_only_node_records_and_timelapses_on_camera_free_storage(process_fleet):
+def test_capture_only_stores_frames_but_storage_only_cannot_encode(process_fleet):
     source_port, storage_port = _port(), _port()
     source = f"http://127.0.0.1:{source_port}"
     storage = f"http://127.0.0.1:{storage_port}"
     storage_root = process_fleet(
-        "storage-only", storage_port, "--roles", "storage", "--peer", source,
+        "storage-only",
+        storage_port,
+        "--roles",
+        "storage",
+        "--peer",
+        source,
     )
     source_root = process_fleet(
-        "capture-only", source_port, "--roles", "capture", "--storage", storage,
+        "capture-only",
+        source_port,
+        "--roles",
+        "capture",
+        "--storage",
+        storage,
     )
     with httpx.Client(timeout=10, trust_env=False) as http:
         _ready(http, storage)
@@ -70,8 +82,12 @@ def test_capture_only_node_records_and_timelapses_on_camera_free_storage(process
 
         response = http.post(
             f"{source}/api/cameras/{camera_id}/timelapse/start",
-            json={"analysis_enabled": False, "auto_smooth": False,
-                  "interval_seconds": 0.1, "output_fps": 10},
+            json={
+                "analysis_enabled": False,
+                "auto_smooth": False,
+                "interval_seconds": 0.1,
+                "output_fps": 10,
+            },
         )
         assert response.status_code == 200, response.text
         timelapse = response.json()
@@ -82,14 +98,16 @@ def test_capture_only_node_records_and_timelapses_on_camera_free_storage(process
         _wait(lambda: http.get(f"{owner}/api/timelapse/{tl_id}").json()["frames_captured"] >= 3)
         response = http.post(f"{owner}/api/timelapse/{tl_id}/stop")
         assert response.status_code == 200, response.text
-        _wait(lambda: http.get(f"{owner}/api/timelapse/{tl_id}").json()["state"] == "complete")
+        _wait(lambda: http.get(f"{owner}/api/timelapse/{tl_id}").json()["state"] == "error")
         video = http.get(f"{owner}/timelapse/{tl_id}/file")
-        assert video.status_code == 200 and len(video.content) > 100
+        assert video.status_code == 404
+        assert list((storage_root / "media").rglob("*.jpg"))
+        assert http.get(f"{storage}/api/v1/jobs").json()["items"] == []
 
         assert http.get(f"{source}/api/media?scope=local").json() == []
         assert http.get(f"{source}/api/timelapse?scope=local").json() == []
         assert _files(source_root) == []
-        assert len(list((storage_root / "media").rglob("*.mp4"))) >= 2
+        assert len(list((storage_root / "media").rglob("*.mp4"))) == 1
         with sqlite3.connect(storage_root / "data/tailcam.db") as db:
             assert db.execute("SELECT source_host FROM media").fetchall() == [("capture-only",)]
             stored = db.execute("SELECT source_host FROM timelapses").fetchall()
@@ -101,20 +119,31 @@ def test_disabled_destination_never_falls_back_to_allowed_local_storage(process_
     source, hub = f"http://127.0.0.1:{source_port}", f"http://127.0.0.1:{hub_port}"
     hub_root = process_fleet("hub-only", hub_port, "--roles", "", "--peer", source)
     source_root = process_fleet(
-        "capture-with-storage", source_port, "--roles", "capture,storage", "--storage", hub,
+        "capture-with-storage",
+        source_port,
+        "--roles",
+        "capture,storage",
+        "--storage",
+        hub,
     )
     with httpx.Client(timeout=10, trust_env=False) as http:
         _ready(http, hub)
         camera_id = _camera(http, source)
         _discover(http, source, "hub-only")
         for _ in range(2):  # A refusal must not activate fallback backoff on the next request.
-            _assert_disabled(http.post(
-                f"{source}/api/cameras/{camera_id}/recording/start",
-            ), "storage")
-            _assert_disabled(http.post(
-                f"{source}/api/cameras/{camera_id}/timelapse/start",
-                json={"analysis_enabled": False, "auto_smooth": False},
-            ), "storage")
+            _assert_disabled(
+                http.post(
+                    f"{source}/api/cameras/{camera_id}/recording/start",
+                ),
+                "storage",
+            )
+            _assert_disabled(
+                http.post(
+                    f"{source}/api/cameras/{camera_id}/timelapse/start",
+                    json={"analysis_enabled": False, "auto_smooth": False},
+                ),
+                "storage",
+            )
         assert http.get(f"{source}/api/media?scope=local").json() == []
         assert http.get(f"{source}/api/timelapse?scope=local").json() == []
         assert _files(source_root) == []
@@ -125,19 +154,29 @@ def test_unreachable_destination_cannot_write_on_capture_only_node(process_fleet
     source_port, unavailable_port = _port(), _port()
     source = f"http://127.0.0.1:{source_port}"
     source_root = process_fleet(
-        "capture-only", source_port, "--roles", "capture",
-        "--storage", f"http://127.0.0.1:{unavailable_port}",
+        "capture-only",
+        source_port,
+        "--roles",
+        "capture",
+        "--storage",
+        f"http://127.0.0.1:{unavailable_port}",
     )
     with httpx.Client(timeout=10, trust_env=False) as http:
         camera_id = _camera(http, source)
         for _ in range(2):
-            _assert_disabled(http.post(
-                f"{source}/api/cameras/{camera_id}/recording/start",
-            ), "storage")
-            _assert_disabled(http.post(
-                f"{source}/api/cameras/{camera_id}/timelapse/start",
-                json={"analysis_enabled": False, "auto_smooth": False},
-            ), "storage")
+            _assert_disabled(
+                http.post(
+                    f"{source}/api/cameras/{camera_id}/recording/start",
+                ),
+                "storage",
+            )
+            _assert_disabled(
+                http.post(
+                    f"{source}/api/cameras/{camera_id}/timelapse/start",
+                    json={"analysis_enabled": False, "auto_smooth": False},
+                ),
+                "storage",
+            )
         assert _files(source_root) == []
         assert http.get(f"{source}/api/media?scope=local").json() == []
         assert http.get(f"{source}/api/timelapse?scope=local").json() == []
@@ -158,7 +197,11 @@ def role_client(store, monkeypatch):
         ctx = AppContext(config, store)
         monkeypatch.setattr(ctx, "_start_notify_monitor", lambda: None)
         contexts.append(ctx)
-        return ctx, TestClient(create_app(config, context=ctx), base_url="http://localhost:8088")
+        return ctx, TestClient(
+            create_app(config, context=ctx),
+            base_url="http://localhost:8088",
+            client=("127.0.0.1", 51000),
+        )
 
     yield make
     for ctx in contexts:
@@ -175,7 +218,7 @@ def test_hub_http_rejects_work_before_streams_models_decoders_or_jobs(role_clien
     monkeypatch.setattr(ctx.remote_feeds, "get_buffer", _forbidden)
     monkeypatch.setattr(ctx.manager, "get_buffer", _forbidden)
     monkeypatch.setattr(ctx.recorder, "start", _forbidden)
-    monkeypatch.setattr(ctx.training, "train", _forbidden)
+    monkeypatch.setattr(ctx.training, "prepare_training_job", _forbidden)
     monkeypatch.setattr(ctx.active_learning, "start", _forbidden)
     monkeypatch.setattr(ctx.pulls, "start", _forbidden)
     monkeypatch.setattr("cv2.imdecode", _forbidden)
@@ -190,17 +233,120 @@ def test_hub_http_rejects_work_before_streams_models_decoders_or_jobs(role_clien
         ("/api/ai/load", {"model": "unused"}, "analysis"),
         ("/api/training/collection", {"enabled": True}, "training"),
         ("/api/datasets", {"name": "unused"}, "training"),
-        ("/api/training/runs", {"dataset_id": 1}, "training"),
         ("/api/active-learning/start", None, "training"),
-        ("/api/active-learning/train", {}, "training"),
     ]
     with client:
         for path, payload, role in cases:
-            _assert_disabled(client.post(path, json=payload), role)
+            response = client.post(path, json=payload)
+            _assert_disabled(response, role)
         _assert_disabled(client.post("/api/detect-image", content=b"not an image"), "analysis")
+        # The routed training coordinator may read existing history on a hub.
+        assert client.post("/api/training/runs", json={"dataset_id": 999}).status_code == 404
+        assert client.post("/api/active-learning/train", json={}).status_code == 400
     assert ctx.store.list_runs() == []
     assert ctx.store.list_datasets() == []
     assert ctx.timelapse_analysis._thread is None
+
+
+@pytest.mark.parametrize("active_learning", [False, True])
+def test_hub_training_http_refuses_local_worker_before_dataset_export(
+    role_client, monkeypatch, active_learning
+):
+    from tailcam.persistence.models import DatasetRecord
+
+    ctx, client = role_client()
+    dataset = ctx.store.add_dataset(DatasetRecord(None, "Existing", "classification", 1))
+    ctx.config.active_learning.dataset_id = dataset
+    ctx.config.training.base_model = "model:1"
+    monkeypatch.setattr(ctx.training, "dataset_review", _forbidden)
+    monkeypatch.setattr(ctx.training, "prepare_training_job", _forbidden)
+    with client:
+        path = "/api/active-learning/train" if active_learning else "/api/training/runs"
+        payload = {} if active_learning else {"dataset_id": dataset, "base_model": "model:1"}
+        response = client.post(path, json=payload)
+        assert response.status_code == 503, response.text
+        assert response.json()["code"] == "worker_unavailable"
+    assert ctx.jobs.list() == []
+    assert ctx.store.list_runs() == []
+
+
+def test_standalone_active_learning_training_retains_local_role_guard(role_client, monkeypatch):
+    ctx, client = role_client()
+    ctx.training._job_service = None
+    monkeypatch.setattr(ctx.active_learning, "train", _forbidden)
+    with client:
+        _assert_disabled(client.post("/api/active-learning/train", json={}), "training")
+
+
+def test_hub_active_learning_enqueues_on_explicit_remote_worker(role_client, monkeypatch):
+    from uuid import uuid4
+
+    from tailcam.jobs.models import JobSpec, TaskAvailability, TaskRoute, WorkerInfo, WorkerTarget
+    from tailcam.persistence.models import DatasetRecord, TrainingRunRecord
+
+    ctx, client = role_client()
+    dataset = ctx.store.add_dataset(DatasetRecord(None, "Existing", "classification", 1))
+    ctx.config.active_learning.dataset_id = dataset
+    ctx.config.training.base_model = "model:1"
+    worker_id = str(uuid4())
+    policy = ctx.jobs.get_policy()
+    policy.routes["training"] = TaskRoute(target=WorkerTarget(node_id=worker_id))
+    ctx.jobs.set_policy(policy, expected_revision=policy.revision)
+    worker = WorkerInfo(
+        node_id=worker_id,
+        online=True,
+        roles=["training"],
+        tasks=[TaskAvailability(task="training")],
+        cpu_threads=64,
+        memory_bytes=64 * 1024**3,
+        workspace_bytes=64 * 1024**3,
+    )
+    monkeypatch.setattr(ctx.jobs.placement, "workers", lambda: [worker])
+    monkeypatch.setattr(ctx.jobs, "start", lambda: None)
+    monkeypatch.setattr(ctx.job_executor, "execute", _forbidden)
+    monkeypatch.setattr(ctx.storage_service, "workspace_for_task", _forbidden)
+    prepared = []
+
+    def prepared_manifest(**kwargs):
+        # Export/model handling is covered by the source-adapter tests. This transport
+        # test starts at its immutable manifest boundary and uses the real durable queue.
+        prepared.append(kwargs)
+        run_id = ctx.store.add_run(
+            TrainingRunRecord(
+                id=None,
+                dataset_id=dataset,
+                model_id=None,
+                base_model="model:1",
+                status="queued",
+                params_json=json.dumps({"job_id": kwargs["job_id"]}),
+                metrics_json="{}",
+                log="",
+                epochs=kwargs["epochs"],
+                epoch=0,
+                created_ts=time.time(),
+            )
+        )
+        return JobSpec(
+            job_id=kwargs["job_id"],
+            task="training",
+            origin_node_id=ctx.node_id,
+            placement_plan=ctx.jobs.placement.plan("training"),
+            resource_budget=kwargs["budget"],
+            reference={"training_run_id": str(run_id)},
+        )
+
+    monkeypatch.setattr(ctx.training, "prepare_training_job", prepared_manifest)
+    with client:
+        response = client.post("/api/active-learning/train", json={"epochs": 2})
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "queued"
+        assert response.json()["epochs"] == 2
+    assert len(prepared) == 1
+    assert prepared[0]["worker_node_id"] == worker_id
+    jobs = ctx.jobs.list()
+    assert len(jobs) == 1 and jobs[0].state == "queued"
+    assert jobs[0].stages[0].placement_plan.selected_target.node_id == worker_id
+    assert not ctx.has_role("training")
 
 
 def test_hub_status_http_never_probes_models_or_training_runtime(role_client, monkeypatch):
@@ -216,8 +362,12 @@ def test_hub_status_http_never_probes_models_or_training_runtime(role_client, mo
     ctx.config.training.active_model_id = 123
     with client:
         for path in (
-            "/api/ai", "/api/ai/models", "/api/detection", "/api/training",
-            "/api/active-learning", "/api/active-learning/backends",
+            "/api/ai",
+            "/api/ai/models",
+            "/api/detection",
+            "/api/training",
+            "/api/active-learning",
+            "/api/active-learning/backends",
             "/api/active-learning/finetune-backends",
         ):
             response = client.get(path)
@@ -231,25 +381,31 @@ def test_training_only_active_learning_returns_structured_analysis_refusal(role_
         _assert_disabled(client.post("/api/active-learning/start"), "analysis")
 
 
-@pytest.mark.parametrize("roles,missing_role", [
-    (["capture"], "storage"),
-    (["capture", "storage"], "analysis"),
-])
+@pytest.mark.parametrize(
+    "roles,missing_role",
+    [
+        (["capture"], "storage"),
+        (["capture", "storage"], "analysis"),
+    ],
+)
 @pytest.mark.parametrize("request_settings", [{}, {"analysis_enabled": True}])
-def test_local_timelapse_role_refusal_precedes_ollama_configuration_error(
+def test_capture_retains_frames_without_starting_disabled_local_analysis(
     role_client, monkeypatch, roles, missing_role, request_settings
 ):
     ctx, client = role_client(roles)
     ctx.config.ai.enabled = False
     ctx.config.timelapse.analysis_enabled = True
-    monkeypatch.setattr(ctx.timelapse, "start", _forbidden)
+    monkeypatch.setattr(ctx.workloads, "analyze", _forbidden)
     with client:
         camera_id = client.get("/api/cameras?scope=local").json()[0]["id"]
-        response = client.post(
-            f"/api/cameras/{camera_id}/timelapse/start", json=request_settings
-        )
-        _assert_disabled(response, missing_role)
-        assert client.get("/api/timelapse?scope=local").json() == []
+        response = client.post(f"/api/cameras/{camera_id}/timelapse/start", json=request_settings)
+        if missing_role == "storage":
+            _assert_disabled(response, missing_role)
+            assert client.get("/api/timelapse?scope=local").json() == []
+        else:
+            assert response.status_code == 200, response.text
+            assert response.json()["analysis_enabled"] is True
+            assert ctx.jobs.list() == []
     assert ctx.timelapse_analysis._thread is None
 
 
@@ -271,7 +427,10 @@ def test_motion_without_storage_keeps_notifications_but_writes_no_thumbnail(
 ):
     notifications = []
     worker = MotionWorker(
-        "synthetic-0", None, MotionConfig(), SimpleNamespace(set_thumb=_forbidden),
+        "synthetic-0",
+        None,
+        MotionConfig(),
+        SimpleNamespace(set_thumb=_forbidden),
         notifier=SimpleNamespace(notify_motion=lambda **data: notifications.append(data)),
         storage_enabled=lambda: False,
     )

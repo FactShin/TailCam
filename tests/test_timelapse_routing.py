@@ -13,9 +13,14 @@ def _remote(context, monkeypatch, handler):
 
 @pytest.mark.parametrize("status", [400, 403, 404, 409, 422, 500, 502, 503])
 def test_remote_rejection_never_creates_local_capture(client, context, monkeypatch, status):
-    cam = _remote(context, monkeypatch, lambda _: httpx.Response(
-        status, json={"detail": "printer analysis disabled on storage"},
-    ))
+    cam = _remote(
+        context,
+        monkeypatch,
+        lambda _: httpx.Response(
+            status,
+            json={"detail": "printer analysis disabled on storage"},
+        ),
+    )
     for _ in range(2):
         response = client.post(f"/api/cameras/{cam}/timelapse/start")
         assert response.status_code == status
@@ -52,7 +57,8 @@ def test_connection_failure_keeps_documented_local_fallback(client, context, mon
 
     cam = _remote(context, monkeypatch, fail)
     response = client.post(
-        f"/api/cameras/{cam}/timelapse/start", json={"analysis_enabled": False},
+        f"/api/cameras/{cam}/timelapse/start",
+        json={"analysis_enabled": False},
     )
     assert response.status_code == 200
     assert response.json()["host"] == context.local_host
@@ -61,29 +67,40 @@ def test_connection_failure_keeps_documented_local_fallback(client, context, mon
 
 
 def test_fallback_rechecks_local_analyzer(client, context, monkeypatch):
-    def fail(request):
-        raise httpx.ConnectError("connection unavailable", request=request)
+    with monkeypatch.context() as legacy:
+        # The direct legacy analyzer still requires local availability.
+        legacy.setattr(context, "workloads", None)
 
-    cam = _remote(context, monkeypatch, fail)
-    response = client.post(
-        f"/api/cameras/{cam}/timelapse/start", json={"analysis_enabled": True},
-    )
-    assert response.status_code == 409
-    assert context.store.list_timelapses() == []
+        def fail(request):
+            raise httpx.ConnectError("connection unavailable", request=request)
+
+        cam = _remote(context, monkeypatch, fail)
+        response = client.post(
+            f"/api/cameras/{cam}/timelapse/start",
+            json={"analysis_enabled": True},
+        )
+        assert response.status_code == 409
+        assert context.store.list_timelapses() == []
 
 
 def test_remote_endpoint_checks_effective_analysis_default(client, context, monkeypatch):
-    context.config.timelapse.analysis_enabled = True
-    monkeypatch.setattr(context.cluster, "peer_base", lambda _: "http://source:8088")
-    monkeypatch.setattr(context.remote_feeds, "get_buffer", lambda *args: pytest.fail(
-        "should reject before opening a stream",
-    ))
-    response = client.post("/api/remote/source/cameras/synthetic-0/timelapse/start")
-    # Send a body because the remote endpoint requires one.
-    assert response.status_code == 422
-    response = client.post("/api/remote/source/cameras/synthetic-0/timelapse/start", json={})
-    assert response.status_code == 409
-    assert context.store.list_timelapses() == []
+    with monkeypatch.context() as legacy:
+        legacy.setattr(context, "workloads", None)
+        context.config.timelapse.analysis_enabled = True
+        monkeypatch.setattr(context.cluster, "peer_base", lambda _: "http://source:8088")
+        monkeypatch.setattr(
+            context.remote_feeds,
+            "get_buffer",
+            lambda *args: pytest.fail(
+                "should reject before opening a stream",
+            ),
+        )
+        response = client.post("/api/remote/source/cameras/synthetic-0/timelapse/start")
+        # Send a body because the remote endpoint requires one.
+        assert response.status_code == 422
+        response = client.post("/api/remote/source/cameras/synthetic-0/timelapse/start", json={})
+        assert response.status_code == 409
+        assert context.store.list_timelapses() == []
 
 
 @pytest.mark.parametrize("connected", [False, True])
@@ -108,3 +125,54 @@ def test_url_destination_never_becomes_a_proxy_key(client, context, monkeypatch,
         assert result.status_code == 200
         assert result.json()["proxy_prefix"] == ""
         assert result.json()["host"] == context.local_host
+
+
+@pytest.mark.parametrize("delegated", [False, True])
+def test_routed_printer_capture_does_not_require_source_analysis(
+    client, context, monkeypatch, delegated
+):
+    from uuid import uuid4
+
+    from tailcam.jobs.models import (
+        PlacementPolicy,
+        TaskAvailability,
+        TaskRoute,
+        WorkerInfo,
+        WorkerTarget,
+    )
+
+    identity = str(uuid4())
+    worker = WorkerInfo(
+        node_id=identity,
+        name="Approved remote analysis",
+        online=True,
+        roles=["analysis"],
+        tasks=[TaskAvailability(task="printer_analysis")],
+        memory_bytes=1024**3,
+        workspace_bytes=1024**3,
+    )
+    monkeypatch.setattr(context.jobs.placement, "_workers", lambda: [worker])
+    context.jobs.set_policy(
+        PlacementPolicy(
+            routes={"printer_analysis": TaskRoute(target=WorkerTarget(node_id=identity))}
+        ),
+        expected_revision=context.jobs.get_policy().revision,
+    )
+    # Placement is real and explicit; this test stubs the later inference result,
+    # while the separate process test exercises the HTTP worker/provider path.
+    monkeypatch.setattr(context.printer_analyzer, "analyze_path", lambda _: None)
+    context.active_roles = frozenset({"capture", "storage"})
+    context.config.ai.enabled = False
+    assert context.workloads._plan("printer_analysis").selected_target.node_id == identity
+    camera = context.manager.list()[0].descriptor.id
+    if delegated:
+        buffer = context.manager.get_buffer(camera)
+        monkeypatch.setattr(context.remote_feeds, "get_buffer", lambda *args: buffer)
+        monkeypatch.setattr(context.cluster, "peer_base", lambda _: "http://approved-source:8088")
+        url = "/api/remote/source/cameras/synthetic-0/timelapse/start"
+    else:
+        url = f"/api/cameras/{camera}/timelapse/start"
+    response = client.post(url, json={"analysis_enabled": True, "analysis_cadence_seconds": 3600})
+    assert response.status_code == 200, response.text
+    assert response.json()["analysis_enabled"] is True
+    assert context.store.get_timelapse(response.json()["id"]).state == "capturing"

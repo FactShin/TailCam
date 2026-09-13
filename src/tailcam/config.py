@@ -37,6 +37,43 @@ class NodeConfig:
 
 
 @dataclass
+class JobsConfig:
+    max_queued: int = 64
+    max_running: int = 2
+    max_training: int = 1
+    max_gpu_slots: int = 1
+    max_cpu_threads: int = 4
+    max_memory_bytes: int = 4 * 1024**3
+    max_workspace_bytes: int = 1024**3
+    lease_seconds: float = 15.0
+    poll_seconds: float = 0.5
+    policy: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        for name in (
+            "max_queued",
+            "max_running",
+            "max_training",
+            "max_cpu_threads",
+            "max_memory_bytes",
+            "max_workspace_bytes",
+        ):
+            value = getattr(self, name)
+            if type(value) is not int or not 1 <= value <= 2**50:
+                raise ValueError(f"Invalid jobs.{name}")
+        if type(self.max_gpu_slots) is not int or not 0 <= self.max_gpu_slots <= 32:
+            raise ValueError("Invalid jobs.max_gpu_slots")
+        if not 2 <= self.lease_seconds <= 120 or not 0.05 <= self.poll_seconds <= 10:
+            raise ValueError("Invalid job worker timing")
+        if self.policy:
+            from tailcam.jobs.models import PlacementPolicy
+
+            self.policy = PlacementPolicy.model_validate(self.policy).model_dump(
+                mode="json", exclude_none=True
+            )
+
+
+@dataclass
 class ServerConfig:
     host: str = "127.0.0.1"
     port: int = 8088
@@ -133,8 +170,8 @@ class AIConfig:
     timeout: float = 20.0
     prompt: str = (
         "You are a security camera analyst. Look at this single frame and respond ONLY "
-        "with JSON: {\"label\": one of [person, animal, vehicle, package, plant, nothing], "
-        "\"confidence\": a number 0-1, \"description\": a short phrase}. No other text."
+        'with JSON: {"label": one of [person, animal, vehicle, package, plant, nothing], '
+        '"confidence": a number 0-1, "description": a short phrase}. No other text.'
     )
 
 
@@ -395,6 +432,7 @@ class AppConfig:
     motion: MotionConfig = field(default_factory=MotionConfig)
     retention: RetentionConfig = field(default_factory=RetentionConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
+    jobs: JobsConfig = field(default_factory=JobsConfig)
     tailscale: TailscaleConfig = field(default_factory=TailscaleConfig)
     peers: PeersConfig = field(default_factory=PeersConfig)
     cameras: CamerasConfig = field(default_factory=CamerasConfig)
@@ -472,6 +510,7 @@ class AppConfig:
             motion=_section(MotionConfig, raw, "motion"),
             retention=_section(RetentionConfig, raw, "retention"),
             storage=_section(StorageConfig, raw, "storage"),
+            jobs=_section(JobsConfig, raw, "jobs"),
             tailscale=_section(TailscaleConfig, raw, "tailscale"),
             peers=_section(PeersConfig, raw, "peers"),
             cameras=_section(CamerasConfig, raw, "cameras"),
@@ -518,6 +557,7 @@ class AppConfig:
             "motion": asdict(self.motion),
             "retention": asdict(self.retention),
             "storage": asdict(self.storage),
+            "jobs": asdict(self.jobs),
             "tailscale": asdict(self.tailscale),
             "peers": asdict(self.peers),
             "cameras": asdict(self.cameras),

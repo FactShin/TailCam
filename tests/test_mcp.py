@@ -18,7 +18,10 @@ from tailcam.security.principal import RequestPrincipal, TailCamRole
 from tailcam.web.app import create_app
 
 ADMIN = RequestPrincipal(
-    "alice", "Alice", "tailscale-user", True,
+    "alice",
+    "Alice",
+    "tailscale-user",
+    True,
     frozenset({TailCamRole.VIEWER, TailCamRole.OPERATOR, TailCamRole.ADMIN}),
 )
 VIEWER = RequestPrincipal("node", None, "tailscale-node", True, frozenset({TailCamRole.VIEWER}))
@@ -38,7 +41,7 @@ def mcp_env(context):
 def _server(
     app, principal, *, audit_store=None, client_name=None
 ) -> tuple[McpServer, TailcamClient]:
-    client = TailcamClient.for_app(app)
+    client = TailcamClient.for_app(app, principal=principal)
     audit = AuditLog(audit_store) if audit_store is not None else None
     server = McpServer(
         client=client,
@@ -181,8 +184,9 @@ async def test_prompts_list_and_get(mcp_env):
     server, client = _server(app, ADMIN)
     try:
         listing = await _call(server, "prompts/list")
-        got = await _call(server, "prompts/get", name="tailcam_motion_investigation",
-                          arguments={"event_id": 7})
+        got = await _call(
+            server, "prompts/get", name="tailcam_motion_investigation", arguments={"event_id": 7}
+        )
     finally:
         await client.aclose()
     names = {p["name"] for p in listing["result"]["prompts"]}
@@ -218,8 +222,9 @@ async def test_restart_camera_requires_confirm(mcp_env):
     server, client = _server(app, ADMIN)
     cam_id = ctx.manager.list()[0].descriptor.id
     try:
-        res = await _call(server, "tools/call", name="restart_camera",
-                          arguments={"camera_id": cam_id})
+        res = await _call(
+            server, "tools/call", name="restart_camera", arguments={"camera_id": cam_id}
+        )
     finally:
         await client.aclose()
     assert res["result"]["structuredContent"]["error"]["code"] == errors.CONFIRMATION_REQUIRED
@@ -231,8 +236,9 @@ async def test_capture_snapshot_records_audit(mcp_env):
     server, client = _server(app, ADMIN, audit_store=ctx.store)
     cam_id = ctx.manager.list()[0].descriptor.id
     try:
-        res = await _call(server, "tools/call", name="capture_snapshot",
-                          arguments={"camera_id": cam_id})
+        res = await _call(
+            server, "tools/call", name="capture_snapshot", arguments={"camera_id": cam_id}
+        )
     finally:
         await client.aclose()
     assert res["result"]["isError"] is False
@@ -245,13 +251,20 @@ async def test_dataset_lifecycle_and_audit(mcp_env):
     app, ctx = mcp_env
     server, client = _server(app, ADMIN, audit_store=ctx.store)
     try:
-        created = await _call(server, "tools/call", name="create_dataset",
-                              arguments={"name": "agents", "task": "classification"})
+        created = await _call(
+            server,
+            "tools/call",
+            name="create_dataset",
+            arguments={"name": "agents", "task": "classification"},
+        )
         ds_id = created["result"]["structuredContent"]["dataset"]["id"]
-        got = await _call(server, "tools/call", name="get_dataset",
-                          arguments={"dataset_id": ds_id})
-        deleted = await _call(server, "tools/call", name="delete_dataset",
-                              arguments={"dataset_id": ds_id, "confirm": True})
+        got = await _call(server, "tools/call", name="get_dataset", arguments={"dataset_id": ds_id})
+        deleted = await _call(
+            server,
+            "tools/call",
+            name="delete_dataset",
+            arguments={"dataset_id": ds_id, "confirm": True},
+        )
     finally:
         await client.aclose()
     assert created["result"]["isError"] is False
@@ -265,11 +278,11 @@ async def test_delete_dataset_requires_confirm(mcp_env):
     app, ctx = mcp_env
     server, client = _server(app, ADMIN)
     try:
-        created = await _call(server, "tools/call", name="create_dataset",
-                              arguments={"name": "x"})
+        created = await _call(server, "tools/call", name="create_dataset", arguments={"name": "x"})
         ds_id = created["result"]["structuredContent"]["dataset"]["id"]
-        res = await _call(server, "tools/call", name="delete_dataset",
-                          arguments={"dataset_id": ds_id})
+        res = await _call(
+            server, "tools/call", name="delete_dataset", arguments={"dataset_id": ds_id}
+        )
     finally:
         await client.aclose()
     assert res["result"]["structuredContent"]["error"]["code"] == errors.CONFIRMATION_REQUIRED
@@ -279,13 +292,19 @@ async def test_start_training_run_confirm_then_engine_state(mcp_env):
     app, ctx = mcp_env
     server, client = _server(app, ADMIN)
     try:
-        created = await _call(server, "tools/call", name="create_dataset",
-                              arguments={"name": "train"})
+        created = await _call(
+            server, "tools/call", name="create_dataset", arguments={"name": "train"}
+        )
         ds_id = created["result"]["structuredContent"]["dataset"]["id"]
-        no_confirm = await _call(server, "tools/call", name="start_training_run",
-                                 arguments={"dataset_id": ds_id})
-        confirmed = await _call(server, "tools/call", name="start_training_run",
-                                arguments={"dataset_id": ds_id, "confirm": True})
+        no_confirm = await _call(
+            server, "tools/call", name="start_training_run", arguments={"dataset_id": ds_id}
+        )
+        confirmed = await _call(
+            server,
+            "tools/call",
+            name="start_training_run",
+            arguments={"dataset_id": ds_id, "confirm": True},
+        )
     finally:
         await client.aclose()
     no_confirm_code = no_confirm["result"]["structuredContent"]["error"]["code"]
@@ -293,7 +312,8 @@ async def test_start_training_run_confirm_then_engine_state(mcp_env):
     # Engine isn't installed in CI: a clean normalized error, not a crash.
     assert confirmed["result"]["isError"] is True
     assert confirmed["result"]["structuredContent"]["error"]["code"] in (
-        errors.INVALID_RESPONSE, errors.NOT_RUNNING
+        errors.INVALID_RESPONSE,
+        errors.NOT_RUNNING,
     )
 
 
@@ -323,8 +343,12 @@ async def test_pull_ollama_model_unreachable_is_peer_error(mcp_env):
     app, _ = mcp_env
     server, client = _server(app, ADMIN)
     try:
-        res = await _call(server, "tools/call", name="pull_ollama_model",
-                          arguments={"model": "moondream", "confirm": True})
+        res = await _call(
+            server,
+            "tools/call",
+            name="pull_ollama_model",
+            arguments={"model": "moondream", "confirm": True},
+        )
     finally:
         await client.aclose()
     assert res["result"]["structuredContent"]["error"]["code"] == errors.PEER_UNREACHABLE
@@ -338,11 +362,24 @@ async def test_model_lifecycle_tools_present(mcp_env):
     finally:
         await client.aclose()
     expected = {
-        "list_ollama_models", "pull_ollama_model", "load_ollama_model",
-        "create_dataset", "delete_dataset", "get_dataset", "list_dataset_samples",
-        "relabel_sample", "delete_sample", "list_models", "register_model",
-        "activate_model", "deactivate_model", "delete_model",
-        "start_training_run", "list_training_runs", "get_training_run", "stop_training_run",
+        "list_ollama_models",
+        "pull_ollama_model",
+        "load_ollama_model",
+        "create_dataset",
+        "delete_dataset",
+        "get_dataset",
+        "list_dataset_samples",
+        "relabel_sample",
+        "delete_sample",
+        "list_models",
+        "register_model",
+        "activate_model",
+        "deactivate_model",
+        "delete_model",
+        "start_training_run",
+        "list_training_runs",
+        "get_training_run",
+        "stop_training_run",
     }
     assert expected <= names
 
@@ -527,8 +564,12 @@ async def test_http_tool_call_without_prior_initialize(mcp_env):
         resp = await c.post(
             "/mcp",
             headers={"mcp-protocol-version": "2025-06-18"},
-            json={"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                  "params": {"name": "get_system_status", "arguments": {}}},
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "get_system_status", "arguments": {}},
+            },
         )
     body = resp.json()["result"]
     assert body["isError"] is False
@@ -559,8 +600,12 @@ async def test_http_initialize_response_echoes_negotiated_version(mcp_env):
     async with _http(app) as c:
         resp = await c.post(
             "/mcp",
-            json={"jsonrpc": "2.0", "id": 1, "method": "initialize",
-                  "params": {"protocolVersion": "2025-06-18"}},
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {"protocolVersion": "2025-06-18"},
+            },
         )
     assert resp.json()["result"]["protocolVersion"] == "2025-06-18"
     assert resp.headers["mcp-protocol-version"] == "2025-06-18"
@@ -575,8 +620,12 @@ async def test_http_audits_client_name_without_a_session(mcp_env):
         resp = await c.post(
             "/mcp",
             headers={"user-agent": "acme-agent/2.0", "mcp-protocol-version": "2025-06-18"},
-            json={"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                  "params": {"name": "capture_snapshot", "arguments": {"camera_id": cam_id}}},
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "capture_snapshot", "arguments": {"camera_id": cam_id}},
+            },
         )
     assert resp.json()["result"]["isError"] is False
     record = next(r for r in AuditLog(ctx.store).list() if r.action == "mcp.capture_snapshot")
@@ -592,8 +641,9 @@ async def test_server_core_keeps_no_state_across_messages(mcp_env):
     server, client = _server(app, ADMIN, client_name="configured")
     try:
         before = dict(vars(server))
-        await _call(server, "initialize", clientInfo={"name": "sneaky"},
-                    protocolVersion="2024-11-05")
+        await _call(
+            server, "initialize", clientInfo={"name": "sneaky"}, protocolVersion="2024-11-05"
+        )
         after = dict(vars(server))
     finally:
         await client.aclose()
@@ -606,8 +656,12 @@ async def test_stdio_remembers_client_name_at_the_transport(mcp_env):
     # connection-scoped — but it lives in the transport, not in the core.
     from tailcam.mcp.protocol import client_name_from
 
-    init = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
-            "params": {"clientInfo": {"name": "codex"}}}
+    init = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {"clientInfo": {"name": "codex"}},
+    }
     assert client_name_from(init) == "codex"
     assert client_name_from({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}) is None
 
@@ -681,7 +735,10 @@ def test_mcp_http_gate_is_live_no_restart(client):
     # Flip the toggle through the API — the same app instance starts answering
     # (fail-closed auth still applies: an unverified caller gets 401, not 404).
     client.post("/api/mcp", json={"http_enabled": True})
-    resp = client.post("/mcp", json=init)
+    with TestClient(
+        client.app, base_url="http://localhost", client=("192.0.2.9", 51000)
+    ) as outside:
+        resp = outside.post("/mcp", json=init)
     assert resp.status_code == 401
 
     # And off again, immediately.

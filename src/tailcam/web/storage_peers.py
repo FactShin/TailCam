@@ -167,6 +167,30 @@ class StoragePeerDirectory:
                 return item["base"]
         return None
 
+    def is_approved_identity(self, node_id: str) -> bool:
+        """An offline binding can remain approved without claiming it is reachable."""
+        identity = str(UUID(node_id))
+        bound = self.ctx.storage_service.catalog.setting(f"storage_peer_identity:{identity}")
+        return bool(bound and bound in {p.base_url.rstrip("/") for p in self._approved_peers()})
+
+    def identity_for_legacy_node(self, name: str) -> str | None:
+        """Resolve a saved key/address only to one approved, bound peer UUID."""
+        peers = self._approved_peers()
+        matching_bases = {
+            peer.base_url.rstrip("/")
+            for peer in peers
+            if name.rstrip("/") in {peer.key, peer.host, peer.base_url.rstrip("/")}
+        }
+        identities = {
+            item["node_id"]
+            for item in self.refresh()
+            if item["node_id"]
+            and not item.get("identity_conflict")
+            and (item["base"] in matching_bases or name == item["node_id"])
+            and self.is_approved_identity(item["node_id"])
+        }
+        return next(iter(identities)) if len(identities) == 1 else None
+
     def identity_for_base(self, base: str) -> str | None:
         """A source UUID must come from the approved peer response, never its display name."""
         for item in self.refresh():

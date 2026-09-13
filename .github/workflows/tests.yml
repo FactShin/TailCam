@@ -134,6 +134,19 @@ jobs:
           python .github/scripts/pytest_watchdog.py --timeout 300 --dump-after 60
           --log artifacts/windows-training_export_security.log -- -vv -s --durations=20 tests/test_training_export_security.py
 
+      - name: Windows durable workloads and supervision
+        timeout-minutes: 6
+        run: >-
+          python .github/scripts/pytest_watchdog.py --timeout 300 --dump-after 60
+          --log artifacts/windows-workloads.log -- -vv -s --durations=20
+          tests/test_durable_jobs.py tests/test_job_placement.py tests/test_job_inputs.py
+          tests/test_job_transport.py tests/test_artifact_pins.py
+          tests/test_training_supervisor.py tests/test_workload_security_review.py
+          tests/test_legacy_admin_security.py tests/test_legacy_detection_compat.py
+          tests/test_live_worker_readiness.py
+          tests/test_workload_http.py tests/test_workload_execution.py
+          tests/test_workload_sources.py tests/test_workload_processes.py
+
       - name: Preserve Windows phase diagnostics
         uses: actions/upload-artifact@v4
         if: always()

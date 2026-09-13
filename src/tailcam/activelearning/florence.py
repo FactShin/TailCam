@@ -51,10 +51,12 @@ class Florence2Backend:
         *,
         cache_dir: str | None = None,
         local_files_only: bool = False,
+        device: str | None = None,
     ) -> None:
         # model_path: a fine-tuned checkpoint directory; falls back to the hub name.
         self.model_name = model_path or model_name
         self._local_files_only = local_files_only
+        self._device_override = device
         self._load_options = (
             {"cache_dir": cache_dir, "local_files_only": True} if local_files_only else {}
         )
@@ -93,7 +95,7 @@ class Florence2Backend:
 
             from tailcam.training.engine import torch_device
 
-            device = torch_device()
+            device = self._device_override or torch_device()
             self._device = device if device in ("cuda", "mps") else "cpu"
             dtype = torch.float16 if self._device == "cuda" else torch.float32
             self._model = AutoModelForCausalLM.from_pretrained(
@@ -194,6 +196,10 @@ def finetune_florence(
     on_epoch=None,
     should_stop=None,
     lr: float = 1e-6,
+    local_files_only: bool = False,
+    cache_dir: str | None = None,
+    device_override: str | None = None,
+    seed: int = 1234,
 ) -> dict:
     """Fine-tune Florence-2 on ``(image_path, od_target_string)`` pairs.
 
@@ -211,10 +217,16 @@ def finetune_florence(
 
     from tailcam.training.engine import torch_device
 
-    device = torch_device()
+    device = device_override or torch_device()
     device = device if device in ("cuda", "mps") else "cpu"
-    model = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True).to(device)
-    processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
+    torch.manual_seed(seed)
+    options = {"local_files_only": True, "cache_dir": cache_dir} if local_files_only else {}
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name, trust_remote_code=not local_files_only, **options
+    ).to(device)
+    processor = AutoProcessor.from_pretrained(
+        model_name, trust_remote_code=not local_files_only, **options
+    )
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
     model.train()
 

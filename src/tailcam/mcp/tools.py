@@ -958,9 +958,12 @@ def _clamp(value: Any, low: int, high: int) -> int:
 # registry
 # --------------------------------------------------------------------------
 def build_tools() -> list[Tool]:
+    from tailcam.mcp.tools_supervisor import build_supervisor_tools
+
     cam_id = {"camera_id": {"type": "string", "description": "Camera id."}}
     node_key = {"node_key": {"type": "string", "description": "Node key ('local' or a peer key)."}}
     return [
+        *build_supervisor_tools(),
         # read
         Tool("get_system_status", "System status",
              "Local node version, host, Tailscale state, access URL, and media usage.",

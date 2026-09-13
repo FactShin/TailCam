@@ -9,6 +9,7 @@ import { fmtBytes } from "../lib/format";
 import {
   IconAi,
   IconBook,
+  IconBolt,
   IconChip,
   IconChevL,
   IconChevR,
@@ -34,6 +35,7 @@ const NAV: { to: string; label: string; icon: (p: IconProps) => JSX.Element; key
   { to: "/ai", label: "AI Studio", icon: IconAi, key: "4" },
   { to: "/timelapse", label: "Timelapse", icon: IconTimelapse, key: "5" },
   { to: "/storage", label: "Storage", icon: IconHdd, key: "0" },
+  { to: "/workloads", label: "Workloads", icon: IconBolt, key: "j" },
   { to: "/plugins", label: "Plugins", icon: IconChip, key: "6" },
   { to: "/agents", label: "MCP", icon: IconServer, key: "7" },
   { to: "/settings", label: "Settings", icon: IconSettings, key: "8" },

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { ApiError } from "../api/client";
 import {
   useIntegrations,
   useResetHomeKit,
@@ -314,8 +315,18 @@ function HomeAssistantCard({ ha }: { ha: HomeAssistantStatus }) {
 }
 
 export function IntegrationsPanel() {
-  const data = useIntegrations().data;
-  if (!data) return null;
+  const query = useIntegrations();
+  const data = query.data;
+  if (query.error || !data) {
+    const denied = query.error instanceof ApiError && query.error.status === 403;
+    return <div className="panel notif-panel">
+      <div className="panel-title"><IconDevice size={16} /> Home automation</div>
+      <p className="ais-intro" role={query.error ? "alert" : "status"}>
+        {denied ? "Administrator access is required to view integration settings and pairing details." : query.error ? "Integration settings could not be loaded." : "Loading integration settings…"}
+      </p>
+      {query.error && <Button disabled={query.isFetching} onClick={() => void query.refetch()}>Try again</Button>}
+    </div>;
+  }
   return (
     <div className="intg-wrap">
       <div className="intg-head">

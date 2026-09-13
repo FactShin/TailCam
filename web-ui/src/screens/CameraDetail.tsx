@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 
 import { useCameras, useDeleteCamera, useDetectionInfo, useHosts, usePatchCamera, useRecording, useRestartCamera, useSnapshot } from "../api/hooks";
 import { LiveViewer } from "../components/LiveViewer";
+import { DetectionExecutionDetails } from "../components/DetectionExecutionDetails";
 import { useToast } from "../components/toast";
 import { Button, ConfirmDialog, ControlSlider, ScopeBadge, Segmented, Spinner, Toggle } from "../components/ui";
 import {
@@ -300,6 +301,7 @@ export function CameraDetail() {
           )}
         </div>
         <div className="hint-pinch mono">Pinch / scroll to zoom · drag to pan — updates are debounced per tab</div>
+        <DetectionExecutionDetails prefix={prefix} cameraId={cam.id} polling={detect && cam.status !== "offline" && view.zoom <= 1.02} />
       </div>
 
       {wide ? (

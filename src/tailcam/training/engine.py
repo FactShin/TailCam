@@ -7,9 +7,25 @@ training would use (CUDA on the Windows box, MPS on the Mac, else CPU).
 
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError, version
+
 from tailcam.logging_setup import get_logger
 
 log = get_logger(__name__)
+
+
+def engine_metadata() -> dict:
+    """Passive package inventory; importing a page must not initialize torch or a GPU."""
+    installed: dict[str, str | None] = {}
+    for name in ("torch", "ultralytics"):
+        try:
+            installed[name] = version(name)
+        except PackageNotFoundError:
+            installed[name] = None
+    return {
+        "available": all(installed.values()), "framework": "ultralytics",
+        "version": installed["ultralytics"], "device": "unchecked",
+    }
 
 
 def torch_device() -> str:

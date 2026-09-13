@@ -22,9 +22,11 @@ from tailcam import paths
 from tailcam.camera.frame import FrameBuffer
 from tailcam.camera.manager import CameraManager
 from tailcam.config import TimelapseConfig
+from tailcam.jobs.models import JobError
 from tailcam.logging_setup import get_logger
 from tailcam.media.storage import ProducerWorkspace, alias, enabled, local_path
-from tailcam.persistence.models import TimelapseRecord
+from tailcam.node import RoleDisabledError
+from tailcam.persistence.models import TimelapseAnalysisEventRecord, TimelapseRecord
 from tailcam.persistence.store import Store
 from tailcam.storage.models import StorageError
 from tailcam.streaming.encoder import encode_jpeg
@@ -55,6 +57,7 @@ class TimelapseService:
         role_check: Callable[[], None] | None = None,
         analysis_role_check: Callable[[], None] | None = None,
         storage_service=None,
+        job_service=None,
     ) -> None:
         self._manager = manager
         self._store = store
@@ -63,6 +66,7 @@ class TimelapseService:
         self._role_check = role_check
         self._analysis_role_check = analysis_role_check
         self._storage_service = storage_service
+        self._job_service = job_service
         self._storage_jobs: dict[int, ProducerWorkspace] = {}
         self._workers: dict[int, TimelapseCaptureWorker] = {}
         self._encoding: set[int] = set()
@@ -109,7 +113,9 @@ class TimelapseService:
         analysis = self._config.analysis_enabled if analysis_enabled is None else analysis_enabled
         smooth = self._config.auto_smooth if auto_smooth is None else auto_smooth
         engine = smooth_engine or self._config.smooth_engine
-        if (analysis or (smooth and engine == "rife")) and self._analysis_role_check is not None:
+        if (analysis or (smooth and engine == "rife")) and (
+            self._analysis_role_check is not None and self._job_service is None
+        ):
             self._analysis_role_check()
         if buffer is None:
             buffer = self._manager.get_buffer(camera_id)
@@ -292,7 +298,20 @@ class TimelapseService:
             and self._analysis_queue is not None
             and (n == 1 or n % analysis_every == 0)
         ):
-            self._analysis_queue.submit(tl_id, n - 1, frames_dir / f"{n - 1:06d}.jpg")
+            evidence = frames_dir / f"{n - 1:06d}.jpg"
+            try:
+                self._analysis_queue.submit(tl_id, n - 1, evidence)
+            except (JobError, RoleDisabledError):
+                # Analysis placement can change during a long capture. Its
+                # refusal must never escape into the camera's frame loop.
+                self._store.add_timelapse_analysis_event(
+                    TimelapseAnalysisEventRecord(
+                        id=None, timelapse_id=tl_id, frame_number=n - 1,
+                        state="uncertain", confidence=0.0,
+                        description="Printer analysis placement unavailable for this frame",
+                        evidence_path=str(evidence), created_ts=time.time(),
+                    )
+                )
 
     # -- stop / finalize ---------------------------------------------------
     def stop(self, tl_id: int) -> TimelapseRecord | None:
@@ -339,7 +358,12 @@ class TimelapseService:
                 width=worker.width,
                 height=worker.height,
             )
-        self._finalize_async(tl_id)
+        try:
+            self._finalize_async(tl_id)
+        except Exception:
+            # The source record remains retryable; never leave an uncaught stop-thread error.
+            self._store.update_timelapse(tl_id, state="error")
+            log.warning("timelapse %s: processing admission failed; frames retained", tl_id)
 
     def encode(self, tl_id: int) -> TimelapseRecord | None:
         """(Re)encode a stopped/interrupted timelapse from its stored frames."""
@@ -351,7 +375,7 @@ class TimelapseService:
         return self.get(tl_id)
 
     def _finalize_async(self, tl_id: int) -> None:
-        if self._role_check is not None:
+        if self._role_check is not None and self._job_service is None:
             self._role_check()
         record = self._store.get_timelapse(tl_id)
         if record is None:
@@ -361,14 +385,31 @@ class TimelapseService:
                 return
             self._encoding.add(tl_id)
         try:
-            self._prepare_storage_frames(tl_id, record)
+            if self._job_service is None:
+                self._prepare_storage_frames(tl_id, record)
         except Exception:
             with self._lock:
                 self._encoding.discard(tl_id)
             raise
         with self._lock:
-            self._workers.pop(tl_id, None)
+            completed_worker = self._workers.pop(tl_id, None)
+        if completed_worker is not None:
+            self._store.update_timelapse(
+                tl_id, frames_captured=completed_worker.frames_captured,
+                width=completed_worker.width, height=completed_worker.height,
+            )
         self._store.update_timelapse(tl_id, state="encoding")
+        if self._job_service is not None:
+            try:
+                from tailcam.workloads.timelapse import submit
+
+                submit(self, tl_id, "timelapse_encode", {"fps": record.output_fps})
+            except Exception:
+                with self._lock:
+                    self._encoding.discard(tl_id)
+                self._store.update_timelapse(tl_id, state="error")
+                raise
+            return
         threading.Thread(
             target=self._encode_job, args=(tl_id,), name=f"timelapse-encode-{tl_id}", daemon=True
         ).start()
@@ -496,13 +537,27 @@ class TimelapseService:
         """Kick off a background pass that turns the captured frames into smooth,
         flowing motion. ``engine`` is "ffmpeg" or "rife"; a failed RIFE run falls
         back to ffmpeg. Re-runnable; the source frames are kept."""
-        if self._role_check is not None:
+        if self._role_check is not None and self._job_service is None:
             self._role_check()
         record = self._store.get_timelapse(tl_id)
         if record is None:
             return None
+        if self._job_service is not None:
+            from tailcam.workloads.timelapse import submit
+
+            parameters = {
+                "fps": record.output_fps, "target_fps": target_fps or record.smooth_target_fps,
+                "interpolate": record.smooth_interpolate if interpolate is None else interpolate,
+                "deflicker": record.smooth_deflicker if deflicker is None else deflicker,
+                "engine": engine or record.smooth_engine or "ffmpeg",
+                "quality": quality or record.smooth_quality,
+            }
+            submit(self, tl_id, "timelapse_interpolate", parameters)
+            self._store.update_timelapse(tl_id, smooth_state="processing")
+            return self.get(tl_id)
         chosen = engine or record.smooth_engine
-        if chosen == "rife" and self._analysis_role_check is not None:
+        if (chosen == "rife" and self._analysis_role_check is not None
+                and self._job_service is None):
             self._analysis_role_check()
         job = self._prepare_storage_frames(tl_id, record)
         if job is not None:
@@ -662,11 +717,15 @@ class TimelapseService:
 
     # -- queries -----------------------------------------------------------
     def get(self, tl_id: int) -> TimelapseRecord | None:
+        from tailcam.workloads.timelapse import project
+
+        project(self, tl_id)
         record = self._store.get_timelapse(tl_id)
         return self._patch_live(record) if record else None
 
     def list(self, camera_id: str | None = None, limit: int = 100) -> list[TimelapseRecord]:
-        return [self._patch_live(r) for r in self._store.list_timelapses(camera_id, limit)]
+        return [current for record in self._store.list_timelapses(camera_id, limit)
+                if record.id is not None and (current := self.get(record.id)) is not None]
 
     def _patch_live(self, record: TimelapseRecord) -> TimelapseRecord:
         """Reflect a still-running capture's live frame count/dimensions."""
@@ -681,6 +740,9 @@ class TimelapseService:
 
     # -- delete ------------------------------------------------------------
     def delete(self, tl_id: int) -> bool:
+        from tailcam.workloads.timelapse import project
+
+        project(self, tl_id)
         with self._lock:
             if tl_id in self._encoding or tl_id in self._smoothing or tl_id in self._deleting:
                 return False  # active encoders still own their files and reservation

@@ -380,9 +380,10 @@ class CaptureRouter:
         analysis_enabled = params.get("analysis_enabled")
         if analysis_enabled is None:
             analysis_enabled = self._ctx.config.timelapse.analysis_enabled
-        if analysis_enabled:
+        legacy_analysis = getattr(self._ctx, "workloads", None) is None
+        if analysis_enabled and legacy_analysis:
             self._ctx.require_role("analysis")
-        if analysis_enabled and not self._ctx.printer_analyzer.config.enabled:
+        if analysis_enabled and legacy_analysis and not self._ctx.printer_analyzer.config.enabled:
             raise CaptureRoutingError(
                 409,
                 "Enable and configure Ollama on the capture node's Models page "

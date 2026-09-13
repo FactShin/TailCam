@@ -60,6 +60,10 @@ def test_capability_identifiers_are_stable() -> None:
             "storage.policy.v1",
             "storage.transfers.v1",
             "storage.migration.v1",
+            "jobs.v1",
+            "workloads.worker.v1",
+            "workloads.placement.v1",
+            "training.supervision.v1",
         }
     )
 

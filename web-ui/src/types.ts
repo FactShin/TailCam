@@ -474,6 +474,27 @@ export interface DetectionResult {
   boxes: DetectionBox[];
   /** Provisioning status ("downloading model 42%") — empty when running. */
   note?: string;
+  workload?: WorkloadExecutionInfo | null;
+}
+
+/** Observations from the worker that handled this result; omitted by older nodes. */
+export interface WorkloadExecutionInfo {
+  worker_node_id: string | null;
+  model_name: string;
+  session_id: string | null;
+  execution_ms: number | null;
+  queue_ms: number | null;
+  round_trip_ms: number | null;
+}
+
+export interface ImageAnalysisResult {
+  detector_active: boolean;
+  model_name: string | null;
+  boxes: DetectionBox[];
+  label: string | null;
+  description: string | null;
+  confidence: number | null;
+  workload?: WorkloadExecutionInfo | null;
 }
 
 /** Built-in plug-and-play object detection (COCO boxes + labels). */
@@ -514,6 +535,9 @@ export interface ModelInfo {
   metrics: Record<string, unknown>;
   created_ts: number;
   has_artifact: boolean;
+  registry_node_id?: string | null;
+  artifact_id?: string | null;
+  artifact_owner_node_id?: string | null;
 }
 
 export type RunStatus = "queued" | "preparing" | "training" | "complete" | "error" | "stopped";

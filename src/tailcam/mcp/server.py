@@ -123,8 +123,12 @@ class McpServer:
         notif = is_notification(message)
         method = message.get("method")
         if not isinstance(method, str):
-            return None if notif else error_response(
-                message.get("id"), INVALID_REQUEST, "missing or invalid 'method'"
+            return (
+                None
+                if notif
+                else error_response(
+                    message.get("id"), INVALID_REQUEST, "missing or invalid 'method'"
+                )
             )
         params = message.get("params") or {}
         if not isinstance(params, dict):
@@ -132,12 +136,16 @@ class McpServer:
         try:
             result = await self._dispatch(method, params)
         except JsonRpcError as exc:
-            return None if notif else error_response(
-                message.get("id"), exc.code, exc.message, exc.data
+            return (
+                None
+                if notif
+                else error_response(message.get("id"), exc.code, exc.message, exc.data)
             )
-        except Exception as exc:  # pragma: no cover - safety net
-            return None if notif else error_response(
-                message.get("id"), INTERNAL_ERROR, f"internal error: {exc}"
+        except Exception:  # safety net: raw exceptions may contain private endpoints or secrets
+            return (
+                None
+                if notif
+                else error_response(message.get("id"), INTERNAL_ERROR, "internal error")
             )
         return None if notif else result_response(message.get("id"), result)
 
@@ -153,24 +161,38 @@ class McpServer:
         if method == TOOLS_CALL:
             return await self._call_tool(params)
         if method == RESOURCES_LIST:
-            return {"resources": [
-                {"uri": r.uri, "name": r.name, "description": r.description,
-                 "mimeType": "application/json"}
-                for r in resources.STATIC
-            ]}
+            return {
+                "resources": [
+                    {
+                        "uri": r.uri,
+                        "name": r.name,
+                        "description": r.description,
+                        "mimeType": "application/json",
+                    }
+                    for r in resources.STATIC
+                ]
+            }
         if method == RESOURCES_TEMPLATES_LIST:
-            return {"resourceTemplates": [
-                {"uriTemplate": t.uri_template, "name": t.name, "description": t.description,
-                 "mimeType": "application/json"}
-                for t in resources.TEMPLATES
-            ]}
+            return {
+                "resourceTemplates": [
+                    {
+                        "uriTemplate": t.uri_template,
+                        "name": t.name,
+                        "description": t.description,
+                        "mimeType": "application/json",
+                    }
+                    for t in resources.TEMPLATES
+                ]
+            }
         if method == RESOURCES_READ:
             return await self._read_resource(params)
         if method == PROMPTS_LIST:
-            return {"prompts": [
-                {"name": p.name, "description": p.description, "arguments": p.arguments}
-                for p in prompts.PROMPTS
-            ]}
+            return {
+                "prompts": [
+                    {"name": p.name, "description": p.description, "arguments": p.arguments}
+                    for p in prompts.PROMPTS
+                ]
+            }
         if method == PROMPTS_GET:
             return self._get_prompt(params)
         raise JsonRpcError(METHOD_NOT_FOUND, f"method not found: {method}")
