@@ -105,13 +105,21 @@ jobs:
           tests/test_api.py tests/test_storage.py tests/test_cluster.py tests/test_mcp.py
           tests/test_node_config.py tests/test_node_lifecycle.py
           tests/test_node_readiness.py tests/test_runtime_probe.py
-      - name: Windows storage protocol and process tests
+      - name: Windows storage contracts
         timeout-minutes: 6
-        run: >-
-          pytest -vv -o faulthandler_timeout=60 --durations=20
-          tests/test_storage_contracts.py tests/test_artifact_transfers.py
-          tests/test_storage_http.py tests/test_storage_processes.py
-          tests/test_training_export_security.py
+        run: pytest -vv -o faulthandler_timeout=60 --durations=20 tests/test_storage_contracts.py
+      - name: Windows artifact transfers
+        timeout-minutes: 6
+        run: pytest -vv -o faulthandler_timeout=60 --durations=20 tests/test_artifact_transfers.py
+      - name: Windows storage HTTP
+        timeout-minutes: 6
+        run: pytest -vv -o faulthandler_timeout=60 --durations=20 tests/test_storage_http.py
+      - name: Windows storage processes
+        timeout-minutes: 6
+        run: pytest -vv -o faulthandler_timeout=60 --durations=20 tests/test_storage_processes.py
+      - name: Windows training export security
+        timeout-minutes: 6
+        run: pytest -vv -o faulthandler_timeout=60 --durations=20 tests/test_training_export_security.py
 
   container-hub:
     runs-on: ubuntu-latest
