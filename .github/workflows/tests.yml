@@ -6,7 +6,9 @@ on:
   pull_request:
 
 concurrency:
-  group: tests-${{ github.ref }}
+  # Keep per-PR cancellation, without waiting for an unresponsive legacy
+  # sequential runner to release the previous concurrency group.
+  group: tests-phases-${{ github.ref }}
   cancel-in-progress: true
 
 env:

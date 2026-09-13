@@ -102,6 +102,7 @@ def test_unacknowledged_tail_truncated_on_resume(nodes):
         (0, b"", "invalid_chunk"),
         (0, b"x" * (MAX_CHUNK_BYTES + 1), "invalid_chunk"),
     ],
+    ids=["wrong-offset", "past-end", "negative-offset", "empty", "over-chunk-limit"],
 )
 def test_invalid_chunks_never_advance_offset(nodes, offset, data, code):
     owner = nodes[1]

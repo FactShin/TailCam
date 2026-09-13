@@ -139,10 +139,27 @@ def run_pytest(args: list[str], *, timeout: float, dump_after: float, log: Path)
             output.write(b"WATCHDOG: cleanup starting\n")
             stop_owned_tree(process, job)
             output.write(b"WATCHDOG: cleanup complete; replay starting\n")
-    # Replay after the child is stopped. Console backpressure cannot postpone cleanup.
+    # Replay after cleanup, with bounded lines and total console output. Pytest
+    # can embed multi-megabyte byte parameters in a single verbose test ID; that
+    # overwhelmed the Windows runner's console handling. The artifact stays full.
     with log.open("r", encoding="utf-8", errors="replace") as recorded:
-        for line in recorded:
-            print(line, end="", flush=True)
+        remaining = 256 * 1024
+        while remaining > 0:
+            line = recorded.readline(4097)
+            if not line:
+                break
+            clipped = len(line) > 4096
+            if clipped and not line.endswith("\n"):
+                while continuation := recorded.readline(4097):
+                    if continuation.endswith("\n"):
+                        break
+            visible = line[:4096] if clipped else line
+            print(visible, end="" if visible.endswith("\n") else "\n", flush=True)
+            if clipped:
+                print("[console line clipped; full text retained in phase artifact]", flush=True)
+            remaining -= len(visible)
+        if remaining <= 0:
+            print("[console replay capped; full log retained in phase artifact]", flush=True)
     with log.open("ab", buffering=0) as output:
         output.write(b"WATCHDOG: replay complete\n")
     return result

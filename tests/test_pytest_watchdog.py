@@ -93,6 +93,20 @@ def test_periodic_snapshots_do_not_interrupt_a_passing_phase(tmp_path):
     assert "WATCHDOG: phase exceeded" not in log
 
 
+def test_huge_log_line_is_preserved_in_artifact_but_capped_on_console(tmp_path):
+    result, log = invoke(
+        tmp_path,
+        "def test_large_diagnostic():\n"
+        "    print('x' * (4 * 1024 * 1024), flush=True)\n",
+    )
+    assert result.returncode == 0, result.stderr
+    assert "x" * (4 * 1024 * 1024) in log
+    assert len(result.stdout) < 300 * 1024
+    assert max(map(len, result.stdout.splitlines())) <= 4096
+    assert "console line clipped" in result.stdout
+    assert "WATCHDOG: replay complete" in log
+
+
 @pytest.mark.parametrize("phase", ["session", "exit"])
 def test_timeout_and_stacks_cover_session_cleanup_and_interpreter_exit(tmp_path, phase):
     if phase == "session":
