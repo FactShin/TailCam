@@ -117,27 +117,34 @@ def run_pytest(args: list[str], *, timeout: float, dump_after: float, log: Path)
             command, stdin=subprocess.PIPE, stdout=output, stderr=subprocess.STDOUT,
             start_new_session=os.name == "posix",
         )
+        output.write(f"WATCHDOG: child created pid={process.pid}\n".encode())
         job = None
         try:
             if os.name == "nt":
                 job = WindowsJob(process)
             elif os.name != "posix":
                 raise OSError("Owned test process containment is unavailable on this platform")
+            output.write(b"WATCHDOG: containment ready\n")
             assert process.stdin is not None
             process.stdin.write(b"1")
             process.stdin.close()
             try:
                 result = process.wait(timeout=max(0.01, timeout - (time.monotonic() - started)))
+                output.write(f"WATCHDOG: child exited code={result}\n".encode())
             except subprocess.TimeoutExpired:
                 message = f"\nWATCHDOG: phase exceeded {timeout:g}s; stopping owned tree.\n"
                 output.write(message.encode())
                 result = 124
         finally:
+            output.write(b"WATCHDOG: cleanup starting\n")
             stop_owned_tree(process, job)
+            output.write(b"WATCHDOG: cleanup complete; replay starting\n")
     # Replay after the child is stopped. Console backpressure cannot postpone cleanup.
     with log.open("r", encoding="utf-8", errors="replace") as recorded:
         for line in recorded:
             print(line, end="", flush=True)
+    with log.open("ab", buffering=0) as output:
+        output.write(b"WATCHDOG: replay complete\n")
     return result
 
 
