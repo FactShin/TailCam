@@ -80,6 +80,19 @@ def test_collection_timeout_stops_owned_descendant_and_preserves_unrelated_proce
         unrelated.wait(timeout=5)
 
 
+def test_periodic_snapshots_do_not_interrupt_a_passing_phase(tmp_path):
+    result, log = invoke(
+        tmp_path,
+        "import time\n"
+        "def test_slow_success():\n"
+        "    time.sleep(2.2)\n",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert log.count("Timeout diagnostic") >= 2
+    assert "test_slow_success" in log
+    assert "WATCHDOG: phase exceeded" not in log
+
+
 @pytest.mark.parametrize("phase", ["session", "exit"])
 def test_timeout_and_stacks_cover_session_cleanup_and_interpreter_exit(tmp_path, phase):
     if phase == "session":

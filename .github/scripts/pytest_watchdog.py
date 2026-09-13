@@ -145,11 +145,25 @@ def child(args: list[str], dump_after: float) -> int:
     if sys.stdin.buffer.read(1) != b"1":
         return 125
     import faulthandler
+    import threading
+    import traceback
 
     faulthandler.enable(all_threads=True)
-    # This remains armed through collection, session teardown and interpreter exit.
-    # The independent parent deadline handles a blocked interpreter or native call.
-    faulthandler.dump_traceback_later(dump_after, repeat=True)
+    # Snapshot Python frames while holding the GIL. The native faulthandler timer
+    # crashed inside its stack walk on the Windows 3.12 CI interpreter. Python
+    # frame references remain alive throughout this diagnostic traversal.
+    # A blocked GIL/native call may suppress snapshots; the independent parent
+    # still enforces the same process-tree deadline.
+    def dump_stacks() -> None:
+        delay = threading.Event()
+        while not delay.wait(dump_after):
+            print(f"\nTimeout diagnostic ({dump_after:g}s interval):", file=sys.stderr, flush=True)
+            for thread_id, frame in sys._current_frames().items():
+                print(f"Thread {thread_id:#x} (most recent call last):", file=sys.stderr)
+                traceback.print_stack(frame, file=sys.stderr)
+            sys.stderr.flush()
+
+    threading.Thread(target=dump_stacks, name="pytest-stack-diagnostics", daemon=True).start()
     import pytest
 
     return int(pytest.main(["-p", "no:faulthandler", *args]))
