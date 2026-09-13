@@ -15,8 +15,13 @@ Two model tasks are supported:
 from __future__ import annotations
 
 import json
+import stat
 import threading
+import unicodedata
+import zipfile
 from collections.abc import Callable
+from pathlib import Path, PurePosixPath
+from typing import Any
 
 import numpy as np
 
@@ -26,6 +31,7 @@ from tailcam.ai.remote import RemoteDetector
 from tailcam.config import TrainingConfig
 from tailcam.logging_setup import get_logger
 from tailcam.persistence.store import Store
+from tailcam.storage.models import StorageError
 
 __all__ = ["Detection", "InferenceRouter", "LocalClassifier", "LocalDetector"]
 
@@ -129,6 +135,146 @@ def _boxes_to_detections(result) -> list[Detection]:
     return detections
 
 
+class ManagedModelLease:
+    """One explicitly reserved model materialization; caller owns its lifetime."""
+
+    def __init__(self, service: Any) -> None:
+        self.service = service
+        self.lease: Any = None
+
+    def resolve(self, record: Any) -> str:
+        if self.service is None:
+            return record.path
+        artifact = self.service.catalog.resolve_alias("model", str(record.id), "file")
+        if artifact is None:
+            return record.path
+        policy = self.service.get_policy()
+        self.lease = self.service.workspace_for_artifact(
+            artifact.artifact_id,
+            max_bytes=policy.workspace_max_bytes // 4,
+        )
+        try:
+            source = self.service.materialize(artifact.artifact_id, self.lease)
+            if artifact.metadata.get("format") != "directory-zip":
+                return str(source)
+            return str(self._extract(source))
+        except Exception:
+            self.close()
+            raise
+
+    def _extract(self, source: Path) -> Path:
+        """Validate the complete manifest before creating any extracted file."""
+        out = self.lease.path / "model"
+        with zipfile.ZipFile(source) as archive:
+            entries = archive.infolist()
+            if not entries or len(entries) > 10000:
+                raise StorageError(
+                    "unsafe_model_archive", "Model archive has an invalid entry count"
+                )
+            names: set[str] = set()
+            total = 0
+            for entry in entries:
+                name = entry.filename
+                key = unicodedata.normalize("NFC", name).casefold()
+                parts = name.split("/")
+                reserved = {
+                    "con",
+                    "prn",
+                    "aux",
+                    "nul",
+                    *(f"com{i}" for i in range(1, 10)),
+                    *(f"lpt{i}" for i in range(1, 10)),
+                }
+                mode = stat.S_IFMT(entry.external_attr >> 16)
+                if (
+                    len(name.encode()) > 1024
+                    or name.startswith("/")
+                    or any(part in {"", ".", ".."} for part in parts)
+                    or "\\" in name
+                    or ":" in name
+                    or any(ord(char) < 32 or char in '<>"|?*' for char in name)
+                    or any(
+                        part.endswith((".", " ")) or part.split(".")[0].casefold() in reserved
+                        for part in parts
+                    )
+                    or mode not in {0, stat.S_IFREG}
+                    or entry.is_dir()
+                    or entry.flag_bits & 1
+                    or key in names
+                ):
+                    raise StorageError(
+                        "unsafe_model_archive", "Model archive contains an unsafe member"
+                    )
+                names.add(key)
+                total += entry.file_size
+            if any(
+                str(parent).casefold() in names
+                for name in names
+                for parent in PurePosixPath(name).parents
+                if str(parent) != "."
+            ):
+                raise StorageError(
+                    "unsafe_model_archive", "Model archive contains conflicting paths"
+                )
+            if self.lease.check() + total > self.lease.max_bytes:
+                raise StorageError(
+                    "workspace_full", "Model does not fit the runtime workspace budget"
+                )
+            out.mkdir()
+            for entry in entries:
+                target = out.joinpath(*entry.filename.split("/"))
+                target.parent.mkdir(parents=True, exist_ok=True)
+                written = 0
+                with archive.open(entry) as inp, target.open("xb") as stream:
+                    while chunk := inp.read(1024 * 1024):
+                        written += len(chunk)
+                        if (
+                            written > entry.file_size
+                            or self.lease.check() + len(chunk) > self.lease.max_bytes
+                        ):
+                            raise StorageError(
+                                "workspace_full", "Model exceeds its declared runtime size"
+                            )
+                        stream.write(chunk)
+                if written != entry.file_size:
+                    raise StorageError("unsafe_model_archive", "Model member size did not match")
+        self.lease.check()
+        return out
+
+    def close(self) -> None:
+        if self.lease is not None:
+            self.lease.release()
+            self.lease = None
+
+
+class LocalVisionDetector:
+    """Use a managed VLM directory through its existing backend adapter."""
+
+    def __init__(self, path: str, backend: str, *, managed: bool = False) -> None:
+        if backend == "florence2":
+            from tailcam.activelearning.florence import Florence2Backend
+
+            self.backend: Any = Florence2Backend(
+                model_path=path,
+                cache_dir=str(Path(path).parent / "cache"),
+                local_files_only=managed,
+            )
+        else:
+            from tailcam.activelearning.qwen import QwenVLBackend
+
+            self.backend = QwenVLBackend(
+                model_path=path,
+                cache_dir=str(Path(path).parent / "cache"),
+                local_files_only=managed,
+            )
+
+    def load(self) -> bool:
+        return bool(self.backend._load())
+
+    def detect(self, image: np.ndarray) -> list[Detection] | None:
+        return self.backend.predict(image)
+
+
 class InferenceRouter:
     """Duck-types as a FrameAnalyzer. Priority: the user's trained/BYO model,
     then Ollama (if the user enabled it), then the zero-config built-in
@@ -143,18 +289,21 @@ class InferenceRouter:
         builtin: BuiltinDetector | None = None,
         remote: Callable[[], RemoteDetector | None] | None = None,
         role_enabled: Callable[[], bool] | None = None,
+        storage_service=None,
     ) -> None:
         self._store = store
+        self._storage_service = storage_service
+        self._model_lease: ManagedModelLease | None = None
         self._config = config
         self._ollama = ollama
         self._builtin = builtin
         self._role_enabled = role_enabled or (lambda: True)
         # Returns the peer detector when [detection] node routes work elsewhere.
         self._remote = remote or (lambda: None)
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._cached_id: int | None = None
         self._classifier: LocalClassifier | None = None
-        self._detector: LocalDetector | None = None
+        self._detector: LocalDetector | LocalVisionDetector | None = None
         self._active_name: str = ""
         self._load_error: str = ""
 
@@ -165,55 +314,79 @@ class InferenceRouter:
         # Even status endpoints call this method. Disabled analysis must not
         # load an old selected model just because someone opens the dashboard.
         if not self._role_enabled():
-            self._cached_id = None
-            self._classifier = None
-            self._detector = None
-            self._active_name = ""
+            self.shutdown()
             self._load_error = "analysis role disabled"
             return
         mid = self._config.active_model_id
         if self._cached_id == mid:
             return
-        self._cached_id = mid
-        self._classifier = None
-        self._detector = None
-        self._active_name = ""
-        self._load_error = ""
         if not mid:
+            self.shutdown()
+            self._cached_id = mid
             return
         record = self._store.get_model(mid)
         if record is None:
             self._load_error = f"active model #{mid} no longer exists"
             return
-        self._active_name = record.name
-        if not record.path:
-            self._load_error = (
-                "this model has no weights yet — it downloads on first training run"
-            )
-            return
-        if record.task == "detection":
-            det = LocalDetector(record.path, self._config.detect_conf)
-            if det.load():
-                self._detector = det
-            else:
-                self._load_error = "model failed to load (is the training engine installed?)"
-            return
+        candidate_lease = ManagedModelLease(self._storage_service)
         try:
-            classes = json.loads(record.classes_json) or []
-        except (ValueError, TypeError):
-            classes = []
-        clf = LocalClassifier(record.path, classes)
-        if clf.load():
-            self._classifier = clf
-        else:
-            self._load_error = "model failed to load (is the training engine installed?)"
+            model_path = candidate_lease.resolve(record)
+            if not model_path:
+                self._load_error = "this model has no weights yet — train it first"
+                candidate_lease.close()
+                return
+            detector = None
+            classifier = None
+            if record.task == "detection":
+                detector = (
+                    LocalVisionDetector(
+                        model_path, record.base_model, managed=candidate_lease.lease is not None
+                    )
+                    if record.base_model in {"florence2", "qwen2.5-vl"}
+                    else LocalDetector(model_path, self._config.detect_conf)
+                )
+                loaded = detector.load()
+            else:
+                try:
+                    classes = json.loads(record.classes_json) or []
+                except (ValueError, TypeError):
+                    classes = []
+                classifier = LocalClassifier(model_path, classes)
+                loaded = classifier.load()
+            if candidate_lease.lease is not None:
+                candidate_lease.lease.check()
+            if not loaded:
+                self._load_error = "model failed to load (is the training engine installed?)"
+                candidate_lease.close()
+                return
+        except (StorageError, OSError, ValueError, zipfile.BadZipFile) as exc:
+            candidate_lease.close()
+            self._load_error = str(exc)
+            return  # preserve the previous loaded model and its lease
+        previous_lease = self._model_lease
+        self._cached_id = mid
+        self._classifier, self._detector = classifier, detector
+        self._active_name, self._load_error = record.name, ""
+        self._model_lease = candidate_lease
+        if previous_lease is not None:
+            previous_lease.close()
+
+    def shutdown(self) -> None:
+        with self._lock:
+            self._classifier = None
+            self._detector = None
+            self._cached_id = None
+            self._active_name = ""
+            if self._model_lease is not None:
+                self._model_lease.close()
+                self._model_lease = None
 
     def _active_classifier(self) -> LocalClassifier | None:
         with self._lock:
             self._refresh_active()
             return self._classifier
 
-    def _active_detector(self) -> LocalDetector | None:
+    def _active_detector(self) -> LocalDetector | LocalVisionDetector | None:
         with self._lock:
             self._refresh_active()
             return self._detector
@@ -223,10 +396,11 @@ class InferenceRouter:
         with self._lock:
             self._refresh_active()
             local = self._classifier is not None or self._detector is not None
-        return local or (self._role_enabled() and self._ollama.enabled) or (
-            self._remote() is not None
-        ) or (
-            self._role_enabled() and self._builtin is not None and self._builtin.enabled
+        return (
+            local
+            or (self._role_enabled() and self._ollama.enabled)
+            or (self._remote() is not None)
+            or (self._role_enabled() and self._builtin is not None and self._builtin.enabled)
         )
 
     @property
@@ -290,9 +464,8 @@ class InferenceRouter:
                 "mode": "remote",
                 "model_name": remote.model_name(),
                 "task": "detection",
-                "error": (err if self._role_enabled() else "") or (
-                    "" if remote.available else remote.last_error
-                ),
+                "error": (err if self._role_enabled() else "")
+                or ("" if remote.available else remote.last_error),
             }
         if self._role_enabled() and self._builtin is not None and self._builtin.enabled:
             s = self._builtin.status()
@@ -309,22 +482,22 @@ class InferenceRouter:
             self._refresh_active()
             clf = self._classifier
             det = self._detector
-        if clf is not None:
-            result = clf.analyze(image)
-            if result is not None:
-                return result
-            # local model failed mid-run — fall through to Ollama if available
-        elif det is not None:
-            detections = det.detect(image)
-            if detections:
-                top = max(detections, key=lambda d: d.confidence)
-                return Analysis(
-                    label=top.label,
-                    description=f"{top.label} ({top.confidence:.0%})",
-                    confidence=top.confidence,
-                )
-            if detections is not None:  # ran cleanly, just saw nothing
-                return Analysis(label="nothing", description="no objects", confidence=0.0)
+            if clf is not None:
+                result = clf.analyze(image)
+                if result is not None:
+                    return result
+                # local model failed mid-run — fall through to Ollama if available
+            elif det is not None:
+                detections = det.detect(image)
+                if detections:
+                    top = max(detections, key=lambda d: d.confidence)
+                    return Analysis(
+                        label=top.label,
+                        description=f"{top.label} ({top.confidence:.0%})",
+                        confidence=top.confidence,
+                    )
+                if detections is not None:  # ran cleanly, just saw nothing
+                    return Analysis(label="nothing", description="no objects", confidence=0.0)
         if self._role_enabled() and self._ollama.enabled:
             return self._ollama.analyze(image)
         # A detection node labels for us (its own full pipeline runs there).
@@ -354,9 +527,11 @@ class InferenceRouter:
         """Bounding boxes from the active detection model, else the built-in
         detector. Returns None only when no box source exists at all (the live
         overlay treats that as 'detection unavailable')."""
-        det = self._active_detector()
-        if det is not None:
-            return det.detect(image)
+        with self._lock:
+            self._refresh_active()
+            det = self._detector
+            if det is not None:
+                return det.detect(image)
         remote = self._remote()
         if remote is not None:
             boxes = remote.detect(image)

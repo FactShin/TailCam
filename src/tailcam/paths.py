@@ -146,7 +146,19 @@ def legacy_database_file() -> Path:
     return legacy_data_dir() / "anycam.db"
 
 
+def require_media_root() -> None:
+    """Refuse writes when an explicitly configured mount has disappeared."""
+    if _media_override is not None and not _media_override.is_dir():
+        raise FileNotFoundError("Configured media directory is unavailable; reconnect its storage")
+
+
 def ensure_dirs() -> None:
-    """Create all runtime directories if they do not yet exist."""
-    for path in (config_dir(), data_dir(), media_dir(), thumbnails_dir()):
+    """Create owned directories without recreating a missing external media root."""
+    for path in (config_dir(), data_dir()):
+        path.mkdir(parents=True, exist_ok=True)
+    # A missing configured root can mean an unplugged disk or absent network
+    # mount. Recreating it silently redirects writes onto the system disk.
+    if _media_override is not None and not _media_override.is_dir():
+        return
+    for path in (media_dir(), thumbnails_dir()):
         path.mkdir(parents=True, exist_ok=True)

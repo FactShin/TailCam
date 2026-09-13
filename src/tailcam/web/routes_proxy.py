@@ -49,8 +49,9 @@ def _forward_request_headers(request: Request) -> dict[str, str]:
 
 
 def _management_path(path: str) -> bool:
-    normalized = path.lstrip("/")
-    return normalized.startswith("api/v1/node") or normalized.startswith("api/v1/fleet")
+    normalized = "/".join(part for part in path.split("/") if part)
+    # Versioned APIs use caller roles; a generic peer hop cannot preserve them.
+    return normalized == "api/v1" or normalized.startswith("api/v1/")
 
 
 def _validate_proxy_path(path: str) -> None:
@@ -100,7 +101,7 @@ async def proxy(
     try:
         resp = await client.send(upstream, stream=True)
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"peer unreachable: {exc}") from exc
+        raise HTTPException(status_code=502, detail="peer unavailable") from exc
 
     if (
         resp.status_code == 200 and request.method == "POST"

@@ -43,7 +43,8 @@ _DETECT_PROMPT = (
 
 def _inference_packages_missing() -> list[str]:
     return [
-        pkg for pkg in ("torch", "transformers", "qwen_vl_utils")
+        pkg
+        for pkg in ("torch", "transformers", "qwen_vl_utils")
         if importlib.util.find_spec(pkg) is None
     ]
 
@@ -51,9 +52,20 @@ def _inference_packages_missing() -> list[str]:
 class QwenVLBackend:
     """Grounded detection with Qwen2.5-VL via transformers."""
 
-    def __init__(self, model_name: str = DEFAULT_MODEL, model_path: str = "") -> None:
+    def __init__(
+        self,
+        model_name: str = DEFAULT_MODEL,
+        model_path: str = "",
+        *,
+        cache_dir: str | None = None,
+        local_files_only: bool = False,
+    ) -> None:
         # model_path: a fine-tuned checkpoint/adapter dir; falls back to the hub name.
         self.model_name = model_path or model_name
+        self._local_files_only = local_files_only
+        self._load_options = (
+            {"cache_dir": cache_dir, "local_files_only": True} if local_files_only else {}
+        )
         # Lazily-loaded transformers handles (heavy optional deps).
         self._model: Any = None
         self._processor: Any = None
@@ -64,16 +76,23 @@ class QwenVLBackend:
         missing = _inference_packages_missing()
         if missing:
             detail = (
-                "install " + ", ".join(missing).replace("qwen_vl_utils", "qwen-vl-utils")
+                "install "
+                + ", ".join(missing).replace("qwen_vl_utils", "qwen-vl-utils")
                 + " — pip install 'tailcam[qwen-vl]'"
             )
-            return BackendInfo(id="qwen2.5-vl", name="Qwen2.5-VL", kind="vlm",
-                               available=False, detail=detail)
+            return BackendInfo(
+                id="qwen2.5-vl", name="Qwen2.5-VL", kind="vlm", available=False, detail=detail
+            )
         detail = self._load_error or (
             "ready" if self._model is not None else "ready (loads on first frame)"
         )
-        return BackendInfo(id="qwen2.5-vl", name="Qwen2.5-VL", kind="vlm",
-                           available=not self._load_error, detail=detail)
+        return BackendInfo(
+            id="qwen2.5-vl",
+            name="Qwen2.5-VL",
+            kind="vlm",
+            available=not self._load_error,
+            detail=detail,
+        )
 
     def _load(self) -> bool:
         if self._model is not None:
@@ -90,9 +109,9 @@ class QwenVLBackend:
             self._device = device if device in ("cuda", "mps") else "cpu"
             dtype = torch.float16 if self._device in ("cuda", "mps") else torch.float32
             self._model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-                self.model_name, torch_dtype=dtype
+                self.model_name, torch_dtype=dtype, **self._load_options
             ).to(self._device)
-            self._processor = AutoProcessor.from_pretrained(self.model_name)
+            self._processor = AutoProcessor.from_pretrained(self.model_name, **self._load_options)
             log.info("qwen2.5-vl loaded (%s on %s)", self.model_name, self._device)
             return True
         except Exception as exc:
@@ -123,12 +142,15 @@ class QwenVLBackend:
             )
             image_inputs, video_inputs = process_vision_info(messages)
             inputs = self._processor(
-                text=[text], images=image_inputs, videos=video_inputs,
-                padding=True, return_tensors="pt",
+                text=[text],
+                images=image_inputs,
+                videos=video_inputs,
+                padding=True,
+                return_tensors="pt",
             ).to(self._device)
             generated = self._model.generate(**inputs, max_new_tokens=512, do_sample=False)
             trimmed = [
-                out[len(inp):] for inp, out in zip(inputs.input_ids, generated, strict=False)
+                out[len(inp) :] for inp, out in zip(inputs.input_ids, generated, strict=False)
             ]
             answer = self._processor.batch_decode(
                 trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False

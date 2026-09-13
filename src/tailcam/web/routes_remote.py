@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 from functools import partial
 
+import anyio
 from fastapi import APIRouter, Depends, HTTPException
 
 from tailcam.web.context import AppContext
@@ -42,6 +43,18 @@ async def _source_base(ctx: AppContext, source_key: str) -> str:
             detail=f"source node '{source_key}' is not visible from this storage node",
         )
     return base
+
+
+async def _source_identity(ctx: AppContext, source_key: str) -> str | None:
+    base = await _source_base(ctx, source_key)
+    if not ctx.storage_service.enabled:
+        return None
+    identity = await anyio.to_thread.run_sync(ctx.storage_peers.identity_for_base, base)
+    if identity is None:
+        raise HTTPException(
+            409, "Unified storage needs an unambiguous persistent UUID from the source node",
+        )
+    return identity
 
 
 _CAMERA_ID_RE = re.compile(r"^[A-Za-z0-9_./:-]{1,200}$")
@@ -74,7 +87,7 @@ async def remote_recording_start(
     ctx: AppContext = Depends(get_context),
 ) -> OkResponse:
     ctx.require_role("storage")
-    await _source_base(ctx, source_key)
+    origin_node_id = await _source_identity(ctx, source_key)
     key = _session_key(source_key, camera_id)
     buffer = ctx.remote_feeds.get_buffer(source_key, camera_id, body.fps)
     if buffer is None:
@@ -86,7 +99,8 @@ async def remote_recording_start(
         buffer=buffer,
         reacquire=partial(ctx.remote_feeds.get_buffer, source_key, camera_id, body.fps),
         media_camera_id=camera_id,
-        source_host=body.source_host,
+        source_host=body.source_host or source_key,
+        origin_node_id=origin_node_id,
     )
     if not started:
         raise HTTPException(status_code=409, detail="already recording")
@@ -127,7 +141,7 @@ async def remote_timelapse_start(
 ) -> TimelapseInfo:
     ctx.require_role("storage")
     _check_camera_id(camera_id)
-    await _source_base(ctx, source_key)
+    origin_node_id = await _source_identity(ctx, source_key)
     analysis_enabled = (
         ctx.config.timelapse.analysis_enabled
         if body.analysis_enabled is None else body.analysis_enabled
@@ -164,6 +178,7 @@ async def remote_timelapse_start(
         analysis_enabled=body.analysis_enabled,
         analysis_cadence_seconds=body.analysis_cadence_seconds,
         source_host=body.source_host or source_key,
+        origin_node_id=origin_node_id,
         buffer=buffer,
         reacquire=partial(ctx.remote_feeds.get_buffer, source_key, camera_id, pull_fps),
         camera_name=body.camera_name,

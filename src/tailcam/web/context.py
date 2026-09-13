@@ -36,12 +36,15 @@ from tailcam.plugins import sdk
 from tailcam.plugins.hookspecs import MotionEventData
 from tailcam.plugins.market import PluginMarket
 from tailcam.plugins.registry import PluginRegistry
+from tailcam.storage.migration import MigrationService
+from tailcam.storage.service import StorageService
 from tailcam.streaming.mjpeg import MJPEGBackend
 from tailcam.tailscale.client import TailscaleClient
 from tailcam.timelapse.analyzer import PrinterAnalyzer, TimelapseAnalysisQueue
 from tailcam.timelapse.service import TimelapseService
 from tailcam.training.inference import InferenceRouter
 from tailcam.training.service import TrainingService
+from tailcam.web.storage_peers import StoragePeerDirectory
 
 if TYPE_CHECKING:
     import numpy as np
@@ -140,9 +143,23 @@ class AppContext:
         analysis_check = partial(self.require_role, "analysis")
         training_check = partial(self.require_role, "training")
         analysis_enabled = partial(self.has_role, "analysis")
-        self.snapshots = SnapshotService(self.manager, self.store, role_check=storage_check)
-        self.recorder = RecordingService(self.manager, self.store, role_check=storage_check)
-        self.gallery = MediaGallery(self.store)
+        self.storage_peers = StoragePeerDirectory(self)
+        self.storage_service = StorageService(
+            config, self.store, self.node_id,
+            resolve_peer=self.storage_peers.resolve, role_check=storage_check,
+        )
+        self.storage_migration = MigrationService(
+            self.storage_service, self.store, resolve_peer=self.storage_peers.resolve,
+        )
+        self.snapshots = SnapshotService(
+            self.manager, self.store, role_check=storage_check,
+            storage_service=self.storage_service,
+        )
+        self.recorder = RecordingService(
+            self.manager, self.store, role_check=storage_check,
+            storage_service=self.storage_service,
+        )
+        self.gallery = MediaGallery(self.store, storage_service=self.storage_service)
         self.event_log = EventLog(self.store)
         # Plugins extend AI providers, notification channels, and event hooks
         # (pluggy registry). Register the config with the SDK first so plugins
@@ -172,6 +189,7 @@ class AppContext:
             analysis_queue=self.timelapse_analysis,
             role_check=storage_check,
             analysis_role_check=analysis_check,
+            storage_service=self.storage_service,
         )
         self.tailscale = TailscaleClient()
         self.mjpeg = MJPEGBackend()
@@ -193,6 +211,7 @@ class AppContext:
             self.manager, self.store, config.training, self.analyzer, self.local_host,
             notifier=self.notifications,
             role_check=training_check, analysis_check=analysis_check,
+            storage_service=self.storage_service,
         )
         # Built-in plug-and-play object detection (boxes + labels, zero setup).
         # Provisions itself in the background on first use.
@@ -203,6 +222,7 @@ class AppContext:
             self.manager, self.store, config, self.detector, self.analyzer,
             self.training, self.local_host,
             role_check=training_check, analysis_check=analysis_check,
+            storage_service=self.storage_service,
         )
         self.cluster = ClusterService(
             config.peers, self.tailscale, self.local_host, config.tailscale.serve_port,
@@ -220,6 +240,7 @@ class AppContext:
         self.inference = InferenceRouter(
             self.store, config.training, self.analyzer, builtin=self.detector,
             remote=self.remote_detector,
+            storage_service=self.storage_service,
             role_enabled=analysis_enabled,
         )
         # Per-camera detection result cache: N open viewers of one camera share
@@ -301,6 +322,7 @@ class AppContext:
         if restored:
             log.info("Motion detection restored on %d camera(s)", restored)
         self._prune_media()  # enforce the retention budget on boot
+        self.storage_service.start()
         self._start_notify_monitor()
         if self.has_role("capture") and self.config.homekit.enabled:
             self.homekit.start()
@@ -318,6 +340,7 @@ class AppContext:
 
     def shutdown(self) -> None:
         self._stop_notify_monitor()
+        self.storage_migration.shutdown()
         self.homekit.stop()
         if self.ha_mqtt is not None:
             self.ha_mqtt.stop()
@@ -330,6 +353,8 @@ class AppContext:
         self.active_learning.shutdown()
         self.training.shutdown()
         self.manager.stop_all()
+        self.inference.shutdown()
+        self.storage_service.close()
         # Release the analyzer's keep-alive HTTP pool (a plugin analyzer may
         # not implement close()).
         closer = getattr(self.analyzer, "close", None)
@@ -442,6 +467,10 @@ class AppContext:
         """Delete media beyond the retention budget (size + age). Opt-in: never
         deletes anything unless the user enabled auto-cleanup."""
         self._last_prune = time.monotonic()
+        if self.storage_service.enabled:
+            if self.has_role("storage"):
+                self.storage_service.prune()
+            return
         if not self.has_role("storage") or not self.config.retention.enabled:
             return
         try:
@@ -556,6 +585,7 @@ class AppContext:
                 notifier=cast("NotificationService", self._motion_fanout),
                 reacquire=partial(self.manager.get_buffer, camera_id),
                 storage_enabled=partial(self.has_role, "storage"),
+                storage_service=self.storage_service,
             )
             worker.start()
             self._motion_workers[camera_id] = worker

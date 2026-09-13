@@ -19,9 +19,18 @@ from tailcam.config import MotionConfig
 from tailcam.logging_setup import get_logger
 from tailcam.media.capture_router import CaptureRoutingError
 from tailcam.media.recorder import RecordingService
+from tailcam.media.storage import (
+    alias,
+    enabled,
+    image_bound,
+    local_path,
+    safe_filename,
+    thumbnail_bytes,
+)
 from tailcam.motion.detector import MotionDetector
 from tailcam.motion.events import EventLog
 from tailcam.node import RoleDisabledError
+from tailcam.storage.models import StorageError
 
 if TYPE_CHECKING:
     from tailcam.media.capture_router import CaptureRouter
@@ -47,6 +56,7 @@ class MotionWorker:
         notifier: NotificationService | None = None,
         reacquire: Callable[[], FrameBuffer | None] | None = None,
         storage_enabled: Callable[[], bool] | None = None,
+        storage_service=None,
     ) -> None:
         self.camera_id = camera_id
         self.buffer = buffer
@@ -54,6 +64,7 @@ class MotionWorker:
         # drive a single buffer directly.
         self._reacquire = reacquire
         self._storage_enabled = storage_enabled or (lambda: True)
+        self._storage_service = storage_service
         self.config = config
         self._event_log = event_log
         self._recorder = recorder
@@ -62,9 +73,7 @@ class MotionWorker:
         self._detector = MotionDetector(config.sensitivity, config.min_area)
         self._analysis_scale = 1.0  # set from the first frame
         self._stop = threading.Event()
-        self._thread = threading.Thread(
-            target=self._run, name=f"motion-{camera_id}", daemon=True
-        )
+        self._thread = threading.Thread(target=self._run, name=f"motion-{camera_id}", daemon=True)
         # Latest boxes for the UI overlay (read by stream/API threads).
         self.boxes: list[tuple[int, int, int, int]] = []
         self.active = False
@@ -74,20 +83,41 @@ class MotionWorker:
         label it with the vision model. Runs in its own thread — never blocks
         the detection loop, and tolerates any failure."""
         thumb_path: str | None = None
-        if self._storage_enabled():
+        use_storage = enabled(self._storage_service)
+        if use_storage or self._storage_enabled():
             try:
-                stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
-                safe = self.camera_id.replace("/", "_")
-                thumb = paths.thumbnails_dir() / f"event_{safe}_{stamp}.jpg"
-                thumb.parent.mkdir(parents=True, exist_ok=True)
-                h, w = image.shape[:2]
-                scale = 320 / max(1, w)
-                small = cv2.resize(image, (320, max(1, int(h * scale))))
-                ok, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 75])
-                if ok:
-                    thumb.write_bytes(buf.tobytes())
-                    self._event_log.set_thumb(event_id, str(thumb))
-                    thumb_path = str(thumb)
+                if use_storage:
+                    service = self._storage_service
+                    plan = service.admit(
+                        "analysis_evidence",
+                        camera_id=self.camera_id,
+                        expected_bytes=image_bound(image),
+                    )
+                    artifact = service.put_bytes(
+                        "analysis_evidence",
+                        thumbnail_bytes(image),
+                        admission=plan,
+                        camera_id=self.camera_id,
+                        metadata={"event_id": event_id},
+                        mime_type="image/jpeg",
+                    )
+                    alias(service, "motion", event_id, "thumbnail", artifact)
+                    thumb_path = local_path(service, artifact) or None
+                    self._event_log.set_thumb(event_id, thumb_path or "")
+                else:
+                    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
+                    safe = safe_filename(self.camera_id)
+                    paths.require_media_root()
+                    thumb = paths.thumbnails_dir() / f"event_{safe}_{stamp}.jpg"
+                    thumb.parent.mkdir(parents=True, exist_ok=True)
+                    h, w = image.shape[:2]
+                    scale = 320 / max(1, w)
+                    small = cv2.resize(image, (320, max(1, int(h * scale))))
+                    ok, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                    if ok:
+                        thumb.write_bytes(buf.tobytes())
+                        self._event_log.set_thumb(event_id, str(thumb))
+                        thumb_path = str(thumb)
             except Exception as exc:  # pragma: no cover - defensive
                 log.debug("event thumbnail failed: %s", exc)
         label = description = None
@@ -99,8 +129,12 @@ class MotionWorker:
                 self._event_log.set_analysis(event_id, label, description, confidence)
         if self._notifier is not None:
             self._notifier.notify_motion(
-                camera_id=self.camera_id, label=label, confidence=confidence,
-                description=description, event_id=event_id, image_path=thumb_path,
+                camera_id=self.camera_id,
+                label=label,
+                confidence=confidence,
+                description=description,
+                event_id=event_id,
+                image_path=thumb_path,
             )
 
     def start(self) -> None:
@@ -130,9 +164,7 @@ class MotionWorker:
         if s == 1.0:
             return boxes
         inv = 1.0 / s
-        return [
-            (int(x * inv), int(y * inv), int(w * inv), int(h * inv)) for (x, y, w, h) in boxes
-        ]
+        return [(int(x * inv), int(y * inv), int(w * inv), int(h * inv)) for (x, y, w, h) in boxes]
 
     def _run(self) -> None:
         interval = 1.0 / max(1, self.config.sample_fps)
@@ -170,7 +202,7 @@ class MotionWorker:
                                 recording_triggered = self._recorder.start(
                                     self.camera_id, trigger="motion"
                                 )
-                            except (RoleDisabledError, CaptureRoutingError) as exc:
+                            except (RoleDisabledError, CaptureRoutingError, StorageError) as exc:
                                 # Keep detecting/logging motion when the chosen
                                 # storage node refuses work; never invent a clip.
                                 log.warning("motion recording unavailable: %s", exc)

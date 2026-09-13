@@ -97,8 +97,13 @@ class BuiltinBackend:
 class RegistryModelBackend:
     """A trained / bring-your-own detection model from the model registry."""
 
-    def __init__(self, store: Store, model_id: int, min_conf: float = 0.05) -> None:
+    def __init__(
+        self, store: Store, model_id: int, min_conf: float = 0.05, storage_service=None
+    ) -> None:
         self._store = store
+        self._storage_service = storage_service
+        self._managed: Any = None
+        self._model_path = ""
         self.model_id = model_id
         self._min_conf = min_conf
         # Lazily-built LocalDetector (imported on first use; torch is optional).
@@ -109,33 +114,76 @@ class RegistryModelBackend:
         bid = f"model:{self.model_id}"
         if record is None:
             return BackendInfo(
-                id=bid, name=f"model #{self.model_id}", kind="detector",
-                available=False, detail="model no longer exists",
+                id=bid,
+                name=f"model #{self.model_id}",
+                kind="detector",
+                available=False,
+                detail="model no longer exists",
             )
         if record.task != "detection":
             return BackendInfo(
-                id=bid, name=record.name, kind="detector", available=False,
+                id=bid,
+                name=record.name,
+                kind="detector",
+                available=False,
                 detail="classification model — pick a detection model for boxes",
             )
-        if not record.path:
+        artifact = (
+            self._storage_service.catalog.resolve_alias("model", str(self.model_id), "file")
+            if self._storage_service is not None
+            else None
+        )
+        if not record.path and artifact is None:
             return BackendInfo(
-                id=bid, name=record.name, kind="detector", available=False,
+                id=bid,
+                name=record.name,
+                kind="detector",
+                available=False,
                 detail="no weights yet — train it first",
             )
         return BackendInfo(
             id=bid, name=record.name, kind="detector", available=True, detail="ready"
         )
 
+    def prepare(self) -> None:
+        from tailcam.training.inference import ManagedModelLease
+
+        record = self._store.get_model(self.model_id)
+        if record is None:
+            raise ValueError("Selected labeling model no longer exists")
+        candidate = ManagedModelLease(self._storage_service)
+        path = candidate.resolve(record)
+        previous = self._managed
+        self._managed = candidate
+        self._model_path = path
+        if previous is not None:
+            previous.close()
+
+    def shutdown(self) -> None:
+        self._detector = None
+        if self._managed is not None:
+            self._managed.close()
+            self._managed = None
+        self._model_path = ""
+
     def predict(self, image: np.ndarray) -> list[Detection] | None:
         if self._detector is None:
-            from tailcam.training.inference import LocalDetector
+            from tailcam.training.inference import LocalDetector, LocalVisionDetector
 
             record = self._store.get_model(self.model_id)
-            if record is None or not record.path:
+            if record is None:
                 return None
-            # A deliberately low floor so *uncertain* boxes still surface —
-            # the active-learning threshold does the actual routing.
-            self._detector = LocalDetector(record.path, conf=self._min_conf)
+            if not self._model_path:
+                self.prepare()
+            self._detector = (
+                LocalVisionDetector(
+                    self._model_path,
+                    record.base_model,
+                    managed=self._managed is not None and self._managed.lease is not None,
+                )
+                if record.base_model in {"florence2", "qwen2.5-vl"}
+                else LocalDetector(self._model_path, conf=self._min_conf)
+            )
         return self._detector.detect(image)
 
 
@@ -165,8 +213,12 @@ class OllamaBackend:
             return []
         return [
             Detection(
-                label=result.label, confidence=result.confidence,
-                cx=0.5, cy=0.5, w=1.0, h=1.0,
+                label=result.label,
+                confidence=result.confidence,
+                cx=0.5,
+                cy=0.5,
+                w=1.0,
+                h=1.0,
             )
         ]
 
@@ -179,6 +231,7 @@ def build_labeling_backend(
     store: Store,
     detector: BuiltinDetector,
     analyzer: OllamaAnalyzer,
+    storage_service=None,
 ) -> LabelingBackend | None:
     """Instantiate the backend a config string names, or None if unknown."""
     if backend_id == "builtin":
@@ -198,12 +251,15 @@ def build_labeling_backend(
             model_id = int(backend_id.split(":", 1)[1])
         except ValueError:
             return None
-        return RegistryModelBackend(store, model_id)
+        return RegistryModelBackend(store, model_id, storage_service=storage_service)
     return None
 
 
 def list_labeling_backends(
-    store: Store, detector: BuiltinDetector, analyzer: OllamaAnalyzer
+    store: Store,
+    detector: BuiltinDetector,
+    analyzer: OllamaAnalyzer,
+    storage_service=None,
 ) -> list[BackendInfo]:
     """Everything the labeling-model selector can offer, with availability."""
     from tailcam.activelearning.florence import Florence2Backend
@@ -212,7 +268,9 @@ def list_labeling_backends(
     infos = [BuiltinBackend(detector).info()]
     for record in store.list_models():
         if record.task == "detection" and record.id is not None:
-            infos.append(RegistryModelBackend(store, record.id).info())
+            infos.append(
+                RegistryModelBackend(store, record.id, storage_service=storage_service).info()
+            )
     infos.append(OllamaBackend(analyzer).info())
     infos.append(Florence2Backend().info())
     infos.append(QwenVLBackend().info())
@@ -233,17 +291,20 @@ def list_finetune_backends(store: Store) -> list[FinetuneInfo]:
             name="TailCam YOLO (Ultralytics)",
             available=yolo_ok,
             detail=(
-                f"ready · device: {device}" if yolo_ok
+                f"ready · device: {device}"
+                if yolo_ok
                 else "install the training engine: pip install 'tailcam[training]'"
             ),
         )
     ]
     fl_ok, fl_detail = florence_finetune_support()
-    infos.append(FinetuneInfo(id="florence2", name="Florence-2", available=fl_ok,
-                              detail=fl_detail))
+    infos.append(FinetuneInfo(id="florence2", name="Florence-2", available=fl_ok, detail=fl_detail))
     qw_ok, qw_detail = qwen_finetune_support()
-    infos.append(FinetuneInfo(id="qwen2.5-vl", name="Qwen2.5-VL (Unsloth)",
-                              available=qw_ok, detail=qw_detail))
+    infos.append(
+        FinetuneInfo(
+            id="qwen2.5-vl", name="Qwen2.5-VL (Unsloth)", available=qw_ok, detail=qw_detail
+        )
+    )
     return infos
 
 

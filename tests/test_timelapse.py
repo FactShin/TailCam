@@ -405,6 +405,7 @@ def test_timelapse_frames_follow_media_dir(service, context, tmp_path):
     from tailcam import paths
 
     custom = tmp_path / "usb"
+    custom.mkdir()  # an attached external location exists before capture starts
     paths.set_media_override(str(custom))
     cam_id = _synthetic_id(context)
     record = service.start(cam_id, interval_seconds=0.1)

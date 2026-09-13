@@ -1,8 +1,8 @@
 # TailCam: source-of-truth update roadmap and implementation handoff
 
-Prepared for Wayne Scire · 12 September 2026 · Document revision **r8**
+Prepared for Wayne Scire · 13 September 2026 · Document revision **r9**
 
-**Status:** PRs #85–#89 are merged. Role-aware installation and automatic publishing are on main as 1.9.1 at `24c9edcc5519f13b349e48f9f9b1be19447593ab`. [PR #89](https://github.com/FactShin/TailCam/pull/89) corrected unnecessary TLS initialization in the loopback startup verifier; [automatic publication](https://github.com/FactShin/TailCam/actions/runs/34711958991) and a fresh [PyPI 1.9.1](https://pypi.org/project/tailcam/1.9.1/) install are verified. The next bounded 1.9 milestone slice, task readiness, is implemented for 1.9.2 on `feat/runtime-readiness-1.9.2`. **Authoritative implementation roadmap:** this repository file, imported from the supplied r2 planning snapshot on 2026-09-11. Document revisions and application release versions are separate.
+**Status:** PRs #85–#90 are merged. Readiness release 1.9.2 is on main at `ea6559678e0177e603b1d0db1919372f42e75d86`; [main tests](https://github.com/FactShin/TailCam/actions/runs/34769299687), [automatic publication](https://github.com/FactShin/TailCam/actions/runs/34769439994), and a fresh [PyPI 1.9.2](https://pypi.org/project/tailcam/1.9.2/) install are verified. The live Mac was upgraded with its configuration, identity and media references preserved. Unified storage 1.10.0 is being validated on `feat/unified-storage-1.10.0`. The current user request continues through 1.13, with a separate dependent PR per feature release. **Authoritative implementation roadmap:** this repository file, imported from the supplied r2 planning snapshot on 2026-09-11. Document revisions and application release versions are separate.
 
 **Purpose:** this file carries the product intent, engineering constraints, release scopes, completion gates, and working instructions into a new session. It consolidates the original feature attachment, architecture review, all nine later product suggestions, and the decision to add agent-supervised training. A fresh agent should not need the original chat to understand the work.
 
@@ -12,7 +12,7 @@ Read this section, the release table, and the selected release's detail before m
 
 1. **Establish the checkout.** Use `https://github.com/FactShin/TailCam`. Read applicable `AGENTS.md` and repository development instructions. Record branch, full HEAD SHA, working-tree changes, current runtime/dashboard/extension versions, recent releases, and relevant open PRs. Preserve unrelated work. Use an isolated branch/worktree when needed.
 2. **Reconcile progress.** Compare current code, merged PRs, and tests with this document's release ledger. Distinguish already shipped, partially implemented, unimplemented, and superseded work. Do not repeat an existing feature or label an old test result as a fresh run.
-3. **Choose the next bounded slice.** Start with the earliest unmet dependency. The role/identity and installer foundations are merged. Complete review of the bounded 1.9.2 readiness slice, then begin the 1.10 storage contract; retain preview, packaging and real-hardware gates as explicit follow-ups. Do not implement the entire roadmap in one branch.
+3. **Choose the next bounded slice.** Start with the earliest unmet dependency. The role/identity and installer foundations are merged. Finish validation of the 1.10 storage contract, then implement 1.11 workload placement; retain preview, packaging and real-hardware gates as explicit follow-ups. Do not implement the entire roadmap in one branch.
 4. **Make a small implementation brief.** State the user's outcome, affected services/interfaces, existing behavior, proposed behavior, migration needs, acceptance checks, and expected version bump. Resolve ordinary implementation choices from this document and repository evidence. Ask only when a missing decision materially changes scope or introduces an irreversible action.
 5. **Implement vertically.** Complete the service/API behavior, persistence, UI or MCP path, documentation, and relevant tests together. Keep existing single-machine operation and optional-dependency behavior working.
 6. **Validate with evidence.** Run targeted regression tests for the changed behavior; satisfy current repository CI gates. Use separate processes and independent media roots for fleet/storage tests. Run platform/hardware checks when the release claims depend on them, or record them as outstanding and do not claim the release is ready.
@@ -564,21 +564,21 @@ The product standard is simple: **every screen and every assistant should be abl
 
 ## 9. Progress ledger and handoff requirements
 
-**State as of document r8:** PRs #85–#89 are merged. PR #88 passed all nine
-checks before merge at `0f0caedfadcaa665ab463a2c8bcb38df7cf36788`; corrective [PR #89](https://github.com/FactShin/TailCam/pull/89) then passed all five applicable
-checks and merged at `24c9edcc5519f13b349e48f9f9b1be19447593ab`. Version 1.9.1
-[automatic publication](https://github.com/FactShin/TailCam/actions/runs/34711958991) and a fresh public install are verified from that corrected main commit. Task-specific readiness and passive Settings checks
-are locally validated for 1.9.2. This is a diagnostic foundation, not hardware
-certification or work admission. Preview, lean-package and live-hardware gates
-remain open. The original 1.8.4 review below remains historical evidence.
+**State as of document r9:** PRs #85–#90 are merged. The 1.9.2 wheel/sdist,
+all 159 package files and a fresh public install match verified main. The Mac's
+live service is running 1.9.2 and still discovers three Pi cameras; Pi installs
+were not changed. The 1.10 storage policy, transfer/catalog, producer integration,
+reviewed migration and dashboard are implemented in the working branch and under
+validation. Preview, lean-package and real-hardware capacity gates remain open.
+The original 1.8.4 review below remains historical evidence.
 
 | Target | Workstream | Status | Evidence / next gate |
 |---|---|---|---|
 | 1.8.5 | Current routing fixes | Validated; merged [PR #85](https://github.com/FactShin/TailCam/pull/85) | Local checks and final CI passed; publication remains separate. See [release notes](releases/1.8.5.md) |
 | 1.8.6 | Dashboard dependency security | Validated; merged [PR #86](https://github.com/FactShin/TailCam/pull/86) | Local, package, and [final CI](https://github.com/FactShin/TailCam/actions/runs/34625628441) passed; [release notes](releases/1.8.6.md) |
 | 1.9.0 / 1.9.1 | Roles and installer | Foundation merged in [PR #87](https://github.com/FactShin/TailCam/pull/87) and [PR #88](https://github.com/FactShin/TailCam/pull/88) | 1.9.0 public release verified. The HTTP-only correction in [PR #89](https://github.com/FactShin/TailCam/pull/89) is merged; [PyPI 1.9.1](https://pypi.org/project/tailcam/1.9.1/) and a fresh public install are verified against all 157 package files from merged main. Shared setup, role-aware installers, hub container and publishing gates implemented. See [1.9.1 notes](releases/1.9.1.md) |
-| 1.9.2 | Runtime readiness | Locally validated; [PR #90](https://github.com/FactShin/TailCam/pull/90) awaits review | Six conservative task checks, CPU/RAM/media observations, explicit bounded Ollama inventory, passive Settings and safe fleet/health errors, and protection against older polling responses replacing explicit probe results. 919 Python tests and 17 browser tests passed; hardware, preview and lean-package gates remain open. See [1.9.2 notes](releases/1.9.2.md) |
-| 1.10.0 | Unified storage | Planned | Isolated multi-process artifact-transfer tests |
+| 1.9.2 | Runtime readiness | Released; [PR #90](https://github.com/FactShin/TailCam/pull/90) merged and PyPI verified | Six conservative task checks, CPU/RAM/media observations, explicit bounded Ollama inventory, passive Settings and safe fleet/health errors, and protection against older polling responses replacing explicit probe results. 919 Python tests and 17 browser tests passed; hardware, preview and lean-package gates remain open. See [1.9.2 notes](releases/1.9.2.md) |
+| 1.10.0 | Unified storage | In progress; implementation under validation | Real HTTP between isolated processes verifies capture-only remote snapshots, zero source JPEGs, offline catalog and receiver crash/resume. Migration, policy, security, producer and browser tests are implemented. See [release notes](releases/1.10.0.md) |
 | 1.11.0 | Workload routing + Training Supervisor | Planned | Durable jobs, enforced budgets, no model activation |
 | 1.12.0 | Timelapse projects | Planned | Long capture/re-render recovery |
 | 1.13.0 | Granular UI/settings/privacy | Planned | Effective settings, scope, source masks |
@@ -601,18 +601,19 @@ Update this record in the authoritative file before handing work back. Replace o
 
 | Field | Current value |
 |---|---|
-| Document revision/date | r8 / 2026-09-12 |
-| Last verified code baseline | main / 24c9edcc5519f13b349e48f9f9b1be19447593ab / 1.9.1; public PyPI wheel/sdist and fresh installation verified |
-| Active implementation branch/PR | `feat/runtime-readiness-1.9.2` / [PR #90](https://github.com/FactShin/TailCam/pull/90); follows merged #89 |
-| Completed in this session | Merged #88 after fixing dry-run migration, preserved ports, stopped rollback and startup verification; landed the HTTP-only startup correction in #89; continued with task readiness using three subagents for implementation and independent review |
-| Current implementation target | 1.9.2: complete the initial role-readiness diagnostic contract without starting optional workloads |
-| Implementation commit | See the latest head of `feat/runtime-readiness-1.9.2`; final package-source parity and PR checks govern review |
-| Code changes in this roadmap session | Optional capabilities readiness schema; passive local task/capacity snapshot; bounded explicit cached Ollama inventory in killable child processes (including stalled DNS); local/fleet Settings panel with legacy/error states; passive HomeKit FFmpeg status; sanitized health/fleet errors and malformed peer validation |
-| Validation evidence | 919 Python tests passed, ten Windows-only skips, three existing warnings; 151 focused readiness/probe tests passed. Ruff/mypy (130 files), 17 browser tests, TypeScript and zero-vulnerability npm audit passed. Two SPA builds matched all 18 files. Clean wheel/sdist, strict Twine, fresh wheel/API/hub/UUID checks and 159 package-file source parity passed. The installed child probe completed a single loopback inventory request. Final PR/platform CI is recorded on [PR #90](https://github.com/FactShin/TailCam/pull/90). |
-| Outstanding environment checks | Actual camera, Pi, GPU, voice, cross-OS live fleet and long-duration capture validation remain separate hardware gates |
-| Exact next action | Review PR #90 and its latest commit checks before merging 1.9.2. After readiness merges and publishes, start a bounded 1.10 storage policy/artifact catalog slice with isolated multi-process transfer tests. |
+| Document revision/date | r9 / 2026-09-13 |
+| Last verified code baseline | main / ea6559678e0177e603b1d0db1919372f42e75d86 / 1.9.2; main CI, public wheel/sdist and fresh install verified |
+| Active implementation branch/PR | `feat/unified-storage-1.10.0`; PR pending final validation |
+| Completed in this session | Validated and merged #90; verified automatic PyPI 1.9.2 publication and exact package contents; upgraded the live Mac preserving configuration and identity; implemented 1.10 with three parallel agents |
+| Current implementation target | Complete 1.10 validation and PR, then separate dependent 1.11, 1.12 and 1.13 PRs |
+| Implementation commit | Pending final validation/commit on `feat/unified-storage-1.10.0` |
+| Code changes in this roadmap session | Revisioned storage policy; stable artifact identities and legacy aliases; mount/quota/workspace admission; resumable transfer and retry worker; reviewed migration; all content producer integration; Storage UI; export-label/archive security fixes |
+| Validation evidence | Complete local suite: 1,118 Python tests passed, ten platform skips, three existing warnings; Ruff and mypy (142 files) passed. Thirty browser cases and TypeScript passed. Separate real processes prove capture-only remote snapshots with no source JPEGs and abrupt receiver restart/resume. Final bundle/package parity and PR CI are still being collected. |
+| Outstanding environment checks | Physical mount detachment, sustained Pi capture, real GPU/model backends and cross-OS live fleet remain hardware gates. The Mac 1.9.2 upgrade is observed; synthetic tests do not certify camera/GPU support. |
+| Exact next action | Finish full regression and independent 1.10 review, build/verify package, file its PR, then branch 1.11 workload routing and Training Supervisor from that reviewed feature branch. |
 | Unresolved product decisions | Hardware capacity budgets, approved training datasets, task-specific model acceptance thresholds, current agent-host integration details |
-| Blockers | No implementation blocker. PR #90 awaits review; hardware/preview/lean-package work remain explicit follow-up gates. |
+| Blockers | No implementation blocker. Unified Florence/Qwen fine-tuning rejects uncontrolled runtime caches until process containment; zero-local encoding/training requires owner execution in 1.11. |
+
 
 ### Implementation-session completion checklist
 
@@ -641,6 +642,7 @@ Measure and record numeric Pi memory/CPU targets, maximum camera modes/counts, s
 | r6 | Records merged PR #87, verified PyPI 1.9.0 publication, and the next shared installer / automated release slice for 1.9.1 |
 | r7 | Reconciles the existing installer PR, fixes setup dry-run and startup rollback gaps, and records exact-source review and release checks before continuing readiness work |
 | r8 | Records the verified installer merge, task readiness implementation and validation, passive Settings fixes, and credential-safe fleet diagnostics |
+| r9 | Records verified PR #90 merge/publication/live Mac upgrade and unified storage implementation with separate release PRs requested through 1.13 |
 
 ## Validation recorded for the original architecture review
 

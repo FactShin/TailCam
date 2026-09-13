@@ -41,6 +41,10 @@ comes from `stream.default_fps`.
 
 ## Recording & storage settings
 
+Before a unified [Storage policy](storage) is applied, the controls below choose
+the legacy save location and cleanup limits. After applying, **Storage** owns
+destinations and retention; motion recording and its tail setting stay in Settings.
+
 **Settings → Recording & storage** controls, with no config-file editing:
 
 - **Save location** — where recordings, snapshots, and thumbnails are written.
@@ -51,9 +55,8 @@ comes from `stream.default_fps`.
 - **Record on motion** — turns on `motion.auto_record` so motion events save a
   clip. Motion detection must also be enabled on the camera for this to fire.
 - **Keep recording after motion ends** — `motion.record_tail_seconds`.
-- **Auto-cleanup** — opt-in retention (`retention.enabled`). TailCam never
-  deletes media unless you turn this on; when on, the `max_gb` /
-  `max_age_days` budget below is enforced.
+- **Auto-cleanup** — opt-in legacy retention (`retention.enabled`). When on,
+  the `max_gb` / `max_age_days` budget below is enforced.
 
 ## The gallery
 
@@ -68,9 +71,14 @@ Delete media from the gallery or with `DELETE /api/media/<id>`.
 
 ## Retention
 
-To stop media filling the disk, turn on **Auto-cleanup** (Settings → Recording &
-storage). Retention is **opt-in** — TailCam never deletes media unless
-`retention.enabled` is true. When enabled, the `[retention]` limits apply:
+With a unified policy, use **Storage → Policy** for new content and
+**Storage → Content** to edit an existing local artifact's protection, expiry and
+minimum replicas. Quotas reserve capacity; they do not silently expire content.
+See [Storage](storage) for retention and related artifacts.
+
+Before a unified policy is applied, **Auto-cleanup** (Settings → Recording &
+storage) enables opt-in legacy cleanup. When `retention.enabled` is true, these
+`[retention]` limits apply:
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -87,7 +95,12 @@ analysis of what's using space and what to clean.
 
 ## Where files live
 
-Media is stored under TailCam's data directory (set with `TAILCAM_DATA_DIR`)
+With a unified policy, committed files live at their selected owner and registered
+location. The Content catalog shows that owner; existing media URLs keep working
+through stable aliases after a reviewed migration. Configuration and the local
+SQLite journal stay on each node. See [Storage](storage).
+
+Before applying that policy, media is stored under TailCam's data directory (set with `TAILCAM_DATA_DIR`)
 unless you set a custom save location. The SQLite database tracks the index;
 the files themselves sit alongside it. Use `tailcam doctor` to see resolved
 paths.

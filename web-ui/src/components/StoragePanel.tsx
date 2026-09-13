@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { useStorage, useUpdateStorage, useUpdateStorageAt } from "../api/hooks";
+import { useStoragePolicy } from "../api/storageHooks";
 import { IconHdd, IconServer } from "../icons";
 import { fmtBytes } from "../lib/format";
 import { FolderPicker } from "./FolderPicker";
@@ -9,6 +10,7 @@ import { Button, Toggle } from "./ui";
 
 export function StoragePanel() {
   const data = useStorage().data;
+  const unified = useStoragePolicy().data?.enabled === true;
   const update = useUpdateStorage();
   const toast = useToast();
 
@@ -25,6 +27,7 @@ export function StoragePanel() {
   const [picker, setPicker] = useState<{ prefix: string; host: string; nodeKey: string } | null>(null);
   const pickerPrefix = picker?.prefix ?? "";
   const updateAt = useUpdateStorageAt(pickerPrefix);
+  useEffect(() => { if (unified) setPicker(null); }, [unified]);
 
   useEffect(() => {
     if (!data) return;
@@ -98,8 +101,7 @@ export function StoragePanel() {
     try {
       await update.mutateAsync({
         record_tail_seconds: tail,
-        max_gb: maxGb,
-        max_age_days: maxAge,
+        ...(!unified ? {max_gb: maxGb, max_age_days: maxAge} : {}),
       });
       setRetDirty(false);
       toast.ok("Recording settings saved");
@@ -121,6 +123,8 @@ export function StoragePanel() {
         and how much history to keep.
       </p>
 
+      {unified && <p className="stor-note">Unified storage controls destinations and registered locations. <a href="/storage">Open storage policy</a> to change placement. The recording controls below still apply.</p>}
+      {!unified && <>
       {/* storage node */}
       <div className="notif-row">
         <span className="microlabel">Save this device's recordings &amp; timelapses on</span>
@@ -221,6 +225,7 @@ export function StoragePanel() {
         )}
       </div>
 
+      </>}
       {/* disk usage */}
       <div className="stor-disk">
         <div className="stor-bar">
@@ -260,6 +265,7 @@ export function StoragePanel() {
         </label>
       </div>
 
+      {!unified && <>
       {/* auto-cleanup (opt-in retention) */}
       <div className="notif-row">
         <span className="microlabel">Auto-cleanup</span>
@@ -288,6 +294,7 @@ export function StoragePanel() {
           </label>
         </div>
       )}
+      </>}
       <div className="notif-actions">
         <Button variant="primary" disabled={!retDirty || update.isPending} onClick={saveRetention}>
           {update.isPending ? "Saving…" : "Save"}

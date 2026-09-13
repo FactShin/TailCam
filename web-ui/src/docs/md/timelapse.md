@@ -26,7 +26,12 @@ camera runs on that node and shows up here with its `host` and `proxy_prefix`,
 so **Stop & save**, encode, smooth, and delete all work from any dashboard.
 Cameras are keyed by host *and* id — two Pis with `/dev/video0` never collide.
 
-With a [storage node](fleet#storage-node) configured, the capture runs on that
+With a unified [Storage policy](storage), frames and outputs go to their selected
+owners while capture and encoding remain on the execution node. Local encoder
+workspaces need a finite budget; zero-local-media rejects that work before launch.
+The legacy routing and fallback behavior below applies before that policy is enabled.
+
+With a legacy [storage node](fleet#storage-node) configured, the capture runs on that
 node instead: it pulls the camera's stream and keeps the frames and video on its
 disk; the row carries `source_host` (the camera's node) and `host` (where it is
 stored).
@@ -98,8 +103,12 @@ replace the printer analyzer's Ollama contract.
 ## Frames and storage
 
 Individual captured frames are addressable at
-`/timelapse/<id>/frame/<frame_number>`. Timelapses live under the media
-location (`<media_dir>/timelapse/<id>/`), so a custom save folder or external
-drive applies to them too; captures made before 1.8 stay where they were.
-Timelapse bytes count toward the storage total reported by the system. Delete a
-timelapse with `DELETE /api/timelapse/<id>`.
+`/timelapse/<id>/frame/<frame_number>`. With a unified [Storage policy](storage),
+raw frames and encoded variants are separate artifacts at their selected owners;
+the existing URLs resolve through stable aliases. Reviewed migration moves old
+content separately from changing the default.
+
+Before applying that policy, timelapses live under the media location
+(`<media_dir>/timelapse/<id>/`), so a custom save folder or external drive applies
+to them too; captures made before 1.8 stay where they were. Delete a timelapse with
+`DELETE /api/timelapse/<id>`.

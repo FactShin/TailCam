@@ -997,7 +997,7 @@ def relabel_sample(
     s = ctx.store.get_sample(sample_id)
     if s is None:
         raise HTTPException(status_code=404, detail="sample not found")
-    ctx.store.set_sample_label(sample_id, body.label)
+    ctx.training.relabel_sample(sample_id, body.label)
     updated = ctx.store.get_sample(sample_id)
     return _sample_info(updated, len(ctx.store.list_annotations(sample_id)))
 

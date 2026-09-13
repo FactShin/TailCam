@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from tailcam.logging_setup import get_logger
+from tailcam.media.storage import enabled
 
 if TYPE_CHECKING:
     from tailcam.web.context import AppContext
@@ -36,8 +37,12 @@ class CaptureRoutingError(Exception):
     """A remote refusal or uncertain outcome that must reach the caller."""
 
     def __init__(
-        self, status_code: int, detail: str, *,
-        code: str | None = None, role: str | None = None,
+        self,
+        status_code: int,
+        detail: str,
+        *,
+        code: str | None = None,
+        role: str | None = None,
     ) -> None:
         super().__init__(detail)
         self.status_code = status_code
@@ -77,6 +82,10 @@ class CaptureRouter:
 
     def target(self) -> tuple[str, str] | None:
         """(peer key, base URL) of the storage node, or None → capture locally."""
+        # Legacy delegation cannot transport a frozen unified storage plan.
+        # Unified producers admit their own workspace and final destinations.
+        if enabled(getattr(self._ctx, "storage_service", None)):
+            return None
         node = self.configured_node
         if not node:
             return None
@@ -120,8 +129,13 @@ class CaptureRouter:
         return self._client
 
     def _post(
-        self, base: str, path: str, body: dict[str, Any], timeout: float | None = None,
-        *, strict_start: bool = False,
+        self,
+        base: str,
+        path: str,
+        body: dict[str, Any],
+        timeout: float | None = None,
+        *,
+        strict_start: bool = False,
     ) -> tuple[int, dict[str, Any] | None]:
         """POST to the storage node → (status, json). Status 0 = unreachable.
 
@@ -143,7 +157,8 @@ class CaptureRouter:
                     "Check that node's timelapses before retrying. No local capture was started."
                 )
                 raise CaptureRoutingError(
-                    504 if isinstance(exc, httpx.TimeoutException) else 502, detail,
+                    504 if isinstance(exc, httpx.TimeoutException) else 502,
+                    detail,
                 ) from exc
             self.last_error = str(exc)
             self._down_until = time.monotonic() + _DOWN_BACKOFF
@@ -153,21 +168,26 @@ class CaptureRouter:
             data = resp.json()
         except ValueError:
             data = None
-        if (resp.status_code >= 400 and isinstance(data, dict)
-                and data.get("code") == "role_disabled"):
+        if (
+            resp.status_code >= 400
+            and isinstance(data, dict)
+            and data.get("code") == "role_disabled"
+        ):
             # An explicit placement refusal is not a connectivity failure.
             # In particular, never treat it as an existing remote recording
             # or start an unexpected local copy.
             raise CaptureRoutingError(
-                resp.status_code, str(data.get("detail") or "Role disabled"),
-                code="role_disabled", role=data.get("role")
-                if isinstance(data.get("role"), str) else None,
+                resp.status_code,
+                str(data.get("detail") or "Role disabled"),
+                code="role_disabled",
+                role=data.get("role") if isinstance(data.get("role"), str) else None,
             )
         if strict_start and resp.status_code >= 300:
             detail = str(data.get("detail", "")) if isinstance(data, dict) else ""
             detail = detail or f"Storage node returned HTTP {resp.status_code}"
             raise CaptureRoutingError(
-                resp.status_code if resp.status_code >= 400 else 502, detail,
+                resp.status_code if resp.status_code >= 400 else 502,
+                detail,
             )
         if resp.status_code >= 500:
             detail = str(data.get("detail", "")) if isinstance(data, dict) else resp.text[:200]
@@ -228,8 +248,9 @@ class CaptureRouter:
             if status not in (0,) and status < 500:
                 # A definite refusal (404 source not visible, 502 stream): fall
                 # through to local so the clip isn't lost.
-                log.warning("storage node refused %s: %s — recording locally", camera_id,
-                            self.last_error)
+                log.warning(
+                    "storage node refused %s: %s — recording locally", camera_id, self.last_error
+                )
         return self._ctx.recorder.start(camera_id, fps=self._stream_fps(camera_id), trigger=trigger)
 
     def stop_recording(self, camera_id: str):
@@ -242,8 +263,10 @@ class CaptureRouter:
             status, data = (0, None)
             if base is not None:
                 status, data = self._post(
-                    base, f"/api/remote/{self.local_key}/cameras/{camera_id}/recording/stop",
-                    {}, timeout=_STOP_TIMEOUT,
+                    base,
+                    f"/api/remote/{self.local_key}/cameras/{camera_id}/recording/stop",
+                    {},
+                    timeout=_STOP_TIMEOUT,
                 )
             if status == 200 and data is not None:
                 peer_host = next(
@@ -270,8 +293,10 @@ class CaptureRouter:
             if base is None:
                 continue
             status, _ = self._post(
-                base, f"/api/remote/{self.local_key}/cameras/{camera_id}/recording/stop",
-                {}, timeout=_STOP_TIMEOUT,
+                base,
+                f"/api/remote/{self.local_key}/cameras/{camera_id}/recording/stop",
+                {},
+                timeout=_STOP_TIMEOUT,
             )
             if status in (200, 409):
                 with self._lock:
@@ -314,13 +339,16 @@ class CaptureRouter:
                 }
             )
             status, data = self._post(
-                base, f"/api/remote/{self.local_key}/cameras/{camera_id}/timelapse/start", body,
+                base,
+                f"/api/remote/{self.local_key}/cameras/{camera_id}/timelapse/start",
+                body,
                 strict_start=True,
             )
             if status != 0:
                 if key.startswith(("http://", "https://")):
                     raise CaptureRoutingError(
-                        502, "Timelapse may have started, but the storage node's identity "
+                        502,
+                        "Timelapse may have started, but the storage node's identity "
                         "could not be resolved. Check that node before retrying. "
                         "No local capture was started.",
                     )
@@ -356,7 +384,8 @@ class CaptureRouter:
             self._ctx.require_role("analysis")
         if analysis_enabled and not self._ctx.printer_analyzer.config.enabled:
             raise CaptureRoutingError(
-                409, "Enable and configure Ollama on the capture node's Models page "
+                409,
+                "Enable and configure Ollama on the capture node's Models page "
                 "before printer analysis",
             )
         return self._ctx.timelapse.start(camera_id, **params)

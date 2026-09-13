@@ -14,6 +14,7 @@ import { Gallery } from "./screens/Gallery";
 import { McpSetup } from "./screens/McpSetup";
 import { Plugins } from "./screens/Plugins";
 import { Settings } from "./screens/Settings";
+import { Storage } from "./screens/Storage";
 import { Timelapse } from "./screens/Timelapse";
 import "./styles.css";
 
@@ -42,6 +43,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/agents" element={<McpSetup />} />
               <Route path="/plugins" element={<Plugins />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/storage" element={<Storage />} />
               <Route path="/docs" element={<Docs />} />
               <Route path="/docs/:slug" element={<Docs />} />
               <Route path="*" element={<Navigate to="/" replace />} />

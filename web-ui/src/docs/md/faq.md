@@ -42,8 +42,10 @@ Under TailCam's data and config directories (`TAILCAM_DATA_DIR` /
 
 ## How do I control storage usage?
 
-Enable `[retention]` `enabled`, then set `max_gb` and `max_age_days`. Cleanup is
-off by default; when enabled, the oldest media is pruned first.
+Use [Storage](storage) for destination quotas, reserved free space and opt-in
+artifact retention after applying a unified policy. Before applying, the legacy
+**Auto-cleanup** setting uses `[retention]` `enabled`, `max_gb` and `max_age_days`;
+it is off by default and prunes the oldest media first when enabled.
 See [Recording & media](recording-media). The MCP `suggest_retention_cleanup`
 tool analyzes usage non-destructively.
 

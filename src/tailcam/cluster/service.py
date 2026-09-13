@@ -119,7 +119,7 @@ class ClusterService:
             # read=None: MJPEG proxy streams are open-ended. follow_redirects is
             # off so a peer can't redirect the proxy to an unintended host (SSRF).
             self._client = httpx.AsyncClient(
-                timeout=httpx.Timeout(5.0, read=None), follow_redirects=False
+                timeout=httpx.Timeout(5.0, read=None), follow_redirects=False, trust_env=False
             )
         return self._client
 

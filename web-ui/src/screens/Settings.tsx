@@ -6,6 +6,7 @@ import { NotificationsSettings } from "../components/NotificationsSettings";
 import { NodePurposePanel } from "../components/NodePurposePanel";
 import { NodeReadinessPanel } from "../components/NodeReadinessPanel";
 import { StoragePanel } from "../components/StoragePanel";
+import { StoragePolicyPanel } from "../components/StoragePolicyPanel";
 import { StreamingPanel } from "../components/StreamingPanel";
 import { useToast } from "../components/toast";
 import { IconCheck, IconCopy, IconDevice, IconInfo, IconServer, IconWifi, IconWifiOff } from "../icons";
@@ -129,6 +130,7 @@ export function Settings() {
 
         <StreamingPanel />
 
+        <StoragePolicyPanel />
         <StoragePanel />
 
         <NotificationsSettings />

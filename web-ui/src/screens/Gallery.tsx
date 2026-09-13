@@ -122,6 +122,7 @@ export function Gallery() {
           <div className="kicker"><span className="kicker-rule" /><span className="microlabel lit">Media Archive</span></div>
           <h1 className="screen-title">Gallery</h1>
           <p className="screen-sub">{rows.length} item{rows.length !== 1 ? "s" : ""} · all devices</p>
+          <a className="storage-gallery-link" href="/storage?tab=content">View content ownership &amp; transfers</a>
         </div>
         <Segmented
           ariaLabel="Media type"

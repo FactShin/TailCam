@@ -14,6 +14,7 @@ import {
   IconChevR,
   IconFilm,
   IconGrid,
+  IconHdd,
   IconMore,
   IconServer,
   IconMotion,
@@ -32,6 +33,7 @@ const NAV: { to: string; label: string; icon: (p: IconProps) => JSX.Element; key
   // AI, Training, and Models are one subject — one destination (with tabs).
   { to: "/ai", label: "AI Studio", icon: IconAi, key: "4" },
   { to: "/timelapse", label: "Timelapse", icon: IconTimelapse, key: "5" },
+  { to: "/storage", label: "Storage", icon: IconHdd, key: "0" },
   { to: "/plugins", label: "Plugins", icon: IconChip, key: "6" },
   { to: "/agents", label: "MCP", icon: IconServer, key: "7" },
   { to: "/settings", label: "Settings", icon: IconSettings, key: "8" },

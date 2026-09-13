@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import anyio
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from tailcam.camera.transforms import StreamTransform
@@ -14,6 +14,19 @@ from tailcam.web.context import AppContext
 from tailcam.web.deps import get_context
 
 router = APIRouter()
+
+
+def _artifact(namespace: str, legacy_id: int, variant: str, request: Request, ctx: AppContext):
+    """Look up stable aliases before inspecting obsolete pre-migration paths."""
+    service = getattr(ctx, "storage_service", None)
+    item = service.catalog.resolve_alias(namespace, str(legacy_id), variant) if service else None
+    if item is None:
+        return None
+    from tailcam.web.routes_node_v1 import get_principal
+    from tailcam.web.routes_storage_v1 import artifact_response, require_viewer
+
+    require_viewer(get_principal(request))
+    return artifact_response(item, request, ctx)
 
 
 @router.get("/stream/{camera_id:path}.mjpg")
@@ -89,7 +102,12 @@ async def snapshot_jpg(
 
 
 @router.get("/media/{media_id}/file")
-def media_file(media_id: int, ctx: AppContext = Depends(get_context)) -> FileResponse:
+def media_file(
+    media_id: int, request: Request, ctx: AppContext = Depends(get_context),
+) -> Response:
+    artifact = _artifact("media", media_id, "file", request, ctx)
+    if artifact is not None:
+        return artifact
     record = ctx.gallery.get(media_id)
     if record is None or not Path(record.path).exists():
         raise HTTPException(status_code=404, detail="media not found")
@@ -97,7 +115,12 @@ def media_file(media_id: int, ctx: AppContext = Depends(get_context)) -> FileRes
 
 
 @router.get("/media/{media_id}/thumbnail")
-def media_thumbnail(media_id: int, ctx: AppContext = Depends(get_context)) -> FileResponse:
+def media_thumbnail(
+    media_id: int, request: Request, ctx: AppContext = Depends(get_context),
+) -> Response:
+    artifact = _artifact("media", media_id, "thumbnail", request, ctx)
+    if artifact is not None:
+        return artifact
     record = ctx.gallery.get(media_id)
     if record is None or not record.thumbnail or not Path(record.thumbnail).exists():
         raise HTTPException(status_code=404, detail="thumbnail not found")
@@ -105,7 +128,12 @@ def media_thumbnail(media_id: int, ctx: AppContext = Depends(get_context)) -> Fi
 
 
 @router.get("/events/{event_id}/thumbnail")
-def event_thumbnail(event_id: int, ctx: AppContext = Depends(get_context)) -> FileResponse:
+def event_thumbnail(
+    event_id: int, request: Request, ctx: AppContext = Depends(get_context),
+) -> Response:
+    artifact = _artifact("motion", event_id, "thumbnail", request, ctx)
+    if artifact is not None:
+        return artifact
     rec = ctx.store.get_motion_event(event_id)
     if rec is None or not rec.thumb_path or not Path(rec.thumb_path).exists():
         raise HTTPException(status_code=404, detail="event thumbnail not found")
@@ -113,7 +141,12 @@ def event_thumbnail(event_id: int, ctx: AppContext = Depends(get_context)) -> Fi
 
 
 @router.get("/timelapse/{tl_id}/file")
-def timelapse_file(tl_id: int, ctx: AppContext = Depends(get_context)) -> FileResponse:
+def timelapse_file(
+    tl_id: int, request: Request, ctx: AppContext = Depends(get_context),
+) -> Response:
+    artifact = _artifact("timelapse", tl_id, "video", request, ctx)
+    if artifact is not None:
+        return artifact
     rec = ctx.store.get_timelapse(tl_id)
     if rec is None or not rec.video_path or not Path(rec.video_path).exists():
         raise HTTPException(status_code=404, detail="timelapse video not found")
@@ -121,7 +154,12 @@ def timelapse_file(tl_id: int, ctx: AppContext = Depends(get_context)) -> FileRe
 
 
 @router.get("/timelapse/{tl_id}/thumbnail")
-def timelapse_thumbnail(tl_id: int, ctx: AppContext = Depends(get_context)) -> FileResponse:
+def timelapse_thumbnail(
+    tl_id: int, request: Request, ctx: AppContext = Depends(get_context),
+) -> Response:
+    artifact = _artifact("timelapse", tl_id, "thumbnail", request, ctx)
+    if artifact is not None:
+        return artifact
     rec = ctx.store.get_timelapse(tl_id)
     if rec is None or not rec.thumb_path or not Path(rec.thumb_path).exists():
         raise HTTPException(status_code=404, detail="timelapse thumbnail not found")
@@ -129,7 +167,12 @@ def timelapse_thumbnail(tl_id: int, ctx: AppContext = Depends(get_context)) -> F
 
 
 @router.get("/timelapse/{tl_id}/smooth")
-def timelapse_smooth(tl_id: int, ctx: AppContext = Depends(get_context)) -> FileResponse:
+def timelapse_smooth(
+    tl_id: int, request: Request, ctx: AppContext = Depends(get_context),
+) -> Response:
+    artifact = _artifact("timelapse", tl_id, "smooth", request, ctx)
+    if artifact is not None:
+        return artifact
     rec = ctx.store.get_timelapse(tl_id)
     if rec is None or not rec.smooth_path or not Path(rec.smooth_path).exists():
         raise HTTPException(status_code=404, detail="smoothed timelapse not found")
@@ -138,12 +181,17 @@ def timelapse_smooth(tl_id: int, ctx: AppContext = Depends(get_context)) -> File
 
 @router.get("/timelapse/{tl_id}/frame/{frame_number}")
 def timelapse_frame(
-    tl_id: int, frame_number: int, ctx: AppContext = Depends(get_context)
-) -> FileResponse:
+    tl_id: int, frame_number: int, request: Request, ctx: AppContext = Depends(get_context)
+) -> Response:
     """Serve a single captured frame (e.g. the evidence frame a print-failure
     analysis flagged). Frames are the retained ``NNNNNN.jpg`` capture stills."""
+    if frame_number < 0:
+        raise HTTPException(status_code=404, detail="frame not found")
+    artifact = _artifact("timelapse", tl_id, f"frame/{frame_number:06d}", request, ctx)
+    if artifact is not None:
+        return artifact
     rec = ctx.store.get_timelapse(tl_id)
-    if rec is None or not rec.frames_dir or frame_number < 0:
+    if rec is None or not rec.frames_dir:
         raise HTTPException(status_code=404, detail="frame not found")
     frame = Path(rec.frames_dir) / f"{frame_number:06d}.jpg"
     if not frame.exists():
@@ -152,7 +200,12 @@ def timelapse_frame(
 
 
 @router.get("/datasets/sample/{sample_id}/thumbnail")
-def dataset_sample_thumb(sample_id: int, ctx: AppContext = Depends(get_context)) -> FileResponse:
+def dataset_sample_thumb(
+    sample_id: int, request: Request, ctx: AppContext = Depends(get_context),
+) -> Response:
+    artifact = _artifact("sample", sample_id, "thumbnail", request, ctx)
+    if artifact is not None:
+        return artifact
     rec = ctx.store.get_sample(sample_id)
     candidate = (rec.thumb or rec.path) if rec else None
     if rec is None or not candidate or not Path(candidate).exists():
@@ -161,7 +214,12 @@ def dataset_sample_thumb(sample_id: int, ctx: AppContext = Depends(get_context))
 
 
 @router.get("/datasets/sample/{sample_id}/image")
-def dataset_sample_image(sample_id: int, ctx: AppContext = Depends(get_context)) -> FileResponse:
+def dataset_sample_image(
+    sample_id: int, request: Request, ctx: AppContext = Depends(get_context),
+) -> Response:
+    artifact = _artifact("sample", sample_id, "file", request, ctx)
+    if artifact is not None:
+        return artifact
     rec = ctx.store.get_sample(sample_id)
     if rec is None or not Path(rec.path).exists():
         raise HTTPException(status_code=404, detail="sample not found")

@@ -57,8 +57,9 @@ Workload roles do not change viewer/operator/admin permissions.
 
 A hub still needs its local runtime database and logs. This version retains
 the base OpenCV dependency; selecting a role does not install or remove packages.
-Training datasets and models remain on their current local paths until the
-unified-storage milestone.
+The [Storage policy](storage) can place new datasets, annotations and managed
+model outputs on a selected owner. Applying it leaves existing files in place;
+moving old content requires a separate reviewed migration.
 
 ## Runtime readiness
 
@@ -118,13 +119,20 @@ See [Motion detection](motion-detection).
 
 ## `[retention]`
 
+These legacy cleanup limits apply before a unified [Storage policy](storage) is
+enabled. Unified content uses its recorded per-artifact retention policy instead.
+
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `enabled` | `false` | Auto-cleanup master switch (opt-in; nothing is deleted when off). |
+| `enabled` | `false` | Legacy automatic cleanup switch (opt-in). |
 | `max_gb` | `10.0` | Total media budget (GB). |
 | `max_age_days` | `30` | Delete media older than this. |
 
 ## `[storage]`
+
+The legacy settings below remain in use until you explicitly apply a unified
+[Storage policy](storage). After applying, use **Storage** for destinations,
+quotas and overrides; the local journal is authoritative for that policy.
 
 | Key | Default | Meaning |
 | --- | --- | --- |

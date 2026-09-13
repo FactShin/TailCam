@@ -95,8 +95,7 @@ class LabelStudioService:
         else:
             if not sdk_installed():
                 raise LabelStudioError(
-                    "the Label Studio SDK is not installed — "
-                    "pip install 'tailcam[activelearning]'"
+                    "the Label Studio SDK is not installed — pip install 'tailcam[activelearning]'"
                 )
             from label_studio_sdk.client import LabelStudio
 
@@ -187,11 +186,22 @@ class LabelStudioService:
         return cfg.project_id
 
     # -- tasks -------------------------------------------------------------------
-    def submit_frame(self, project_id: int, frame: AnnotatedFrame, model_id: str) -> int:
+    def submit_frame(
+        self,
+        project_id: int,
+        frame: AnnotatedFrame,
+        model_id: str,
+        image_bytes: bytes | None = None,
+    ) -> int:
         """Import one frame (with the model's predictions as pre-annotations)
         for human review. Returns the created task id, or 0 when the server
         didn't report one — sync matches by image path either way."""
-        image_data = _image_data_uri(frame.image_path)
+        if image_bytes is not None:
+            if len(image_bytes) > 16 * 1024 * 1024:
+                raise LabelStudioError("Review image exceeds the 16 MiB limit")
+            image_data = "data:image/jpeg;base64," + base64.b64encode(image_bytes).decode("ascii")
+        else:
+            image_data = _image_data_uri(frame.image_path)
         task = to_label_studio_task(frame, image_data, model_id)
         client = self._get_client()
         try:
@@ -203,9 +213,7 @@ class LabelStudioService:
             try:
                 response = client.projects.import_tasks(id=project_id, request=[task])
             except Exception as exc:
-                raise LabelStudioError(
-                    _friendly_error(exc, self._config.label_studio_url)
-                ) from exc
+                raise LabelStudioError(_friendly_error(exc, self._config.label_studio_url)) from exc
         except Exception as exc:
             raise LabelStudioError(_friendly_error(exc, self._config.label_studio_url)) from exc
         task_ids = getattr(response, "task_ids", None) or (

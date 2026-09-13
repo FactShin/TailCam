@@ -41,6 +41,11 @@ from any dashboard.
 
 ## Storage node
 
+This section describes legacy capture delegation, used until a unified
+[Storage policy](storage) is applied on the originating node. The new policy
+covers snapshots and other content too, with explicit outage choices and stable
+owner identities; it does not move capture or processing to the storage owner.
+
 Every node can send its own cameras' **recordings, motion clips, and
 timelapses** to a different node — the box with the big disk, or the one with
 the CPU to encode. Choose it in **Settings → Recording & storage → Save this
@@ -93,7 +98,7 @@ for a node that shouldn't.
 Cross-node streaming and media use a constrained reverse proxy at
 `/proxy/<node_key>/...`. It forwards ordinary camera/media API paths to the named peer.
 For security it **strips inbound `tailscale-*` identity headers** and **refuses to
-proxy the `/api/v1/node`, `/api/v1/fleet`, `/mcp`, and nested `/proxy` paths**.
+proxy the entire `/api/v1` namespace, `/mcp`, and nested `/proxy` paths**.
 Ambiguous/encoded traversal paths are rejected before contacting a peer. Management is
 never tunneled through the generic proxy. See [Security](security).
 
