@@ -78,7 +78,7 @@ jobs:
   # registration, desktop shortcut, self-update) plus the API surface. The
   # camera/V4L2 and timing-sensitive capture suites are Linux-only by nature.
   test-windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
