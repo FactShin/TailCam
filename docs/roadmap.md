@@ -2,7 +2,7 @@
 
 Prepared for Wayne Scire · 13 September 2026 · Document revision **r9**
 
-**Status:** PRs #85–#90 are merged. Readiness release 1.9.2 is on main at `ea6559678e0177e603b1d0db1919372f42e75d86`; [main tests](https://github.com/FactShin/TailCam/actions/runs/34769299687), [automatic publication](https://github.com/FactShin/TailCam/actions/runs/34769439994), and a fresh [PyPI 1.9.2](https://pypi.org/project/tailcam/1.9.2/) install are verified. The live Mac was upgraded with its configuration, identity and media references preserved. Unified storage 1.10.0 is being validated on `feat/unified-storage-1.10.0`. The current user request continues through 1.13, with a separate dependent PR per feature release. **Authoritative implementation roadmap:** this repository file, imported from the supplied r2 planning snapshot on 2026-09-11. Document revisions and application release versions are separate.
+**Status:** PRs #85–#90 are merged. Readiness release 1.9.2 is on main at `ea6559678e0177e603b1d0db1919372f42e75d86`; [main tests](https://github.com/FactShin/TailCam/actions/runs/34769299687), [automatic publication](https://github.com/FactShin/TailCam/actions/runs/34769439994), and a fresh [PyPI 1.9.2](https://pypi.org/project/tailcam/1.9.2/) install are verified. The live Mac was upgraded with its configuration, identity and media references preserved. Unified storage 1.10.0 is locally validated in [PR #91](https://github.com/FactShin/TailCam/pull/91) on `feat/unified-storage-1.10.0`; platform CI remains a merge gate. The current user request continues through 1.13, with a separate dependent PR per feature release. **Authoritative implementation roadmap:** this repository file, imported from the supplied r2 planning snapshot on 2026-09-11. Document revisions and application release versions are separate.
 
 **Purpose:** this file carries the product intent, engineering constraints, release scopes, completion gates, and working instructions into a new session. It consolidates the original feature attachment, architecture review, all nine later product suggestions, and the decision to add agent-supervised training. A fresh agent should not need the original chat to understand the work.
 
@@ -568,8 +568,9 @@ The product standard is simple: **every screen and every assistant should be abl
 all 159 package files and a fresh public install match verified main. The Mac's
 live service is running 1.9.2 and still discovers three Pi cameras; Pi installs
 were not changed. The 1.10 storage policy, transfer/catalog, producer integration,
-reviewed migration and dashboard are implemented in the working branch and under
-validation. Preview, lean-package and real-hardware capacity gates remain open.
+reviewed migration and dashboard are locally validated in PR #91. The complete
+Python suite, browser checks and fresh-package parity pass; final platform CI
+remains the merge gate. Preview, lean-package and real-hardware capacity gates remain open.
 The original 1.8.4 review below remains historical evidence.
 
 | Target | Workstream | Status | Evidence / next gate |
@@ -578,7 +579,7 @@ The original 1.8.4 review below remains historical evidence.
 | 1.8.6 | Dashboard dependency security | Validated; merged [PR #86](https://github.com/FactShin/TailCam/pull/86) | Local, package, and [final CI](https://github.com/FactShin/TailCam/actions/runs/34625628441) passed; [release notes](releases/1.8.6.md) |
 | 1.9.0 / 1.9.1 | Roles and installer | Foundation merged in [PR #87](https://github.com/FactShin/TailCam/pull/87) and [PR #88](https://github.com/FactShin/TailCam/pull/88) | 1.9.0 public release verified. The HTTP-only correction in [PR #89](https://github.com/FactShin/TailCam/pull/89) is merged; [PyPI 1.9.1](https://pypi.org/project/tailcam/1.9.1/) and a fresh public install are verified against all 157 package files from merged main. Shared setup, role-aware installers, hub container and publishing gates implemented. See [1.9.1 notes](releases/1.9.1.md) |
 | 1.9.2 | Runtime readiness | Released; [PR #90](https://github.com/FactShin/TailCam/pull/90) merged and PyPI verified | Six conservative task checks, CPU/RAM/media observations, explicit bounded Ollama inventory, passive Settings and safe fleet/health errors, and protection against older polling responses replacing explicit probe results. 919 Python tests and 17 browser tests passed; hardware, preview and lean-package gates remain open. See [1.9.2 notes](releases/1.9.2.md) |
-| 1.10.0 | Unified storage | In progress; implementation under validation | Real HTTP between isolated processes verifies capture-only remote snapshots, zero source JPEGs, offline catalog and receiver crash/resume. Migration, policy, security, producer and browser tests are implemented. See [release notes](releases/1.10.0.md) |
+| 1.10.0 | Unified storage | Locally validated; [PR #91](https://github.com/FactShin/TailCam/pull/91) | Real HTTP between isolated processes verifies capture-only remote snapshots, zero source JPEGs, offline catalog and receiver crash/resume. Migration, policy, security, producer and browser tests are implemented. See [release notes](releases/1.10.0.md) |
 | 1.11.0 | Workload routing + Training Supervisor | Planned | Durable jobs, enforced budgets, no model activation |
 | 1.12.0 | Timelapse projects | Planned | Long capture/re-render recovery |
 | 1.13.0 | Granular UI/settings/privacy | Planned | Effective settings, scope, source masks |
@@ -603,14 +604,14 @@ Update this record in the authoritative file before handing work back. Replace o
 |---|---|
 | Document revision/date | r9 / 2026-09-13 |
 | Last verified code baseline | main / ea6559678e0177e603b1d0db1919372f42e75d86 / 1.9.2; main CI, public wheel/sdist and fresh install verified |
-| Active implementation branch/PR | `feat/unified-storage-1.10.0`; PR pending final validation |
+| Active implementation branch/PR | `feat/unified-storage-1.10.0`; [PR #91](https://github.com/FactShin/TailCam/pull/91) |
 | Completed in this session | Validated and merged #90; verified automatic PyPI 1.9.2 publication and exact package contents; upgraded the live Mac preserving configuration and identity; implemented 1.10 with three parallel agents |
 | Current implementation target | Complete 1.10 validation and PR, then separate dependent 1.11, 1.12 and 1.13 PRs |
-| Implementation commit | Pending final validation/commit on `feat/unified-storage-1.10.0` |
+| Implementation commit | Implementation `4dd9bdd89f2f6af8dce8467f6b7ce713efc7ebb3`; see the PR head for evidence/documentation follow-ups |
 | Code changes in this roadmap session | Revisioned storage policy; stable artifact identities and legacy aliases; mount/quota/workspace admission; resumable transfer and retry worker; reviewed migration; all content producer integration; Storage UI; export-label/archive security fixes |
-| Validation evidence | Complete local suite: 1,118 Python tests passed, ten platform skips, three existing warnings; Ruff and mypy (142 files) passed. Thirty browser cases and TypeScript passed. Separate real processes prove capture-only remote snapshots with no source JPEGs and abrupt receiver restart/resume. Final bundle/package parity and PR CI are still being collected. |
+| Validation evidence | Complete local suite: 1,118 Python tests passed, ten platform skips, three existing warnings; Ruff and mypy (142 files) passed. Thirty browser cases and TypeScript passed. Separate real processes prove capture-only remote snapshots with no source JPEGs and abrupt receiver restart/resume. Clean wheel/sdist and strict Twine pass; fresh Python 3.11 install/dependency/API/hub/UUID checks pass. All 171 package files and 18 dashboard HTTP files match source/build/install. Platform CI is recorded on PR #91. |
 | Outstanding environment checks | Physical mount detachment, sustained Pi capture, real GPU/model backends and cross-OS live fleet remain hardware gates. The Mac 1.9.2 upgrade is observed; synthetic tests do not certify camera/GPU support. |
-| Exact next action | Finish full regression and independent 1.10 review, build/verify package, file its PR, then branch 1.11 workload routing and Training Supervisor from that reviewed feature branch. |
+| Exact next action | Check PR #91 exact-head platform CI; begin the separate dependent 1.11 workload-routing and Training Supervisor branch, preserving the 1.10 review boundary. |
 | Unresolved product decisions | Hardware capacity budgets, approved training datasets, task-specific model acceptance thresholds, current agent-host integration details |
 | Blockers | No implementation blocker. Unified Florence/Qwen fine-tuning rejects uncontrolled runtime caches until process containment; zero-local encoding/training requires owner execution in 1.11. |
 
