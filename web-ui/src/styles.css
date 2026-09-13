@@ -701,8 +701,31 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .node-device-detail { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
 .node-device-roles { font-size: 11px; line-height: 1.45; color: var(--faint); }
 .node-device > .kv-v { flex: none; }
+.node-readiness { grid-column: 1 / -1; min-width: 0; }
+.node-readiness .panel-title { margin-top: 0; }
+.readiness-node-select { max-width: 440px; margin-bottom: 18px; }
+.readiness-capacity { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding: 14px 0; border-top: 1px solid var(--hair); }
+.readiness-capacity > div { display: grid; align-content: start; gap: 5px; }
+.readiness-capacity > div:last-child { grid-column: 1 / -1; }
+.readiness-capacity strong { font-size: 14px; font-weight: 600; }
+.readiness-capacity span:not(.microlabel) { font-size: 12px; color: var(--muted); }
+.readiness-tasks { list-style: none; padding: 0; margin: 0; }
+.readiness-task { padding: 15px 0; border-top: 1px solid var(--hair); }
+.readiness-task-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.readiness-task-head h3 { margin: 0; font-size: 13.5px; font-weight: 650; line-height: 1.4; overflow-wrap: anywhere; }
+.readiness-task-head .badge { flex: none; }
+.readiness-task p { margin: 8px 0; font-size: 12.5px; line-height: 1.55; color: var(--muted); overflow-wrap: anywhere; }
+.readiness-muted { color: var(--muted); background: var(--bg2); }
+.readiness-task-time, .readiness-snapshot-time { color: var(--faint); font-size: 11px; line-height: 1.5; }
+.readiness-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+.readiness-stale { border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--border)); background: color-mix(in srgb, var(--warn) 8%, var(--bg1)); border-radius: 12px; padding: 12px; margin: 8px 0 14px; font-size: 12.5px; line-height: 1.5; }
+.readiness-stale strong { color: var(--warn); }
+.readiness-stale p { margin: 5px 0 0; overflow-wrap: anywhere; }
+.readiness-message, .readiness-probing { color: var(--muted); font-size: 13px; line-height: 1.5; }
 @container appframe (min-width: 680px) {
   .node-purpose-grid, .node-role-options { grid-template-columns: 1fr 1fr; }
+  .readiness-capacity { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .readiness-capacity > div:last-child { grid-column: auto; }
 }
 .badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
 .badge-ok { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); }

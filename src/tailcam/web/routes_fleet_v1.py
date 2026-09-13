@@ -5,7 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
+from anyio import to_thread
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import ValidationError
 
 from tailcam.management.audit import AuditLog
 from tailcam.security.principal import RequestPrincipal
@@ -40,11 +42,18 @@ async def node_capabilities(
     request: Request,
     ctx: AppContext = Depends(get_context),
     principal: RequestPrincipal = Depends(node_routes.get_principal),
+    probe: bool = False,
 ) -> NodeCapabilitiesInfo:
     if node_key == "local":
-        return node_routes.capabilities(principal, ctx)
-    data = await _relay_json(ctx, node_key, request, "GET", "/api/v1/node/capabilities")
-    return NodeCapabilitiesInfo.model_validate(data)
+        return await to_thread.run_sync(lambda: node_routes.capabilities(principal, ctx, probe))
+    data = await _relay_json(
+        ctx, node_key, request, "GET", "/api/v1/node/capabilities",
+        params={"probe": "true"} if probe else None,
+    )
+    try:
+        return NodeCapabilitiesInfo.model_validate(data)
+    except ValidationError:
+        raise HTTPException(status_code=502, detail="peer returned invalid capabilities") from None
 
 
 @router.get("/nodes/{node_key}/health", response_model=NodeHealthInfo)
@@ -143,9 +152,11 @@ async def _relay_json(
             timeout=5.0,
         )
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"peer unreachable: {exc}") from exc
+        raise HTTPException(status_code=502, detail="peer unreachable") from exc
     if response.status_code >= 400:
-        raise HTTPException(status_code=response.status_code, detail=_response_detail(response))
+        # Peer errors can contain credentials, endpoint URLs, or proxy pages.
+        # Preserve the status without reflecting untrusted upstream diagnostics.
+        raise HTTPException(status_code=response.status_code, detail="peer rejected the request")
     try:
         return response.json()
     except ValueError as exc:
@@ -160,13 +171,3 @@ def _relay_headers(request: Request) -> dict[str, str]:
             continue
         headers[key] = value
     return headers
-
-
-def _response_detail(response: httpx.Response) -> Any:
-    try:
-        data = response.json()
-    except ValueError:
-        return response.text or response.reason_phrase
-    if isinstance(data, dict) and "detail" in data:
-        return data["detail"]
-    return data

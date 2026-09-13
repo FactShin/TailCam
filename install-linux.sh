@@ -10,7 +10,7 @@ set -eu
 
 REPO="${TAILCAM_REPO:-factshin/tailcam}"
 REF="${TAILCAM_REF:-}"
-VERSION="${TAILCAM_VERSION:-1.9.1}"
+VERSION="${TAILCAM_VERSION:-1.9.2}"
 PRESET="${TAILCAM_PRESET:-}"
 NODE_NAME="${TAILCAM_NODE_NAME:-}"
 NONINTERACTIVE="${TAILCAM_INSTALL_NONINTERACTIVE:-0}"
@@ -68,7 +68,7 @@ while [ $# -gt 0 ]; do
         --desktop) DO_DESKTOP=1 ;;
         -h|--help)
             echo "Setup: --preset hub|camera|storage|compute|all-in-one --node-name NAME"
-            echo "Release: --version X.Y.Z (PyPI, default 1.9.1); --ref REF (explicit source override)"
+            echo "Release: --version X.Y.Z (PyPI, default 1.9.2); --ref REF (explicit source override)"
             echo "Automation: --non-interactive --no-color (no role or login prompts)"
             echo "Usage: install-linux.sh [--port N] [--ref REF] [--no-service] [--no-tailscale] [--no-tailscale-install] [--desktop]"
             echo "  --no-tailscale          skip everything Tailscale-related"

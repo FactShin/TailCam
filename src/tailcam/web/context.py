@@ -22,6 +22,7 @@ from tailcam.config import AIConfig, AppConfig
 from tailcam.integrations.homeassistant import MqttPublisher
 from tailcam.integrations.homekit import HomeKitBridge
 from tailcam.logging_setup import get_logger
+from tailcam.management.readiness import NodeReadinessService
 from tailcam.media.capture_router import CaptureRouter
 from tailcam.media.gallery import MediaGallery
 from tailcam.media.recorder import RecordingService
@@ -240,6 +241,7 @@ class AppContext:
         self._peer_online: dict[str, bool] = {}
         self._last_prune = 0.0
         self._last_rediscover = 0.0
+        self.readiness = NodeReadinessService(self)
 
     def has_role(self, role: str) -> bool:
         """Whether this running process was started with a local work role."""

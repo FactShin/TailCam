@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from tailcam.management.readiness import ReadinessSnapshot
 from tailcam.node import ROLE_NAMES
 from tailcam.security.principal import RequestPrincipal
 
@@ -19,6 +20,7 @@ class NodeCapabilitySet:
     node_id: str | None = None
     node_name: str | None = None
     node_roles: tuple[str, ...] | None = None
+    readiness: ReadinessSnapshot | None = None
 
 
 _CAPABILITIES = frozenset(
@@ -39,7 +41,9 @@ class NodeCapabilityService:
     def __init__(self, context: Any = None) -> None:
         self._context = context
 
-    def snapshot(self, principal: RequestPrincipal | None = None) -> NodeCapabilitySet:
+    def snapshot(
+        self, principal: RequestPrincipal | None = None, *, probe: bool = False,
+    ) -> NodeCapabilitySet:
         ctx = self._context
         roles = frozenset(ROLE_NAMES) if ctx is None else ctx.active_roles
         available = set(_CAPABILITIES)
@@ -60,4 +64,5 @@ class NodeCapabilityService:
             node_id=ctx.node_id if ctx is not None else None,
             node_name=ctx.config.node.name if ctx is not None else None,
             node_roles=tuple(role for role in ROLE_NAMES if role in roles),
+            readiness=ctx.readiness.snapshot(probe=probe) if ctx is not None else None,
         )

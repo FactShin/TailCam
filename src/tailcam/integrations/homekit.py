@@ -202,7 +202,17 @@ class HomeKitBridge:
         return ffmpeg_path()
 
     def ffmpeg_present(self) -> bool:
-        return self._ffmpeg() is not None
+        # Status is polled by Settings. The startup resolver can import imageio
+        # and chmod its bundled binary, so only inspect executable presence here.
+        configured = (self._cfg.ffmpeg or "ffmpeg").strip()
+        try:
+            if shutil.which(configured):
+                return True
+        except (OSError, ValueError):
+            pass
+        from tailcam.timelapse.ffmpeg import passive_ffmpeg_present
+
+        return passive_ffmpeg_present()
 
     @property
     def running(self) -> bool:

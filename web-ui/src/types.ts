@@ -83,6 +83,47 @@ export interface NodeConfigUpdate {
   roles?: string[];
 }
 
+export type ReadinessState = "ready" | "unavailable" | "disabled" | "unchecked";
+
+export interface NodeReadinessTask {
+  id: string;
+  label: string;
+  state: ReadinessState;
+  code: string;
+  detail: string;
+  checked_at: number;
+}
+
+export interface NodeReadiness {
+  checked_at: number;
+  capacity: {
+    cpu_count: number;
+    total_ram_bytes: number;
+    media_free_bytes: number | null;
+    media_total_bytes: number | null;
+    media_writable: boolean | null;
+  };
+  tasks: NodeReadinessTask[];
+  probe_supported: boolean;
+}
+
+export interface NodeCapabilities {
+  api_version: string;
+  capabilities: string[];
+  actions: string[];
+  principal: {
+    actor: string;
+    display_name: string | null;
+    source: string;
+    verified: boolean;
+    roles: string[];
+  };
+  node_id?: string | null;
+  node_name?: string | null;
+  node_roles?: string[] | null;
+  readiness?: NodeReadiness | null;
+}
+
 export interface CameraSettingsUpdate {
   name?: string;
   properties?: {

@@ -109,7 +109,7 @@ TailCam exposes a versioned management API:
 - `GET /api/v1/node/health` — full health snapshot (cameras, Tailscale, AI,
   update status, issues).
 - `GET /api/v1/node/capabilities` — what the node supports + the caller's
-  principal/roles.
+  principal/roles, active workload roles, and optional task readiness.
 - `GET /api/v1/node/audit` — audit log (admin only).
 - `GET/PATCH /api/v1/node/config` — read or save node name and workload roles
   (saving requires admin); role changes require a server restart. The UUID is read-only.
@@ -143,3 +143,16 @@ See [MCP tools](mcp-tools).
 Keep nodes on the same TailCam version where you can. `check_fleet_version_drift`
 flags laggards, and the dashboard shows an update banner when a newer release is
 available. Update a node with `tailcam update`.
+
+### Readiness across the fleet
+
+**Settings → Runtime readiness** selects a local node or discovered peer. Each
+node reports its own active roles and resource observations. Older peers remain
+usable and show readiness as not reported. A failed refresh retains the previous
+snapshot with a stale warning; successful checks on another device do not replace
+it. Task readiness is diagnostic and does not authorize, reserve, or route work.
+
+Add `?probe=true` to either capabilities endpoint for a bounded Ollama inventory
+check on that node. Without it, capability polling does not contact a model server.
+Management relays preserve upstream failure status but return generic errors so
+peer endpoint credentials and proxy error pages cannot leak into the dashboard.

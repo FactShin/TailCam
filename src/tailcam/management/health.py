@@ -135,7 +135,7 @@ class NodeHealthService:
                     code="ai.unreachable",
                     severity="warning",
                     summary="Configured Ollama endpoint is not reachable",
-                    detail=ctx.config.ai.base_url,
+                    detail="Check the configured analyzer endpoint on the Models page.",
                 )
             )
         elif ai_enabled and not ai_model_present:

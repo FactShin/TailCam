@@ -1,8 +1,8 @@
 # TailCam: source-of-truth update roadmap and implementation handoff
 
-Prepared for Wayne Scire · 12 September 2026 · Document revision **r7**
+Prepared for Wayne Scire · 12 September 2026 · Document revision **r8**
 
-**Status:** PRs #85–#87 are merged; the node identity/roles foundation is published as [PyPI 1.9.0](https://pypi.org/project/tailcam/1.9.0/). The installer and automatic publishing slice is in [PR #88](https://github.com/FactShin/TailCam/pull/88), with review fixes for dry-run preservation and verified startup/rollback. **Last verified main baseline:** 1.9.0 at `9bf041a078d69d60105981abca673f3a69631203`. **Publication:** PyPI latest is 1.9.0 as checked on 2026-09-12; 1.9.1 follows this PR’s successful main tests. **Authoritative implementation roadmap:** this repository file, imported from the supplied r2 planning snapshot on 2026-09-11. Document revisions and application release versions are separate.
+**Status:** PRs #85–#89 are merged. Role-aware installation and automatic publishing are on main as 1.9.1 at `24c9edcc5519f13b349e48f9f9b1be19447593ab`. [PR #89](https://github.com/FactShin/TailCam/pull/89) corrected unnecessary TLS initialization in the loopback startup verifier; [automatic publication](https://github.com/FactShin/TailCam/actions/runs/34711958991) and a fresh [PyPI 1.9.1](https://pypi.org/project/tailcam/1.9.1/) install are verified. The next bounded 1.9 milestone slice, task readiness, is implemented for 1.9.2 on `feat/runtime-readiness-1.9.2`. **Authoritative implementation roadmap:** this repository file, imported from the supplied r2 planning snapshot on 2026-09-11. Document revisions and application release versions are separate.
 
 **Purpose:** this file carries the product intent, engineering constraints, release scopes, completion gates, and working instructions into a new session. It consolidates the original feature attachment, architecture review, all nine later product suggestions, and the decision to add agent-supervised training. A fresh agent should not need the original chat to understand the work.
 
@@ -12,7 +12,7 @@ Read this section, the release table, and the selected release's detail before m
 
 1. **Establish the checkout.** Use `https://github.com/FactShin/TailCam`. Read applicable `AGENTS.md` and repository development instructions. Record branch, full HEAD SHA, working-tree changes, current runtime/dashboard/extension versions, recent releases, and relevant open PRs. Preserve unrelated work. Use an isolated branch/worktree when needed.
 2. **Reconcile progress.** Compare current code, merged PRs, and tests with this document's release ledger. Distinguish already shipped, partially implemented, unimplemented, and superseded work. Do not repeat an existing feature or label an old test result as a fresh run.
-3. **Choose the next bounded slice.** Start with the earliest unmet dependency. The 1.8.6 patch is merged. Complete the bounded 1.9.0 roles/identity and installer slices before starting unified storage. Do not implement the entire roadmap in one branch.
+3. **Choose the next bounded slice.** Start with the earliest unmet dependency. The role/identity and installer foundations are merged. Complete review of the bounded 1.9.2 readiness slice, then begin the 1.10 storage contract; retain preview, packaging and real-hardware gates as explicit follow-ups. Do not implement the entire roadmap in one branch.
 4. **Make a small implementation brief.** State the user's outcome, affected services/interfaces, existing behavior, proposed behavior, migration needs, acceptance checks, and expected version bump. Resolve ordinary implementation choices from this document and repository evidence. Ask only when a missing decision materially changes scope or introduces an irreversible action.
 5. **Implement vertically.** Complete the service/API behavior, persistence, UI or MCP path, documentation, and relevant tests together. Keep existing single-machine operation and optional-dependency behavior working.
 6. **Validate with evidence.** Run targeted regression tests for the changed behavior; satisfy current repository CI gates. Use separate processes and independent media roots for fleet/storage tests. Run platform/hardware checks when the release claims depend on them, or record them as outstanding and do not claim the release is ready.
@@ -64,7 +64,7 @@ what changed, what passed, what remains, and the exact next action.
 
 **Recommendation:** evolve TailCam into a private camera and automation system where each machine has an explicit job, every saved artifact has a known home, and AI agents and voice use the same dependable controls as the dashboard.
 
-The first storage/analysis repair is merged. Complete the dependency-security patch next, then build the shared foundation for device roles, storage placement, and workload routing. Voice becomes much more useful once that foundation can reliably answer, “What happened, where is the evidence, and what can I do about it?”
+The first storage/analysis repair, dependency-security patch, device roles and installer foundations are merged. Complete readiness verification next, then build unified storage placement and workload routing. Voice becomes much more useful once that foundation can reliably answer, “What happened, where is the evidence, and what can I do about it?”
 
 ## Review basis and limits
 
@@ -564,19 +564,20 @@ The product standard is simple: **every screen and every assistant should be abl
 
 ## 9. Progress ledger and handoff requirements
 
-**State as of document r7:** PRs #85, #86 and #87 are merged. The identity/roles
-foundation shipped as PyPI 1.9.0 on 2026-09-11 from main
-`9bf041a078d69d60105981abca673f3a69631203`; its public wheel/sdist and fresh install
-were verified. The next slice adds shared role-aware installer setup, a hub-only
-container, and test-gated automatic publishing for future version bumps. The full
-1.9 milestone still has readiness, preview, lean-package and hardware gates.
-The original 1.8.4 review below remains historical evidence.
+**State as of document r8:** PRs #85–#89 are merged. PR #88 passed all nine
+checks before merge at `0f0caedfadcaa665ab463a2c8bcb38df7cf36788`; corrective [PR #89](https://github.com/FactShin/TailCam/pull/89) then passed all five applicable
+checks and merged at `24c9edcc5519f13b349e48f9f9b1be19447593ab`. Version 1.9.1
+[automatic publication](https://github.com/FactShin/TailCam/actions/runs/34711958991) and a fresh public install are verified from that corrected main commit. Task-specific readiness and passive Settings checks
+are locally validated for 1.9.2. This is a diagnostic foundation, not hardware
+certification or work admission. Preview, lean-package and live-hardware gates
+remain open. The original 1.8.4 review below remains historical evidence.
 
 | Target | Workstream | Status | Evidence / next gate |
 |---|---|---|---|
 | 1.8.5 | Current routing fixes | Validated; merged [PR #85](https://github.com/FactShin/TailCam/pull/85) | Local checks and final CI passed; publication remains separate. See [release notes](releases/1.8.5.md) |
 | 1.8.6 | Dashboard dependency security | Validated; merged [PR #86](https://github.com/FactShin/TailCam/pull/86) | Local, package, and [final CI](https://github.com/FactShin/TailCam/actions/runs/34625628441) passed; [release notes](releases/1.8.6.md) |
-| 1.9.0 / 1.9.1 | Roles and installer | 1.9.0 released; 1.9.1 installer/release slice in [PR #88](https://github.com/FactShin/TailCam/pull/88) | [PR #87](https://github.com/FactShin/TailCam/pull/87) merged; [PyPI 1.9.0](https://pypi.org/project/tailcam/1.9.0/) verified. Shared setup, role-aware installers, hub container and publishing gates implemented for 1.9.1; richer readiness/preview/packaging remain open. See [1.9.1 notes](releases/1.9.1.md) |
+| 1.9.0 / 1.9.1 | Roles and installer | Foundation merged in [PR #87](https://github.com/FactShin/TailCam/pull/87) and [PR #88](https://github.com/FactShin/TailCam/pull/88) | 1.9.0 public release verified. The HTTP-only correction in [PR #89](https://github.com/FactShin/TailCam/pull/89) is merged; [PyPI 1.9.1](https://pypi.org/project/tailcam/1.9.1/) and a fresh public install are verified against all 157 package files from merged main. Shared setup, role-aware installers, hub container and publishing gates implemented. See [1.9.1 notes](releases/1.9.1.md) |
+| 1.9.2 | Runtime readiness | Locally validated; [PR #90](https://github.com/FactShin/TailCam/pull/90) awaits review | Six conservative task checks, CPU/RAM/media observations, explicit bounded Ollama inventory, passive Settings and safe fleet/health errors, and protection against older polling responses replacing explicit probe results. 919 Python tests and 17 browser tests passed; hardware, preview and lean-package gates remain open. See [1.9.2 notes](releases/1.9.2.md) |
 | 1.10.0 | Unified storage | Planned | Isolated multi-process artifact-transfer tests |
 | 1.11.0 | Workload routing + Training Supervisor | Planned | Durable jobs, enforced budgets, no model activation |
 | 1.12.0 | Timelapse projects | Planned | Long capture/re-render recovery |
@@ -600,18 +601,18 @@ Update this record in the authoritative file before handing work back. Replace o
 
 | Field | Current value |
 |---|---|
-| Document revision/date | r7 / 2026-09-12 |
-| Last verified code baseline | main / 9bf041a078d69d60105981abca673f3a69631203 / 1.9.0 |
-| Active implementation branch/PR | `feat/role-aware-installers-release`; [PR #88](https://github.com/FactShin/TailCam/pull/88) |
-| Completed in this session | Reconciled merged PR #87 and existing PR #88; reviewed setup/native/Docker/publishing paths with three subagents; corrected dry-run migration, invalid preserved ports, role-write ordering and startup rollback before merge |
-| Current implementation target | 1.9.1 role-aware installation; every future release PR keeps installer/package versions and publishing workflow current |
-| Implementation commit | `70363abc208071f0a984efbfc72238541b3e6428`; final checks tracked on PR #88 |
-| Code changes in this roadmap session | Shared setup and release automation retained; preview leaves legacy data untouched; effective ports validate; installers retain rollback until version/UUID/active roles match a local running service; Docker saves roles only after stopping the old process; unattended sudo and stale docs corrected |
-| Validation evidence | 761 Python tests passed, six Windows-only skips, three existing warnings; Ruff/mypy (128 files), shell syntax, nine browser tests, reproducible SPA builds and zero-vulnerability npm audit passed. Fresh 1.9.1 wheel/API/hub/UUID checks and all 18 asset hashes passed. Public PyPI 1.9.0 fresh-install API/asset/hub/UUID checks passed. See release notes and current PR checks for final package/platform results. |
+| Document revision/date | r8 / 2026-09-12 |
+| Last verified code baseline | main / 24c9edcc5519f13b349e48f9f9b1be19447593ab / 1.9.1; public PyPI wheel/sdist and fresh installation verified |
+| Active implementation branch/PR | `feat/runtime-readiness-1.9.2` / [PR #90](https://github.com/FactShin/TailCam/pull/90); follows merged #89 |
+| Completed in this session | Merged #88 after fixing dry-run migration, preserved ports, stopped rollback and startup verification; landed the HTTP-only startup correction in #89; continued with task readiness using three subagents for implementation and independent review |
+| Current implementation target | 1.9.2: complete the initial role-readiness diagnostic contract without starting optional workloads |
+| Implementation commit | See the latest head of `feat/runtime-readiness-1.9.2`; final package-source parity and PR checks govern review |
+| Code changes in this roadmap session | Optional capabilities readiness schema; passive local task/capacity snapshot; bounded explicit cached Ollama inventory in killable child processes (including stalled DNS); local/fleet Settings panel with legacy/error states; passive HomeKit FFmpeg status; sanitized health/fleet errors and malformed peer validation |
+| Validation evidence | 919 Python tests passed, ten Windows-only skips, three existing warnings; 151 focused readiness/probe tests passed. Ruff/mypy (130 files), 17 browser tests, TypeScript and zero-vulnerability npm audit passed. Two SPA builds matched all 18 files. Clean wheel/sdist, strict Twine, fresh wheel/API/hub/UUID checks and 159 package-file source parity passed. The installed child probe completed a single loopback inventory request. Final PR/platform CI is recorded on [PR #90](https://github.com/FactShin/TailCam/pull/90). |
 | Outstanding environment checks | Actual camera, Pi, GPU, voice, cross-OS live fleet and long-duration capture validation remain separate hardware gates |
-| Exact next action | Review and merge the installer/release PR after CI passes; verify automatic PyPI 1.9.1 publication, then implement richer runtime readiness and guided setup/preview |
+| Exact next action | Review PR #90 and its latest commit checks before merging 1.9.2. After readiness merges and publishes, start a bounded 1.10 storage policy/artifact catalog slice with isolated multi-process transfer tests. |
 | Unresolved product decisions | Hardware capacity budgets, approved training datasets, task-specific model acceptance thresholds, current agent-host integration details |
-| Blockers | No implementation blocker. The new publishing trigger activates only after merge. Hardware/preview/readiness gates remain open. |
+| Blockers | No implementation blocker. PR #90 awaits review; hardware/preview/lean-package work remain explicit follow-up gates. |
 
 ### Implementation-session completion checklist
 
@@ -639,6 +640,7 @@ Measure and record numeric Pi memory/CPU targets, maximum camera modes/counts, s
 | r5 | Records merged PR #86 and begins the 1.9.0 identity/roles foundation, explicitly separating installer, readiness, lean-package, and hardware gates |
 | r6 | Records merged PR #87, verified PyPI 1.9.0 publication, and the next shared installer / automated release slice for 1.9.1 |
 | r7 | Reconciles the existing installer PR, fixes setup dry-run and startup rollback gaps, and records exact-source review and release checks before continuing readiness work |
+| r8 | Records the verified installer merge, task readiness implementation and validation, passive Settings fixes, and credential-safe fleet diagnostics |
 
 ## Validation recorded for the original architecture review
 

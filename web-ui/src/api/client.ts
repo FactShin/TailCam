@@ -92,6 +92,12 @@ export const refreshCameras = () =>
 export const getHosts = () => jsonFetch<HostInfo[]>("/api/hosts");
 export const getSystem = () => jsonFetch<SystemInfo>("/api/system");
 export const getNodeConfig = () => jsonFetch<import("../types").NodeConfig>("/api/v1/node/config");
+export const getNodeCapabilities = (nodeKey: string, probe = false) => {
+  const path = nodeKey === "local"
+    ? "/api/v1/node/capabilities"
+    : `/api/v1/fleet/nodes/${encodeURIComponent(nodeKey)}/capabilities`;
+  return jsonFetch<import("../types").NodeCapabilities>(`${path}${probe ? "?probe=true" : ""}`, { cache: "no-store" });
+};
 export const updateNodeConfig = (body: import("../types").NodeConfigUpdate) =>
   jsonFetch<import("../types").NodeConfig>("/api/v1/node/config", {
     method: "PATCH",

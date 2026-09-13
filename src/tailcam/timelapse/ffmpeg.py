@@ -38,6 +38,34 @@ def output_quality_args(quality: str) -> tuple[str, str]:
         raise ValueError("quality must be standard, high, or maximum") from exc
 
 
+def passive_ffmpeg_present() -> bool:
+    """Inspect executable presence without importing, running or repairing FFmpeg.
+
+    This is suitable for status polling. Presence does not prove that the
+    binary runs or supports the codecs a particular job needs.
+    """
+    def executable(path: Path) -> bool:
+        return path.is_file() and os.access(path, os.X_OK)
+
+    try:
+        if shutil.which("ffmpeg"):
+            return True
+        if any(executable(Path(p)) for p in _KNOWN_BINARIES.get(sys.platform, [])):
+            return True
+        override = os.environ.get("IMAGEIO_FFMPEG_EXE")
+        if override:
+            return bool(shutil.which(override))
+        # A top-level spec lookup does not execute the package's __init__.
+        spec = importlib.util.find_spec("imageio_ffmpeg")
+        if spec and spec.origin:
+            return any(
+                executable(p) for p in (Path(spec.origin).parent / "binaries").glob("ffmpeg*")
+            )
+    except (ImportError, ValueError, OSError):
+        pass
+    return False
+
+
 def ffmpeg_path() -> str | None:
     """Resolve an ffmpeg executable: system PATH, known locations, then bundled."""
     found = shutil.which("ffmpeg")
