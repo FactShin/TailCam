@@ -26,6 +26,7 @@ from tailcam.storage.models import (
     MAX_CHUNK_BYTES,
     Admission,
     Artifact,
+    ArtifactPin,
     ContentKind,
     DestinationRef,
     RetentionPolicy,
@@ -35,6 +36,7 @@ from tailcam.storage.models import (
     Transfer,
     TransferManifest,
 )
+from tailcam.storage.pins import ArtifactPins
 from tailcam.storage.policy import destination_for
 from tailcam.storage.transfers import TransferReceiver, _digest, content_identity
 
@@ -112,12 +114,14 @@ class StorageService:
         self.role_check = role_check or (lambda: None)
         self.active_roles = frozenset(config.node.roles)
         self.catalog = ArtifactCatalog(store, self.node_id)
+        self.pins = ArtifactPins(self.catalog)
         self.locations = LocationRegistry(self.catalog)
         self.transfers = TransferReceiver(
             self.catalog,
             self.locations,
             role_check=self.role_check,
             max_artifact_bytes=lambda: self.get_policy().artifact_max_bytes,
+            pins=self.pins,
         )
         self._client = http_client
         self._retry_lock = threading.Lock()
@@ -193,8 +197,19 @@ class StorageService:
             ) from None
         return str(base).rstrip("/")
 
-    def _json(self, node_id: str, method: str, path: str, **kwargs) -> Any:
+    @staticmethod
+    def _remaining(deadline_at: float | None) -> float:
+        remaining = 5.0 if deadline_at is None else deadline_at - time.time()
+        if remaining <= 0:
+            raise StorageError("deadline_exceeded", "Input staging exceeded its deadline.", 408)
+        return min(5.0, remaining)
+
+    def _json(
+        self, node_id: str, method: str, path: str, *, deadline_at: float | None = None, **kwargs
+    ) -> Any:
         kwargs["headers"] = {"Accept-Encoding": "identity", **kwargs.get("headers", {})}
+        if deadline_at is not None:
+            kwargs["timeout"] = self._remaining(deadline_at)
         try:
             with self._http().stream(method, self._base(node_id) + path, **kwargs) as response:
                 if response.headers.get("content-encoding", "identity").lower() != "identity":
@@ -203,11 +218,13 @@ class StorageService:
                     )
                 body = bytearray()
                 for part in response.iter_bytes(chunk_size=65536):
+                    self._remaining(deadline_at)
                     if len(body) + len(part) > 2 * 1024 * 1024:
                         raise StorageError(
                             "invalid_peer_response", "Storage peer response is too large.", 502
                         )
                     body.extend(part)
+                self._remaining(deadline_at)
                 if response.status_code >= 300:
                     # Never expose peer URLs, proxy pages, credentials or untrusted exception text.
                     raise StorageError(
@@ -228,7 +245,23 @@ class StorageService:
     def _destination(self, target: DestinationRef, size: int) -> DestinationRef:
         if target.node_id == self.node_id:
             self.role_check()
-            location = self.locations.describe(target.location_id)
+            try:
+                location = self.locations.describe(target.location_id)
+            except StorageError as exc:
+                if exc.code != "location_missing" or target.location_id or self.enabled:
+                    raise
+                if "storage" not in self.active_roles:
+                    raise RoleDisabledError("storage") from None
+                # Legacy all-in-one installs have never registered their media root. Adopt
+                # it only on an actual write admission; explicit external roots must exist.
+                configured = self.config.storage.media_dir.strip()
+                root = (
+                    Path(configured).expanduser()
+                    if configured
+                    else self.store.db_path.parent / "media"
+                )
+                self.locations.register(str(root), label="Local media", create=not bool(configured))
+                location = self.locations.describe()
         else:
             body = self._json(target.node_id, "GET", "/api/v1/storage/locations")
             try:
@@ -761,6 +794,77 @@ class StorageService:
         self.locations.release(row["id"])
         return True
 
+    def workspace_for_task(
+        self, task: str, *, max_bytes: int, admission: Admission | None = None
+    ) -> WorkspaceLease:
+        """Explicit processor scratch; canonical destinations still use storage admission."""
+        role = "training" if task == "training" else "analysis"
+        if role not in self.active_roles:
+            raise RoleDisabledError(role)
+        if admission is None:
+            admission = self.task_workspace_admission(task, max_bytes=max_bytes)
+        return self.workspace(
+            admission.kind, max_bytes=max_bytes, admission=admission, _artifact_cache=True
+        )
+
+    def task_workspace_admission(self, task: str, *, max_bytes: int) -> Admission:
+        role = "training" if task == "training" else "analysis"
+        if role not in self.active_roles:
+            raise RoleDisabledError(role)
+        policy = self.get_policy()
+        if policy.zero_local_media or not 0 < max_bytes <= policy.workspace_max_bytes:
+            raise StorageError("workspace_forbidden", "Policy forbids the requested task scratch.")
+        return Admission(
+            kind="export",
+            destination=DestinationRef(node_id=self.node_id),
+            requested_destination=DestinationRef(node_id=self.node_id),
+            policy_revision=policy.revision,
+            outage_policy="destination_required",
+            max_bytes=policy.artifact_max_bytes,
+            workspace_allowed=True,
+            workspace_max_bytes=policy.workspace_max_bytes,
+        )
+
+    def materialize_ref(
+        self, reference, workspace_lease: WorkspaceLease, *, deadline_at: float | None = None
+    ) -> Path:
+        """Import verified metadata for a frozen input reference, then retrieve bounded bytes."""
+        from tailcam.jobs.models import ArtifactRef
+
+        self._remaining(deadline_at)
+        ref = ArtifactRef.model_validate(reference)
+        artifact = self.catalog.get(ref.artifact_id)
+        if artifact is None:
+            if ref.owner_node_id == self.node_id:
+                raise StorageError("artifact_missing", "Local input artifact does not exist.", 404)
+            try:
+                artifact = Artifact.model_validate(
+                    self._json(
+                        ref.owner_node_id,
+                        "GET",
+                        f"/api/v1/artifacts/{ref.artifact_id}",
+                        deadline_at=deadline_at,
+                    )
+                )
+            except (ValueError, TypeError):
+                raise StorageError(
+                    "invalid_peer_response", "Input metadata is invalid.", 502
+                ) from None
+            if ArtifactRef.from_artifact(artifact, ref.slot) != ref or artifact.state not in {
+                "committed",
+                "replicated",
+            }:
+                raise StorageError(
+                    "input_changed", "Input metadata differs from its frozen reference."
+                )
+            self.catalog.import_index(ref.owner_node_id, [artifact.model_dump(mode="json")])
+        if ArtifactRef.from_artifact(artifact, ref.slot) != ref or artifact.state not in {
+            "committed",
+            "replicated",
+        }:
+            raise StorageError("input_changed", "Input metadata differs from its frozen reference.")
+        return self.materialize(ref.artifact_id, workspace_lease, deadline_at=deadline_at)
+
     def resolve(self, artifact_id: str) -> Path:
         artifact = self.catalog.get(artifact_id)
         if artifact is None or artifact.state == "deleted":
@@ -778,7 +882,10 @@ class StorageService:
             )
         return path
 
-    def materialize(self, artifact_id: str, workspace_lease: WorkspaceLease) -> Path:
+    def materialize(
+        self, artifact_id: str, workspace_lease: WorkspaceLease, *, deadline_at: float | None = None
+    ) -> Path:
+        self._remaining(deadline_at)
         workspace_lease.check()
         artifact = self.catalog.get(artifact_id)
         if artifact is None or artifact.state == "deleted":
@@ -787,9 +894,14 @@ class StorageService:
 
         destination = workspace_lease.path / artifact_filename(artifact)
         if destination.exists():
+            digest, size = hashlib.sha256(), 0
             with destination.open("rb") as source:
-                size, existing_digest = _digest(source)
-            if (size, existing_digest) == (artifact.size_bytes, artifact.sha256):
+                while chunk := source.read(MAX_CHUNK_BYTES):
+                    self._remaining(deadline_at)
+                    size += len(chunk)
+                    digest.update(chunk)
+            self._remaining(deadline_at)
+            if (size, digest.hexdigest()) == (artifact.size_bytes, artifact.sha256):
                 return destination
             raise StorageError("workspace_conflict", "Cached artifact verification failed.")
         if workspace_lease.check() + artifact.size_bytes > workspace_lease.max_bytes:
@@ -803,6 +915,7 @@ class StorageService:
                 if artifact.owner_node_id == self.node_id:
                     with self.resolve(artifact_id).open("rb") as source:
                         while chunk := source.read(MAX_CHUNK_BYTES):
+                            self._remaining(deadline_at)
                             size += len(chunk)
                             if size > artifact.size_bytes:
                                 raise StorageError(
@@ -816,6 +929,7 @@ class StorageService:
                         self._base(artifact.owner_node_id)
                         + f"/api/v1/artifacts/{artifact_id}/content",
                         headers={"Accept-Encoding": "identity"},
+                        timeout=self._remaining(deadline_at),
                     ) as response:
                         if response.status_code != 200:
                             raise StorageError(
@@ -828,6 +942,7 @@ class StorageService:
                                 502,
                             )
                         for chunk in response.iter_bytes(chunk_size=MAX_CHUNK_BYTES):
+                            self._remaining(deadline_at)
                             size += len(chunk)
                             if size > artifact.size_bytes:
                                 raise StorageError(
@@ -835,8 +950,10 @@ class StorageService:
                                 )
                             digest.update(chunk)
                             target.write(chunk)
+                self._remaining(deadline_at)
                 target.flush()
                 os.fsync(target.fileno())
+            self._remaining(deadline_at)
             if size != artifact.size_bytes or digest.hexdigest() != artifact.sha256:
                 raise StorageError(
                     "checksum_mismatch", "Downloaded artifact verification failed.", 422
@@ -894,6 +1011,23 @@ class StorageService:
         return artifact
 
     def transfer_artifact(
+        self,
+        artifact_id: str,
+        destination: DestinationRef | dict[str, Any],
+        *,
+        remove_source: bool = False,
+        source_location_id: str | None = None,
+    ) -> Artifact:
+        with self.pins.guard(artifact_id):
+            self.pins.require_unpinned(artifact_id)
+            return self._transfer_artifact(
+                artifact_id,
+                destination,
+                remove_source=remove_source,
+                source_location_id=source_location_id,
+            )
+
+    def _transfer_artifact(
         self,
         artifact_id: str,
         destination: DestinationRef | dict[str, Any],
@@ -1019,6 +1153,7 @@ class StorageService:
 
     def _delete_preflight(self, artifact: Artifact) -> None:
         self.role_check()
+        self.pins.require_unpinned(artifact.artifact_id)
         if artifact.retention.protect:
             raise StorageError("artifact_protected", "Artifact is protected from deletion.")
         if artifact.owner_node_id != self.node_id:
@@ -1045,7 +1180,20 @@ class StorageService:
             self.catalog.save(artifact, self.catalog.local_path(artifact_id), connection=conn)
         return artifact
 
+    def pin_artifact(self, artifact_id: str, pin: ArtifactPin | dict) -> ArtifactPin:
+        self.role_check()
+        return self.pins.pin(artifact_id, pin)
+
+    def release_artifact_pin(
+        self, artifact_id: str, pin_id: str, *, coordinator_node_id: str
+    ) -> bool:
+        return self.pins.release(artifact_id, pin_id, coordinator_node_id)
+
     def delete(self, artifact_id: str) -> bool:
+        with self.pins.guard(artifact_id):
+            return self._delete(artifact_id)
+
+    def _delete(self, artifact_id: str) -> bool:
         artifact = self.catalog.get(artifact_id)
         if artifact is None or artifact.state == "deleted":
             return False
@@ -1237,8 +1385,10 @@ class StorageService:
             "AND json_extract(data,'$.retention.protect')=0 "
             "AND json_extract(data,'$.retention.max_age_seconds')>0 "
             "AND created + json_extract(data,'$.retention.max_age_seconds')<=? "
+            "AND NOT EXISTS (SELECT 1 FROM storage_artifact_pins p "
+            "WHERE p.artifact_id=storage_artifacts.id AND p.expires>?) "
             "ORDER BY created LIMIT ?",
-            (self.node_id, moment, max(1, min(limit, 1000))),
+            (self.node_id, moment, time.time(), max(1, min(limit, 1000))),
         ).fetchall()
         removed = 0
         for row in rows:

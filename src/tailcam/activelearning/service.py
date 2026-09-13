@@ -128,6 +128,7 @@ class ActiveLearningService:
         role_check: Callable[[], None] | None = None,
         analysis_check: Callable[[], None] | None = None,
         storage_service=None,
+        workload_service=None,
     ) -> None:
         self._manager = manager
         self._store = store
@@ -139,6 +140,7 @@ class ActiveLearningService:
         self._host = host
         self._role_check = role_check or (lambda: None)
         self._storage_service = storage_service
+        self._workload_service = workload_service
         self._storage_jobs: dict[int, ProducerWorkspace] = {}
         self._analysis_check = analysis_check or (lambda: None)
         self.label_studio = label_studio or LabelStudioService(self._config)
@@ -158,7 +160,8 @@ class ActiveLearningService:
         is left half-started.
         """
         self._role_check()
-        self._analysis_check()
+        if self._workload_service is None:
+            self._analysis_check()
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 raise ValueError("active learning is already running")
@@ -173,13 +176,19 @@ class ActiveLearningService:
             raise StorageError(
                 "workspace_forbidden", "Dataset labeling requires a bounded local workspace"
             )
-        backend = build_labeling_backend(
-            cfg.labeling_model,
-            self._store,
-            self._detector,
-            self._analyzer,
-            storage_service=self._storage_service,
-        )
+        backend: LabelingBackend | None
+        if self._workload_service is not None:
+            from tailcam.workloads.live import RoutedLabeler
+
+            backend = RoutedLabeler(self._workload_service, cfg.labeling_model)
+        else:
+            backend = build_labeling_backend(
+                cfg.labeling_model,
+                self._store,
+                self._detector,
+                self._analyzer,
+                storage_service=self._storage_service,
+            )
         if backend is None:
             raise ValueError(f"unknown labeling model '{cfg.labeling_model}'")
         info = backend.info()
@@ -652,7 +661,8 @@ class ActiveLearningService:
         but report through the same TrainingRunRecord, so progress and errors
         land in the familiar place.
         """
-        self._role_check()
+        if self._training._job_service is None:
+            self._role_check()
         cfg = self._config
         dataset_id = cfg.dataset_id
         if cfg.source.startswith("dataset:"):
@@ -664,6 +674,21 @@ class ActiveLearningService:
             return self._training.train(dataset_id, epochs=epochs)
         if target not in ("florence2", "qwen2.5-vl"):
             raise ValueError(f"unknown fine-tune target '{target}'")
+        if self._training._job_service is not None:
+            model = next((model for model in self._store.list_models()
+                          if model.base_model == target and (
+                              model.path or (self._storage_service is not None
+                                             and self._storage_service.catalog.resolve_alias(
+                                                 "model", str(model.id), "file") is not None)
+                          )), None)
+            if model is None:
+                from tailcam.jobs.models import JobError
+
+                raise JobError(
+                    "model_unavailable",
+                    "Vision model unavailable: register a preprovisioned model artifact.",
+                )
+            return self._training.train(dataset_id, base_model=f"model:{model.id}", epochs=epochs)
         if enabled(self._storage_service):
             from tailcam.storage.models import StorageError
 
@@ -713,6 +738,8 @@ class ActiveLearningService:
         return self._store.get_run(run.id)
 
     def stop_run(self, run_id: int) -> bool:
+        if self._training._job_service is not None:
+            return self._training.stop_run(run_id)
         with self._lock:
             stop = self._run_stops.get(run_id)
         if stop is None:

@@ -130,20 +130,55 @@ def test_hub_rejects_service_work_before_writing_or_starting_threads(node_contex
         ("analysis", lambda: ctx.training.register_byo("unused", "missing.pt")),
         ("analysis", lambda: ctx.training.activate_model(1)),
         ("training", lambda: ctx.training.delete_model(1)),
-        ("training", lambda: ctx.training.train(1)),
         ("training", ctx.active_learning.start),
         ("training", ctx.active_learning.sync),
-        ("training", ctx.active_learning.train),
     ]
-    for role, operation in operations:
-        with pytest.raises(RoleDisabledError) as exc:
+    for index, (role, operation) in enumerate(operations):
+        try:
             operation()
-        assert exc.value.role == role
+        except RoleDisabledError as exc:
+            assert exc.role == role
+        else:
+            pytest.fail(f"Service operation {index} did not enforce {role}")
     assert ctx.store.list_datasets() == []
     assert ctx.store.list_models() == []
     assert ctx.store.list_runs() == []
     assert ctx.timelapse_analysis._thread is None
     assert not ctx.pulls.status().active
+
+
+def test_hub_training_coordinator_refuses_local_worker_before_input_preparation(
+    node_context, monkeypatch
+):
+    from tailcam.jobs.models import JobError
+    from tailcam.persistence.models import DatasetRecord
+
+    ctx = node_context([])
+    # Missing input is a read-only coordinator lookup, even without local training.
+    assert ctx.training.train(999) is None
+    with pytest.raises(ValueError, match="no active-learning dataset"):
+        ctx.active_learning.train()
+    dataset = ctx.store.add_dataset(DatasetRecord(None, "Existing", "classification", 1))
+    monkeypatch.setattr(ctx.training, "dataset_review", _forbidden)
+    monkeypatch.setattr(ctx.training, "prepare_training_job", _forbidden)
+    with pytest.raises(JobError) as failure:
+        ctx.training.train(dataset, base_model="model:1")
+    assert failure.value.code == "worker_unavailable"
+    assert ctx.jobs.list() == []
+    assert ctx.store.list_runs() == []
+
+
+def test_capture_only_default_inference_refusal_does_not_escape_motion_callback(
+    node_context, monkeypatch
+):
+    ctx = node_context(["capture"])
+    monkeypatch.setattr(ctx.jobs.placement, "workers", _forbidden)
+    monkeypatch.setattr(ctx.storage_service, "put_bytes", _forbidden)
+    image = np.zeros((2, 2, 3), np.uint8)
+    assert ctx.inference.detect(image) is None
+    assert ctx.inference.analyze(image) is None
+    assert "analysis role is disabled" in ctx.inference.detection_note()
+    assert ctx.jobs.list() == []
 
 
 def test_training_role_does_not_enable_active_learning_inference(node_context, monkeypatch):
@@ -193,6 +228,40 @@ def test_capture_node_can_use_explicit_remote_detection_without_loading_models(
     assert ctx.inference.analyze(image) == "remote analysis"
     assert ctx.inference.detect(image) == []
     assert not ctx.detector.enabled
+
+
+def test_explicit_workload_route_replaces_legacy_detection_without_fallback(
+    node_context, monkeypatch
+):
+    from tailcam.jobs.models import JobError, TaskRoute, WorkerTarget
+
+    ctx = node_context(["capture"])
+    ctx.config.detection.node = "legacy-peer"
+    policy = ctx.jobs.get_policy()
+    policy.routes["live_detection"] = TaskRoute(target=WorkerTarget(node_id=ctx.node_id))
+    ctx.jobs.set_policy(policy, expected_revision=policy.revision)
+    monkeypatch.setattr(ctx.inference, "_remote", _forbidden)
+
+    def unavailable(*args, **kwargs):
+        raise JobError("worker_unavailable", "Selected worker is unavailable.")
+
+    monkeypatch.setattr(ctx.workloads, "detect", unavailable)
+    assert ctx.inference.detect(np.zeros((2, 2, 3), np.uint8)) is None
+    assert "Selected worker" in ctx.inference.detection_note()
+
+
+def test_legacy_detection_status_reports_only_observed_model_and_timing(node_context, monkeypatch):
+    ctx = node_context(["capture"])
+    ctx.config.detection.node = "legacy-peer"
+    status = {}
+    remote = SimpleNamespace(status=lambda: status)
+    monkeypatch.setattr(ctx.inference, "_remote", lambda: remote)
+    assert ctx.inference.workload_status("cam") == {}
+    status.update(model_name="Observed remote model", round_trip_ms=5.0, node="legacy-peer")
+    assert ctx.inference.workload_status("cam") == {
+        "model_name": "Observed remote model",
+        "round_trip_ms": 5.0,
+    }
 
 
 def test_timelapse_analysis_queue_is_lazy_and_reuses_one_worker():

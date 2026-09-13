@@ -14,6 +14,7 @@ import shutil
 from collections import defaultdict
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from tailcam.logging_setup import get_logger
 from tailcam.persistence.models import DatasetSampleRecord
@@ -32,6 +33,7 @@ def export_classification_dataset(
     min_per_class: int = 2,
     sample_resolver: Callable[[DatasetSampleRecord], Path] | None = None,
     copy_sample: Callable[[str, Path], None] | None = None,
+    split_seed: int = 1234,
 ) -> tuple[list[str], int, int]:
     """Lay out labeled samples as ``out_dir/{train,val}/<class>/*.jpg`` (the
     format Ultralytics classification expects). Returns (classes, n_train, n_val).
@@ -57,7 +59,7 @@ def export_classification_dataset(
     if out_dir.exists():
         shutil.rmtree(out_dir, ignore_errors=True)
     n_train = n_val = 0
-    rng = random.Random(1234)  # deterministic split
+    rng = random.Random(split_seed)  # deterministic frozen experiment split
     for cls in classes:
         items = list(by_class[cls])
         rng.shuffle(items)
@@ -89,6 +91,7 @@ def export_detection_dataset(
     min_boxes: int = 1,
     sample_resolver: Callable[[DatasetSampleRecord], Path] | None = None,
     copy_sample: Callable[[str, Path], None] | None = None,
+    split_seed: int = 1234,
 ) -> tuple[list[str], int, int]:
     """Lay out annotated samples as a YOLO *detection* dataset::
 
@@ -127,7 +130,7 @@ def export_detection_dataset(
         (out_dir / "images" / split).mkdir(parents=True, exist_ok=True)
         (out_dir / "labels" / split).mkdir(parents=True, exist_ok=True)
 
-    rng = random.Random(1234)  # deterministic split
+    rng = random.Random(split_seed)  # deterministic frozen experiment split
     rng.shuffle(annotated)
     n_val = max(1, int(len(annotated) * val_frac)) if len(annotated) > 1 else 0
     splits = {"val": annotated[:n_val], "train": annotated[n_val:]}
@@ -173,6 +176,7 @@ def train_model(
     should_stop: Callable[[], bool] | None = None,
     task: str = "classification",
     offline: bool = False,
+    seed: int | None = None,
 ) -> dict:
     """Fine-tune a YOLO model. Returns {'model_path', 'metrics'}.
 
@@ -199,12 +203,17 @@ def train_model(
     data = str(data_dir / "data.yaml") if task == "detection" else str(data_dir)
     # A preprovisioned unified job cannot trigger an AMP reference-model
     # download, plot-font download, or an unaccounted dataset image cache.
-    offline_options = {"amp": False, "plots": False, "cache": False} if offline else {}
+    offline_options: dict[str, Any] = (
+        {"amp": False, "plots": False, "cache": False, "workers": 0} if offline else {}
+    )
+    if seed is not None:
+        offline_options["seed"] = seed
     model.train(
         data=data,
         epochs=epochs,
         imgsz=imgsz,
-        device=None if device in ("cpu", "none") else device,
+        device=("cpu" if offline and device == "cpu"
+                else None if device in ("cpu", "none") else device),
         project=str(project_dir),
         name="train",
         exist_ok=True,

@@ -61,20 +61,38 @@ def coerce_printer_analysis(data: object) -> PrinterAnalysis | None:
 
 class PrinterAnalyzer:
     def __init__(
-        self, config: AIConfig, *, role_enabled: Callable[[], bool] | None = None
+        self,
+        config: AIConfig,
+        *,
+        role_enabled: Callable[[], bool] | None = None,
+        workload_service=None,
     ) -> None:
         self.config = config
         self._role_enabled = role_enabled or (lambda: True)
+        self._workload_service = workload_service
 
     def analyze_path(self, path: Path) -> PrinterAnalysis | None:
-        if not self._role_enabled():
+        if not self._admitted():
             return None
         image = cv2.imread(str(path))
         return self.analyze(image) if image is not None else None
 
     def analyze(self, image: np.ndarray) -> PrinterAnalysis | None:
+        if not self._admitted():
+            return None
+        if self._workload_service is not None:
+            from tailcam.jobs.models import JobError
+            from tailcam.node import RoleDisabledError
+
+            try:
+                result = self._workload_service.analyze(image, task="printer_analysis")
+                predictions = result.get("predictions", [])
+                return coerce_printer_analysis(predictions[0]) if predictions else None
+            except (JobError, RoleDisabledError):
+                return None
         if not self._role_enabled() or not self.config.enabled:
             return None
+
         h, w = image.shape[:2]
         if w > 1024:
             image = cv2.resize(image, (1024, max(1, int(h * 1024 / w))))
@@ -101,6 +119,18 @@ class PrinterAnalyzer:
             log.debug("Printer analysis failed: %s", exc)
             return None
 
+    def _admitted(self) -> bool:
+        if self._workload_service is None:
+            return self._role_enabled()
+        from tailcam.jobs.models import JobError
+        from tailcam.node import RoleDisabledError
+
+        try:
+            self._workload_service._plan("printer_analysis")
+            return True
+        except (JobError, RoleDisabledError):
+            return False
+
 
 class _Analyzer(Protocol):
     def analyze_path(self, path: Path) -> PrinterAnalysis | None: ...
@@ -126,7 +156,11 @@ class TimelapseAnalysisQueue:
         self._thread: threading.Thread | None = None
 
     def submit(self, timelapse_id: int, frame_number: int, evidence_path: Path) -> None:
-        self._role_check()
+        workloads = getattr(self._analyzer, "_workload_service", None)
+        if workloads is None:
+            self._role_check()
+        else:
+            workloads._plan("printer_analysis")
         with self._condition:
             if self._closed:
                 return
@@ -161,7 +195,7 @@ class TimelapseAnalysisQueue:
                 result = None
             if result is None:
                 result = PrinterAnalysis(
-                    "uncertain", 0.0, "Local printer analysis unavailable for this frame"
+                    "uncertain", 0.0, "Selected printer analysis unavailable for this frame"
                 )
             try:
                 self._store.add_timelapse_analysis_event(

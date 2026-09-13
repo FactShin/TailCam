@@ -408,16 +408,15 @@ def test_detection_api_roundtrip(client):
     client.post("/api/detection", json={"enabled": True})
 
 
-def test_detect_endpoint_serves_builtin_boxes(client):
+def test_detect_endpoint_serves_builtin_boxes(client, monkeypatch):
     ctx = client.app.state.ctx
-    det = ctx.detector
-    det._status = "ready"
-    det._engine = "opencv"
-    det._model_name = "yolov4-tiny"
-    det._net_model = object()
-    det._detect_opencv = lambda image: [Detection("person", 0.9, 0.5, 0.5, 0.2, 0.4)]
-
     cam_id = client.get("/api/cameras").json()[0]["id"]
+    monkeypatch.setattr(ctx.workloads, "detect", lambda image, **kw: {
+        "available": True, "outcome": "succeeded", "predictions": [{"boxes": [
+            {"label": "person", "confidence": .9, "cx": .5, "cy": .5, "w": .2, "h": .4}
+        ]}]
+    })
+    ctx.workloads._status[cam_id] = {"model_name": "yolov4-tiny", "worker_node_id": ctx.node_id}
     resp = client.post(f"/api/cameras/{cam_id}/detect")
     assert resp.status_code == 200
     body = resp.json()
@@ -428,14 +427,15 @@ def test_detect_endpoint_serves_builtin_boxes(client):
     assert body["boxes"][0]["confidence"] == pytest.approx(0.9)
 
 
-def test_detect_endpoint_reports_download_note(client):
-    ctx = client.app.state.ctx
-    ctx.detector._status = "downloading"
-    ctx.detector._percent = 55.0
-    ctx.detector._detail = "downloading yolov4-tiny.weights (23 MB)"
+def test_detect_endpoint_reports_worker_unavailable(client, monkeypatch):
+    from tailcam.jobs.models import JobError
 
+    ctx = client.app.state.ctx
+    def unavailable(image, **kwargs):
+        raise JobError("engine_unavailable", "Selected worker model is unavailable.")
+    monkeypatch.setattr(ctx.workloads, "detect", unavailable)
     cam_id = client.get("/api/cameras").json()[0]["id"]
     body = client.post(f"/api/cameras/{cam_id}/detect").json()
-    assert body["detector_active"] is True  # UI keeps polling
+    assert body["detector_active"] is False
     assert body["boxes"] == []
-    assert "55" in body["note"]
+    assert "unavailable" in body["note"]

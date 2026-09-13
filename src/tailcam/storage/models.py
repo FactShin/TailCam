@@ -193,6 +193,19 @@ class TransferManifest(Contract):
     retain_source: bool = False
 
 
+class ArtifactPin(Contract):
+    pin_id: str
+    coordinator_node_id: str
+    expires_at: float = Field(gt=0, allow_inf_nan=False)
+    sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    size_bytes: int = Field(ge=0, le=MAX_INTEGER)
+
+    @field_validator("pin_id", "coordinator_node_id")
+    @classmethod
+    def uuid_value(cls, value: str) -> str:
+        return str(UUID(value))
+
+
 class Transfer(Contract):
     transfer_id: str
     artifact_id: str

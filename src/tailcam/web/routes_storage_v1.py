@@ -18,6 +18,7 @@ from tailcam.storage.models import (
     MAX_CHUNK_BYTES,
     MAX_INTEGER,
     Artifact,
+    ArtifactPin,
     ArtifactState,
     ContentKind,
     Contract,
@@ -421,6 +422,67 @@ def delete_artifact(
     _=Depends(require_admin),
 ):
     return {"deleted": ctx.storage_service.delete(str(artifact_id))}
+
+
+async def _pin_coordinator(ctx: AppContext, coordinator_node_id: str) -> None:
+    if coordinator_node_id == ctx.node_id:
+        return
+    if ctx.storage_peers.is_approved_identity(coordinator_node_id):
+        return
+    resolved = await anyio.to_thread.run_sync(
+        lambda: ctx.storage_peers.resolve(coordinator_node_id)
+    )
+    if resolved is None:
+        raise HTTPException(403, "The coordinator must be an approved, bound TailCam peer")
+
+
+@router.post("/artifacts/{artifact_id}/pins")
+async def pin_artifact(
+    artifact_id: UUID,
+    request: Request,
+    ctx: AppContext = Depends(get_context),
+    principal: RequestPrincipal = Depends(require_admin),
+):
+    body = await _body(request, ArtifactPin)
+    await _pin_coordinator(ctx, body.coordinator_node_id)
+    saved = await anyio.to_thread.run_sync(
+        lambda: ctx.storage_service.pin_artifact(str(artifact_id), body)
+    )
+    AuditLog(ctx.store).record(
+        actor=principal.actor,
+        source=principal.source,
+        action="storage.pin",
+        target=str(artifact_id),
+        result="success",
+        detail="Bounded job retention hold accepted",
+    )
+    return saved
+
+
+@router.delete("/artifacts/{artifact_id}/pins/{pin_id}")
+async def release_artifact_pin(
+    artifact_id: UUID,
+    pin_id: UUID,
+    coordinator_node_id: UUID,
+    ctx: AppContext = Depends(get_context),
+    principal: RequestPrincipal = Depends(require_admin),
+):
+    coordinator = str(coordinator_node_id)
+    await _pin_coordinator(ctx, coordinator)
+    released = await anyio.to_thread.run_sync(
+        lambda: ctx.storage_service.release_artifact_pin(
+            str(artifact_id), str(pin_id), coordinator_node_id=coordinator
+        )
+    )
+    AuditLog(ctx.store).record(
+        actor=principal.actor,
+        source=principal.source,
+        action="storage.pin.release",
+        target=str(artifact_id),
+        result="success",
+        detail="Job retention hold release accepted",
+    )
+    return {"released": released}
 
 
 @router.patch("/artifacts/{artifact_id}/retention")

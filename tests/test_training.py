@@ -167,12 +167,15 @@ def test_export_needs_two_classes(context, tmp_path):
 
 
 def test_train_requires_engine(client, context, tmp_path):
-    # No torch/ultralytics in CI → starting a run is refused with 503.
+    # Direct legacy API still refuses absent local engines before starting a thread.
+    context.training._job_service = None
     did = _labeled_dataset(context, tmp_path)
     assert client.post("/api/training/runs", json={"dataset_id": did}).status_code == 503
 
 
 def test_train_lifecycle(client, context, monkeypatch, tmp_path):
+    # This test covers the legacy in-process adapter. Durable workers have separate tests.
+    context.training._job_service = None
     from tailcam.training import engine, runner
 
     monkeypatch.setattr(engine, "engine_available", lambda: True)

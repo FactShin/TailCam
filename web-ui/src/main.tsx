@@ -16,6 +16,7 @@ import { Plugins } from "./screens/Plugins";
 import { Settings } from "./screens/Settings";
 import { Storage } from "./screens/Storage";
 import { Timelapse } from "./screens/Timelapse";
+import { Workloads } from "./screens/Workloads";
 import "./styles.css";
 
 const queryClient = new QueryClient({
@@ -44,6 +45,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/plugins" element={<Plugins />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/storage" element={<Storage />} />
+              <Route path="/workloads" element={<Workloads />} />
               <Route path="/docs" element={<Docs />} />
               <Route path="/docs/:slug" element={<Docs />} />
               <Route path="*" element={<Navigate to="/" replace />} />

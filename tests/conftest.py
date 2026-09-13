@@ -4,6 +4,7 @@ import pytest
 
 # Force the synthetic camera source for the whole suite (no hardware needed).
 os.environ["TAILCAM_SYNTHETIC"] = "1"
+os.environ["TAILCAM_WORKER_OFFLINE"] = "1"
 # Deterministic host profile: the suite asserts the *standard* defaults, and a
 # small CI runner or a Pi must not flip them (tests that cover the low-power
 # profile set TAILCAM_LOW_POWER themselves).
@@ -78,5 +79,7 @@ def client(context):
     # SecurityMiddleware's Host allowlist accepts. TestClient's "testserver"
     # default is a hostname the anti-DNS-rebinding guard (correctly) rejects
     # for mutating requests.
-    with TestClient(app, base_url="http://localhost:8088") as c:
+    # Model a browser reaching the trusted local listener. Tests of remote or
+    # restricted principals construct their own explicit client and grants.
+    with TestClient(app, base_url="http://localhost:8088", client=("127.0.0.1", 51000)) as c:
         yield c

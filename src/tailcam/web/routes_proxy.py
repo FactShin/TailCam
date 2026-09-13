@@ -7,6 +7,7 @@ node that owns it, so the browser only ever talks to the node it opened.
 
 from __future__ import annotations
 
+import json
 from urllib.parse import unquote
 
 import httpx
@@ -16,6 +17,7 @@ from starlette.background import BackgroundTask
 
 from tailcam.web.context import AppContext
 from tailcam.web.deps import get_context
+from tailcam.web.legacy_admin import legacy_admin_request
 from tailcam.web.schemas import TimelapseInfo
 
 router = APIRouter()
@@ -83,6 +85,20 @@ async def proxy(
     key: str, path: str, request: Request, ctx: AppContext = Depends(get_context)
 ) -> Response:
     _validate_proxy_path(path)
+    body = await request.body()
+    storage_update = None
+    if request.method == "POST" and path.strip("/") == "api/storage":
+        try:
+            storage_update = json.loads(body)
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise HTTPException(status_code=400, detail="invalid storage update") from exc
+        if not isinstance(storage_update, dict):
+            raise HTTPException(status_code=400, detail="invalid storage update")
+    if legacy_admin_request(request.method, path, storage_update=storage_update):
+        raise HTTPException(
+            status_code=403,
+            detail="Administrative settings must be opened directly on the destination node",
+        )
 
     await ctx.cluster.peers()  # ensure discovery has run at least once
     base = ctx.cluster.peer_base(key)
@@ -90,7 +106,6 @@ async def proxy(
         raise HTTPException(status_code=404, detail="unknown host")
 
     client = ctx.cluster.client()
-    body = await request.body()
     upstream = client.build_request(
         request.method,
         f"{base}/{path}",

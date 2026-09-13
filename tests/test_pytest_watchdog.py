@@ -136,6 +136,9 @@ def test_windows_phases_keep_required_job_name_and_use_watchdog():
         "tests/test_storage_contracts.py", "tests/test_artifact_transfers.py",
         "tests/test_storage_http.py", "tests/test_storage_processes.py",
         "tests/test_training_export_security.py", "tests/test_pytest_watchdog.py",
+        "tests/test_workload_execution.py", "tests/test_artifact_pins.py",
+        "tests/test_training_supervisor.py", "tests/test_legacy_admin_security.py",
+        "tests/test_live_worker_readiness.py",
     ):
         assert required in commands, f"Windows coverage omitted {required}"
     assert len(commands) == len(set(commands)), "Windows phases must not duplicate test files"

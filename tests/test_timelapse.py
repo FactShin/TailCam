@@ -25,6 +25,7 @@ def service(context):
     cfg = context.config.timelapse
     cfg.default_interval_seconds = 0.1
     cfg.default_output_fps = 10
+    context.jobs.start()
     return context.timelapse
 
 
@@ -302,6 +303,8 @@ def _capture_complete(service, context):
 
 
 def test_smooth_rife_pipeline(service, context, monkeypatch):
+    # Exercise the legacy adapter whose RIFE boundary is mocked in this test.
+    service._job_service = None
     from pathlib import Path
 
     import cv2
@@ -332,6 +335,8 @@ def test_smooth_rife_pipeline(service, context, monkeypatch):
 
 
 def test_smooth_rife_unavailable_falls_back(service, context, monkeypatch):
+    # Exercise the legacy adapter whose RIFE boundary is mocked in this test.
+    service._job_service = None
     from tailcam.timelapse import service as svc_mod
 
     tl_id = _capture_complete(service, context)
@@ -342,6 +347,8 @@ def test_smooth_rife_unavailable_falls_back(service, context, monkeypatch):
 
 
 def test_smooth_rife_run_failure_falls_back(service, context, monkeypatch):
+    # Exercise the legacy adapter whose RIFE boundary is mocked in this test.
+    service._job_service = None
     from tailcam.timelapse import service as svc_mod
 
     tl_id = _capture_complete(service, context)
@@ -412,7 +419,7 @@ def test_timelapse_frames_follow_media_dir(service, context, tmp_path):
     assert Path(record.frames_dir).is_relative_to(custom / "timelapse")
     assert _wait(lambda: service.get(record.id).frames_captured >= 2)
     service.stop(record.id)
-    assert _wait(lambda: service.get(record.id).state == "complete")
+    assert _wait(lambda: service.get(record.id).state == "complete"), context.jobs.list()
     job_dir = Path(record.frames_dir).parent
     paths.set_media_override(None)  # location changed later — delete must still find it
     assert service.delete(record.id)

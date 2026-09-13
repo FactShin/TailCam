@@ -10,8 +10,10 @@ from tailcam.activelearning.backends import (
     platform_summary,
 )
 from tailcam.activelearning.labelstudio import LabelStudioError
+from tailcam.node import RoleDisabledError
 from tailcam.web.context import AppContext
 from tailcam.web.deps import get_context
+from tailcam.web.routes_node_v1 import require_admin
 from tailcam.web.schemas import (
     ActiveLearningInfo,
     ActiveLearningSettings,
@@ -63,8 +65,12 @@ def _info(ctx: AppContext) -> ActiveLearningInfo:
         review_empty_frames=cfg.review_empty_frames,
         dataset_id=dataset_id,
         max_review_per_session=cfg.max_review_per_session,
-        platform=platform_summary() if ctx.has_role("training") else {
-            "device": "disabled", "cuda": False, "mps": False,
+        platform=platform_summary()
+        if ctx.has_role("training")
+        else {
+            "device": "disabled",
+            "cuda": False,
+            "mps": False,
         },
         annotated_samples=annotated,
         dataset_version=version,
@@ -78,7 +84,7 @@ def active_learning_info(ctx: AppContext = Depends(get_context)) -> ActiveLearni
     return _info(ctx)
 
 
-@router.post("/settings", response_model=ActiveLearningInfo)
+@router.post("/settings", response_model=ActiveLearningInfo, dependencies=[Depends(require_admin)])
 def update_settings(
     body: ActiveLearningSettings, ctx: AppContext = Depends(get_context)
 ) -> ActiveLearningInfo:
@@ -117,13 +123,16 @@ def update_settings(
     return _info(ctx)
 
 
-@router.post("/start", response_model=ActiveLearningInfo)
+@router.post("/start", response_model=ActiveLearningInfo, dependencies=[Depends(require_admin)])
 def start(ctx: AppContext = Depends(get_context)) -> ActiveLearningInfo:
     """Start the watch → pre-label → review loop with the saved settings."""
     ctx.require_role("training")
-    ctx.require_role("analysis")
+    if ctx.active_learning._workload_service is None:
+        ctx.require_role("analysis")
     try:
         ctx.active_learning.start()
+    except RoleDisabledError:
+        raise
     except LabelStudioError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (ValueError, RuntimeError) as exc:
@@ -131,7 +140,7 @@ def start(ctx: AppContext = Depends(get_context)) -> ActiveLearningInfo:
     return _info(ctx)
 
 
-@router.post("/stop", response_model=ActiveLearningInfo)
+@router.post("/stop", response_model=ActiveLearningInfo, dependencies=[Depends(require_admin)])
 def stop(ctx: AppContext = Depends(get_context)) -> ActiveLearningInfo:
     ctx.active_learning.stop()
     return _info(ctx)
@@ -143,7 +152,10 @@ def labeling_backends(ctx: AppContext = Depends(get_context)) -> list[LabelingBa
     if not ctx.has_role("training") or not ctx.has_role("analysis"):
         return []
     infos = list_labeling_backends(
-        ctx.store, ctx.detector, ctx.analyzer, storage_service=ctx.storage_service,
+        ctx.store,
+        ctx.detector,
+        ctx.analyzer,
+        storage_service=ctx.storage_service,
     )
     return [LabelingBackendInfo(**vars(i)) for i in infos]
 
@@ -157,7 +169,11 @@ def finetune_backends(ctx: AppContext = Depends(get_context)) -> list[FinetuneBa
     return [FinetuneBackendInfo(**vars(i)) for i in infos]
 
 
-@router.post("/labelstudio/test", response_model=LabelStudioStatusInfo)
+@router.post(
+    "/labelstudio/test",
+    response_model=LabelStudioStatusInfo,
+    dependencies=[Depends(require_admin)],
+)
 def test_label_studio(ctx: AppContext = Depends(get_context)) -> LabelStudioStatusInfo:
     """Probe the configured Label Studio server + token."""
     ctx.require_role("training")
@@ -177,7 +193,11 @@ def label_studio_projects(
     return [LabelStudioProjectInfo(**p) for p in projects]
 
 
-@router.post("/sync", response_model=ActiveLearningSyncResult)
+@router.post(
+    "/sync",
+    response_model=ActiveLearningSyncResult,
+    dependencies=[Depends(require_admin)],
+)
 def sync_annotations(ctx: AppContext = Depends(get_context)) -> ActiveLearningSyncResult:
     """Pull completed Label Studio annotations back onto their samples."""
     ctx.require_role("training")
@@ -188,14 +208,17 @@ def sync_annotations(ctx: AppContext = Depends(get_context)) -> ActiveLearningSy
     return ActiveLearningSyncResult(**result)
 
 
-@router.post("/train", response_model=TrainingRunInfo)
+@router.post("/train", response_model=TrainingRunInfo, dependencies=[Depends(require_admin)])
 def start_finetune(
     body: ActiveLearningTrainRequest, ctx: AppContext = Depends(get_context)
 ) -> TrainingRunInfo:
-    """Fine-tune the configured target model on the accumulated dataset."""
-    ctx.require_role("training")
+    """Fine-tune on the selected worker, retaining the standalone local role guard."""
+    if ctx.training._job_service is None:
+        ctx.require_role("training")
     try:
         run = ctx.active_learning.train(epochs=body.epochs)
+    except RoleDisabledError:
+        raise
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -207,7 +230,11 @@ def start_finetune(
     return _run_info(run)
 
 
-@router.post("/runs/{run_id}/stop", response_model=OkResponse)
+@router.post(
+    "/runs/{run_id}/stop",
+    response_model=OkResponse,
+    dependencies=[Depends(require_admin)],
+)
 def stop_finetune(run_id: int, ctx: AppContext = Depends(get_context)) -> OkResponse:
     """Stop a Florence-2/Qwen fine-tune run (YOLO runs stop via /api/training)."""
     if not ctx.active_learning.stop_run(run_id) and not ctx.training.stop_run(run_id):

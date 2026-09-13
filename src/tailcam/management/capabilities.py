@@ -36,6 +36,10 @@ _CAPABILITIES = frozenset(
         "storage.policy.v1",
         "storage.transfers.v1",
         "storage.migration.v1",
+        "workloads.placement.v1",
+        "workloads.worker.v1",
+        "jobs.v1",
+        "training.supervision.v1",
     }
 )
 _ACTIONS = frozenset({"reload"})
@@ -59,6 +63,8 @@ class NodeCapabilityService:
             available.difference_update({"storage.transfers.v1", "storage.migration.v1"})
         if "analysis" not in roles:
             available.discard("ai.ollama.status")
+        if not roles.intersection({"analysis", "training"}):
+            available.discard("workloads.worker.v1")
         return NodeCapabilitySet(
             api_version="1",
             capabilities=frozenset(available),

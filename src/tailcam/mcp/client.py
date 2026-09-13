@@ -18,11 +18,13 @@ from __future__ import annotations
 import re
 from typing import Any
 from urllib.parse import quote
+from uuid import UUID
 
 import httpx
 
 from tailcam.mcp import errors
 from tailcam.mcp.errors import TailcamMcpError
+from tailcam.security.principal import RequestPrincipal
 
 # Default node URL for local stdio when TAILCAM_URL is unset.
 DEFAULT_URL = "http://127.0.0.1:8088"
@@ -33,10 +35,10 @@ def _cam_path(camera_id: str) -> str:
     # Camera ids can be path-like (e.g. ``/dev/video0``); the routes use a
     # ``:path`` converter, so keep slashes literal and only escape the rest.
     #
-    # Security: the in-process transport calls back into the app as trusted
-    # loopback-admin, and httpx applies RFC 3986 dot-segment removal when joining
-    # paths. A camera id like ``../v1/node/audit`` would collapse to an admin
-    # endpoint and bypass the MCP role gate. Reject traversal segments outright;
+    # Security: httpx applies RFC 3986 dot-segment removal when joining paths.
+    # A camera id like ``../v1/node/audit`` would select a different endpoint.
+    # The in-process transport preserves the caller's principal, and traversal
+    # rejection also keeps every tool within its intended endpoint. Reject these segments;
     # no legitimate camera id contains a ``.`` or ``..`` path segment.
     if any(segment in (".", "..") for segment in camera_id.split("/")):
         raise TailcamMcpError(errors.CAMERA_UNKNOWN, "invalid camera id", status_code=404)
@@ -74,18 +76,24 @@ class TailcamClient:
         return cls(http, owns_client=True)
 
     @classmethod
-    def for_app(cls, app: Any, *, timeout: float = _DEFAULT_TIMEOUT) -> TailcamClient:
-        # ASGITransport's default client is ("127.0.0.1", 123): the principal
-        # parser treats in-process calls as trusted loopback, so tools can
-        # execute against the node while the MCP layer does its own role checks.
-        transport = httpx.ASGITransport(app=app)
+    def for_app(
+        cls,
+        app: Any,
+        *,
+        timeout: float = _DEFAULT_TIMEOUT,
+        principal: RequestPrincipal | None = None,
+    ) -> TailcamClient:
+        async def scoped_app(scope, receive, send):
+            if principal is not None:
+                scope = {**scope, "tailcam.internal_principal": principal}
+            await app(scope, receive, send)
+
+        transport = httpx.ASGITransport(app=scoped_app)
         # base_url host must be loopback: it becomes the Host header, and
         # SecurityMiddleware's anti-DNS-rebinding guard only allows localhost /
         # IP-literal / *.ts.net hosts on mutating requests (write tools like
         # snapshot/record would otherwise be blocked with 403).
-        http = httpx.AsyncClient(
-            transport=transport, base_url="http://127.0.0.1", timeout=timeout
-        )
+        http = httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1", timeout=timeout)
         return cls(http, owns_client=True)
 
     async def aclose(self) -> None:
@@ -102,9 +110,7 @@ class TailcamClient:
         json: Any | None = None,
     ) -> Any:
         try:
-            response = await self._http.request(
-                method, path, params=_clean(params), json=json
-            )
+            response = await self._http.request(method, path, params=_clean(params), json=json)
         except httpx.ConnectError as exc:
             raise TailcamMcpError(
                 errors.NOT_RUNNING,
@@ -168,9 +174,7 @@ class TailcamClient:
         )
 
     async def reload_node(self, node_key: str) -> dict[str, Any]:
-        return await self.post(
-            f"/api/v1/fleet/nodes/{quote(node_key, safe='')}/actions/reload"
-        )
+        return await self.post(f"/api/v1/fleet/nodes/{quote(node_key, safe='')}/actions/reload")
 
     # -- cameras -----------------------------------------------------------
     async def cameras(self, *, scope: str = "all") -> list[dict[str, Any]]:
@@ -182,9 +186,7 @@ class TailcamClient:
     async def update_camera(
         self, camera_id: str, body: dict[str, Any], *, prefix: str = ""
     ) -> dict[str, Any]:
-        return await self.patch(
-            f"{_proxy(prefix)}/api/cameras/{_cam_path(camera_id)}", json=body
-        )
+        return await self.patch(f"{_proxy(prefix)}/api/cameras/{_cam_path(camera_id)}", json=body)
 
     async def restart_camera(self, camera_id: str, *, prefix: str = "") -> dict[str, Any]:
         return await self.post(f"{_proxy(prefix)}/api/cameras/{_cam_path(camera_id)}/restart")
@@ -321,6 +323,51 @@ class TailcamClient:
 
     async def stop_run(self, run_id: int) -> dict[str, Any]:
         return await self.post(f"/api/training/runs/{int(run_id)}/stop")
+
+    # -- durable training supervision -------------------------------------
+    async def dataset_revision(self, dataset_id: int) -> dict[str, Any]:
+        return await self.get(f"/api/v1/training/datasets/{int(dataset_id)}/revision")
+
+    async def supervisions(self, *, cursor: int = 0, limit: int = 50) -> dict[str, Any]:
+        return await self.get(
+            "/api/v1/training/supervisions", params={"cursor": cursor, "limit": limit}
+        )
+
+    async def approve_supervision(self, body: dict[str, Any]) -> dict[str, Any]:
+        return await self.post("/api/v1/training/supervisions", json=body)
+
+    async def supervision(self, supervision_id: str) -> dict[str, Any]:
+        return await self.get(f"/api/v1/training/supervisions/{UUID(supervision_id)}")
+
+    async def supervision_experiment(
+        self, supervision_id: str, body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await self.post(
+            f"/api/v1/training/supervisions/{UUID(supervision_id)}/experiments", json=body
+        )
+
+    async def supervision_heartbeat(
+        self, supervision_id: str, body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await self.post(
+            f"/api/v1/training/supervisions/{UUID(supervision_id)}/heartbeat", json=body
+        )
+
+    async def stop_supervision(self, supervision_id: str) -> dict[str, Any]:
+        return await self.post(f"/api/v1/training/supervisions/{UUID(supervision_id)}/stop")
+
+    async def finish_supervision(self, supervision_id: str, reason: str) -> dict[str, Any]:
+        return await self.post(
+            f"/api/v1/training/supervisions/{UUID(supervision_id)}/finish", json={"reason": reason}
+        )
+
+    async def supervision_report(self, supervision_id: str) -> dict[str, Any]:
+        return await self.get(f"/api/v1/training/supervisions/{UUID(supervision_id)}/report")
+
+    async def supervision_events(self, supervision_id: str, after: int = 0) -> dict[str, Any]:
+        return await self.get(
+            f"/api/v1/training/supervisions/{UUID(supervision_id)}/events", params={"after": after}
+        )
 
 
 def _clean(params: dict[str, Any] | None) -> dict[str, Any] | None:

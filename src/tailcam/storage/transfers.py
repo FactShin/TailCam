@@ -102,11 +102,17 @@ class TransferReceiver:
         *,
         role_check=None,
         max_artifact_bytes=None,
+        pins=None,
     ) -> None:
         self.catalog = catalog
         self.locations = locations
         self.role_check = role_check or (lambda: None)
         self.max_artifact_bytes = max_artifact_bytes or (lambda: 16 * 1024**3)
+        if pins is None:
+            from tailcam.storage.pins import ArtifactPins
+
+            pins = ArtifactPins(catalog)
+        self.pins = pins
 
     def _row(self, transfer_id: str):
         try:
@@ -269,6 +275,11 @@ class TransferReceiver:
         return transfer
 
     def commit(self, transfer_id: str) -> Artifact:
+        artifact_id = self.status(transfer_id).artifact_id
+        with self.pins.guard(artifact_id):
+            return self._commit(transfer_id)
+
+    def _commit(self, transfer_id: str) -> Artifact:
         self.role_check()
         with self.catalog.transaction() as conn:
             transfer = self.status(transfer_id)
@@ -282,6 +293,7 @@ class TransferReceiver:
                 raise StorageError(
                     "transfer_incomplete", "All declared bytes must arrive before commit."
                 )
+            self.pins.require_unpinned(transfer.artifact_id)
             with self.locations.root_handle(transfer.location_id) as (root, root_fd):
                 incoming = f".tailcam-incoming-{transfer.transfer_id}"
                 final = artifact_filename(manifest.artifact)

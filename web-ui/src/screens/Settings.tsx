@@ -48,6 +48,7 @@ export function Settings() {
       <div className="settings-grid">
         <NodePurposePanel />
         <NodeReadinessPanel />
+        <div className="panel"><div className="panel-title">Workload placement</div><p className="workload-help">Choose approved workers and per-task budgets, then follow jobs through completion.</p><a className="btn btn-outline btn-md" href="/workloads">Open Workloads</a></div>
         <div className="panel">
           <div className="panel-title"><IconInfo size={16} /> System</div>
           <div className="kv"><span className="kv-k">Version</span><span className="kv-v mono">TailCam {sys.version}</span></div>
@@ -96,7 +97,7 @@ export function Settings() {
             Configure motion labels, object detection, and models in AI Studio.
             Runtime readiness above shows current task checks.
           </p>
-          <a className="btn btn-outline" href="/ai">Open AI Studio</a>
+          <a className="btn btn-outline btn-md" href="/ai">Open AI Studio</a>
         </div>
 
         <div className="panel">

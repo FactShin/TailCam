@@ -11,6 +11,7 @@ import {
   useDeleteDataset,
   useDeleteSample,
   useImportEvents,
+  useModels,
   useRelabelSample,
   useRuns,
   useSamples,
@@ -54,6 +55,7 @@ export function AiTrainingTab() {
 
   return (
     <>
+      <div className="panel"><div className="workload-heading"><div><b>Bounded training experiments</b><p className="workload-help">Approve a reviewed dataset, allowed workers and finite experiment budget, then compare candidates without activating them.</p></div><a className="btn btn-outline btn-md" href="/workloads?tab=supervisor">Open Training Supervisor</a></div></div>
       <div className="panel ais-flow">
         {steps.map((s, i) => (
           <div key={s.n} className="ais-flow-item">
@@ -386,11 +388,12 @@ function SampleGrid({
 
 // ---------------------------------------------------------------- 3. Train
 function TrainPanel({ datasets, engineOk }: { datasets: DatasetInfo[]; engineOk: boolean }) {
-  const t = useTraining().data;
+  const models = useModels();
   const start = useStartRun();
   const toast = useToast();
   const [did, setDid] = useState(0);
   const [epochs, setEpochs] = useState(30);
+  const [baseModelId, setBaseModelId] = useState(0);
 
   useEffect(() => {
     if (!did && datasets.length) setDid(datasets[0].id);
@@ -400,33 +403,37 @@ function TrainPanel({ datasets, engineOk }: { datasets: DatasetInfo[]; engineOk:
   const detection = ds?.task === "detection";
   const classes = labeledClassCount(ds);
   const ready = detection ? (ds?.annotated_count ?? 0) >= 1 : classes >= 2;
-  const canTrain = engineOk && ready && !start.isPending;
+  const candidates = (models.data ?? []).filter(model => model.task === ds?.task && model.has_artifact);
+  const selectedModel = candidates.find(model => model.id === baseModelId);
+  const canTrain = ready && !!selectedModel && !models.isError && !start.isPending;
 
   const onTrain = async () => {
+    if (!canTrain || !selectedModel) return;
     try {
-      await start.mutateAsync({ dataset_id: did, epochs });
-      toast.ok("Training started");
+      await start.mutateAsync({ dataset_id: did, epochs, base_model: `model:${selectedModel.id}` });
+      toast.ok("Training queued");
     } catch (e) {
       toast.err(e instanceof Error ? e.message : "Could not start training");
     }
   };
 
   return (
-    <div className="panel">
+    <div className="panel manual-training-panel">
       <div className="panel-title">
         <IconBolt size={16} /> 3 · Train a model
         <span style={{ flex: 1 }} />
         {engineOk ? (
-          <span className="badge badge-ok"><span className="pill-dot" style={{ background: "var(--ok)" }} /> Engine ready · {t?.device?.toUpperCase()}</span>
+          <span className="badge">Local training package installed</span>
         ) : (
-          <span className="badge badge-warn"><span className="pill-dot" style={{ background: "var(--warn)" }} /> Engine not installed</span>
+          <span className="badge badge-warn">Local training package unavailable</span>
         )}
       </div>
       <p className="engine-intro">
-        Fine-tune a model on a labeled dataset. When done it appears under <b>Models → Your models</b> —
-        activate it there to analyze your cameras with your own model.
+        Fine-tune registered weights on a labeled dataset using your training placement policy. The
+        worker checks runtime and resource availability before admission. Completed models appear
+        under <b>Models → Your models</b> for a separate activation decision.
       </p>
-      <div className="ai-form" style={{ gridTemplateColumns: "1.4fr 1fr auto" }}>
+      <div className="workload-form-grid">
         <label className="tl-field">
           <span className="microlabel">Dataset</span>
           <select className="tl-select" value={did} onChange={(e) => setDid(Number(e.target.value))}>
@@ -441,6 +448,14 @@ function TrainPanel({ datasets, engineOk }: { datasets: DatasetInfo[]; engineOk:
           </select>
         </label>
         <label className="tl-field">
+          <span className="microlabel">Registered base model</span>
+          <select className="tl-select" aria-label="Registered training base model" value={selectedModel?.id ?? 0}
+            disabled={models.isPending || models.isError || start.isPending} onChange={event => setBaseModelId(Number(event.target.value))}>
+            <option value={0}>{models.isPending ? "Loading registered models…" : "Choose registered weights"}</option>
+            {candidates.map(model => <option key={model.id} value={model.id}>{model.name} · #{model.id}</option>)}
+          </select>
+        </label>
+        <label className="tl-field">
           <span className="microlabel">Epochs</span>
           <input className="tl-input" type="number" min={1} max={300} value={epochs}
             onChange={(e) => setEpochs(Math.max(1, Math.min(300, Number(e.target.value) || 1)))} />
@@ -451,12 +466,10 @@ function TrainPanel({ datasets, engineOk }: { datasets: DatasetInfo[]; engineOk:
           </Button>
         </div>
       </div>
-      {!engineOk ? (
-        <span className="help-foot mono">
-          Training runs on your Mac/Windows GPU — install the optional engine there:{" "}
-          <span className="lit">pip install "tailcam[training]"</span>. Collection and labeling work without it.
-        </span>
-      ) : !ready ? (
+      <p className="help-foot">Training does not download default weights. <a href="/ai?tab=models" className="lit">Import an existing .pt model in Models</a> for this dataset's task. <a href="/workloads?tab=placement" className="lit">Review training placement</a> or <a href="/workloads?tab=jobs" className="lit">monitor worker jobs</a>.</p>
+      {models.isError && <p className="help-foot" role="alert">Registered models could not be refreshed. <Button size="sm" onClick={() => models.refetch()}>Retry registered models</Button></p>}
+      {!models.isPending && !models.isError && !candidates.length && <p className="help-foot">No registered {ds?.task ?? "matching"} model reports stored weights. Import weights before training.</p>}
+      {!ready ? (
         <span className="help-foot mono">
           {detection
             ? "Annotate at least one sample with a bounding box (above) before training."

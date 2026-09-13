@@ -12,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 
 from tailcam import paths
 from tailcam.config import AppConfig
+from tailcam.jobs.models import JobError
 from tailcam.media.capture_router import CaptureRoutingError
 from tailcam.node import RoleDisabledError
 from tailcam.storage.models import StorageError
@@ -64,6 +65,12 @@ def create_app(config: AppConfig | None = None, context: AppContext | None = Non
             status_code=exc.status_code, content={"detail": exc.detail, "code": exc.code},
         )
 
+    @app.exception_handler(JobError)
+    async def job_rejected(_request: Request, exc: JobError) -> JSONResponse:
+        return JSONResponse(
+            status_code=exc.status_code, content={"detail": exc.detail, "code": exc.code},
+        )
+
     @app.exception_handler(CaptureRoutingError)
     async def capture_rejected(_request: Request, exc: CaptureRoutingError) -> JSONResponse:
         payload = {"detail": exc.detail}
@@ -89,11 +96,13 @@ def create_app(config: AppConfig | None = None, context: AppContext | None = Non
         routes_remote,
         routes_storage_v1,
         routes_stream,
+        routes_workloads_v1,
     )
 
     app.include_router(routes_stream.router)
     app.include_router(routes_node_v1.router)
     app.include_router(routes_storage_v1.router)
+    app.include_router(routes_workloads_v1.router)
     app.include_router(routes_fleet_v1.router)
     app.include_router(routes_proxy.router)
     app.include_router(routes_active.router)

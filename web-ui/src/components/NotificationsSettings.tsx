@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 
 import { useNotifications, useTestNotification, useUpdateNotifications } from "../api/hooks";
+import { ApiError } from "../api/client";
 import { IconBell } from "../icons";
 import type { NotificationsUpdate } from "../types";
 import { useToast } from "./toast";
 import { Button, Toggle } from "./ui";
 
 export function NotificationsSettings() {
-  const data = useNotifications().data;
+  const query = useNotifications();
+  const data = query.data;
   const update = useUpdateNotifications();
   const test = useTestNotification();
   const toast = useToast();
@@ -77,6 +79,17 @@ export function NotificationsSettings() {
       toast.err(e instanceof Error ? e.message : "Test failed — check your channels");
     }
   };
+
+  if (query.error || !data) {
+    const denied = query.error instanceof ApiError && query.error.status === 403;
+    return <div className="panel notif-panel">
+      <div className="panel-title"><IconBell size={16} /> Notifications</div>
+      <p className="ais-intro" role={query.error ? "alert" : "status"}>
+        {denied ? "Administrator access is required to view notification settings." : query.error ? "Notification settings could not be loaded." : "Loading notification settings…"}
+      </p>
+      {query.error && <Button disabled={query.isFetching} onClick={() => void query.refetch()}>Try again</Button>}
+    </div>;
+  }
 
   const enabled = !!form.enabled;
   const conf = form.min_confidence ?? 0;

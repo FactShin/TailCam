@@ -59,10 +59,12 @@ class QwenVLBackend:
         *,
         cache_dir: str | None = None,
         local_files_only: bool = False,
+        device: str | None = None,
     ) -> None:
         # model_path: a fine-tuned checkpoint/adapter dir; falls back to the hub name.
         self.model_name = model_path or model_name
         self._local_files_only = local_files_only
+        self._device_override = device
         self._load_options = (
             {"cache_dir": cache_dir, "local_files_only": True} if local_files_only else {}
         )
@@ -105,7 +107,7 @@ class QwenVLBackend:
 
             from tailcam.training.engine import torch_device
 
-            device = torch_device()
+            device = self._device_override or torch_device()
             self._device = device if device in ("cuda", "mps") else "cpu"
             dtype = torch.float16 if self._device in ("cuda", "mps") else torch.float32
             self._model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
@@ -232,6 +234,9 @@ def finetune_qwen(
     model_name: str = UNSLOTH_MODEL,
     on_epoch=None,
     should_stop=None,
+    local_files_only: bool = False,
+    cache_dir: str | None = None,
+    seed: int = 1234,
 ) -> dict:
     """QLoRA fine-tune Qwen2.5-VL with Unsloth on ``(image_path, json_target)``
     pairs (the target is the JSON detection list :func:`annotations.to_qwen_json`
@@ -249,7 +254,9 @@ def finetune_qwen(
     from unsloth.trainer import UnslothVisionDataCollator
 
     model, tokenizer = FastVisionModel.from_pretrained(
-        model_name, load_in_4bit=True, use_gradient_checkpointing="unsloth"
+        model_name, load_in_4bit=True, use_gradient_checkpointing="unsloth",
+        **({"local_files_only": True, "cache_dir": cache_dir, "trust_remote_code": False}
+           if local_files_only else {}),
     )
     model = FastVisionModel.get_peft_model(
         model,
@@ -261,7 +268,7 @@ def finetune_qwen(
         lora_alpha=16,
         lora_dropout=0,
         bias="none",
-        random_state=1234,
+        random_state=seed,
     )
 
     dataset = []
@@ -300,7 +307,7 @@ def finetune_qwen(
             learning_rate=2e-4,
             logging_steps=1,
             optim="adamw_8bit",
-            seed=1234,
+            seed=seed,
             output_dir=str(out_dir / "checkpoints"),
             report_to="none",
             remove_unused_columns=False,

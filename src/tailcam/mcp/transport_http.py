@@ -145,7 +145,7 @@ async def mcp_post(request: Request) -> Response:
         return JSONResponse(error_response(None, PARSE_ERROR, "parse error"), status_code=400)
 
     ctx = request.app.state.ctx
-    client = TailcamClient.for_app(request.app)
+    client = TailcamClient.for_app(request.app, principal=principal)
     server = McpServer(
         client=client,
         principal=principal,

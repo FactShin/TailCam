@@ -56,6 +56,13 @@ Configure under `[training]` (or via `POST /api/training/collection`, MCP:
 
 ## Training runs
 
+In 1.11, choose the training worker under **Workloads → Placement**, then select
+an existing registered model in the training form. Imported local weights can
+be adopted into artifact storage without changing the storage-policy switch.
+Provision the model first; durable workers do not automatically download a
+missing base model. The local package badge is inventory, not proof that a
+selected remote worker's engine or GPU is ready.
+
 Start a run on a dataset:
 
 ```
@@ -67,7 +74,7 @@ come from `[training]`:
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `base_model` | yolo11n-cls.pt | Classification base (downloaded on first train). |
+| `base_model` | yolo11n-cls.pt | Legacy default name; select provisioned model weights for durable training. |
 | `epochs` | 30 | Training epochs. |
 | `image_size` | 224 | Classification input size. |
 | `detect_base_model` | yolo11n.pt | Detection base. |
@@ -78,8 +85,14 @@ Monitor progress: `GET /api/training/runs` and `GET /api/training/runs/<id>`
 (MCP: `list_training_runs`, `get_training_run`) — status moves through `queued`,
 `preparing`, `training`, `complete` (or `error` / `stopped`), with per-epoch
 progress, metrics, and a log. Stop a run with `POST /api/training/runs/<id>/stop`
-(MCP: `stop_training_run`). If TailCam restarts mid-run, the run is marked
-`error` so it never appears stuck.
+(MCP: `stop_training_run`). Durable runs also have a job ID: restart recovery
+reconciles the job and its selected outputs. An eligible failed stage may restart
+within its attempt/deadline budget; checkpoint continuation requires explicit
+backend support. Older runs without a job journal are marked interrupted.
+
+For a finite series managed by an external agent, use the
+[Training Supervisor](/docs/training-supervisor). It preserves the active model
+and enforces approved data, models, workers, parameters and budgets.
 
 ## Models
 

@@ -71,6 +71,7 @@ class TrainingService:
         role_check: Callable[[], None] | None = None,
         analysis_check: Callable[[], None] | None = None,
         storage_service=None,
+        job_service=None,
     ) -> None:
         self._manager = manager
         self._store = store
@@ -80,6 +81,8 @@ class TrainingService:
         self._notifier = notifier
         self._role_check = role_check or (lambda: None)
         self._storage_service = storage_service
+        self._job_service = job_service
+        self._job_lock = threading.RLock()
         self._analysis_check = analysis_check or self._role_check
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -576,7 +579,8 @@ class TrainingService:
         epochs: int | None = None,
         image_size: int | None = None,
     ) -> TrainingRunRecord | None:
-        self._role_check()
+        if self._job_service is None:
+            self._role_check()
         dataset = self._store.get_dataset(dataset_id)
         if dataset is None:
             return None
@@ -593,6 +597,8 @@ class TrainingService:
             base = base_model or cfg.base_model
             imgsz = image_size or cfg.image_size
         ep = epochs or cfg.epochs
+        if self._job_service is not None:
+            return self._submit_training(dataset_id, base, ep, imgsz)
         storage_job = (
             ProducerWorkspace(self._storage_service, ("model_output", "export"))
             if enabled(self._storage_service)
@@ -656,12 +662,80 @@ class TrainingService:
         return any(r.status in ("queued", "preparing", "training") for r in self._store.list_runs())
 
     def stop_run(self, run_id: int) -> bool:
+        if self._job_service is not None:
+            run = self._store.get_run(run_id)
+            job_id = json.loads(run.params_json).get("job_id") if run is not None else None
+            if job_id:
+                self.project_job(self._job_service.request_cancel(job_id))
+                return True
         with self._lock:
             stop = self._run_stops.get(run_id)
         if stop is None:
             return False
         stop.set()
         return True
+
+    def dataset_revision(self, dataset_id: int) -> str:
+        from tailcam.workloads.training import dataset_revision
+
+        return dataset_revision(self, dataset_id)
+
+    def dataset_review(self, dataset_id: int) -> dict:
+        from tailcam.workloads.training import dataset_review
+
+        return dataset_review(self, dataset_id)
+
+    def prepare_training_job(self, **kwargs):
+        from tailcam.workloads.training import prepare_training_job
+
+        with self._job_lock:
+            return prepare_training_job(self, **kwargs)
+
+    def project_job(self, job) -> None:
+        from tailcam.workloads.training import project_job
+
+        with self._job_lock:
+            project_job(self, job)
+
+    def reconcile_jobs(self) -> None:
+        if self._job_service is None:
+            return
+        for run in self._store.list_runs():
+            job_id = json.loads(run.params_json).get("job_id")
+            if job_id:
+                record = self._job_service.get(job_id)
+                if record is not None:
+                    self.project_job(record)
+
+    def _submit_training(self, dataset_id: int, base: str, epochs: int, imgsz: int):
+        from uuid import uuid4
+
+        from tailcam.jobs.models import JobError
+
+        if base.startswith("model:") and base[6:].isdecimal():
+            model_id = int(base[6:])
+        else:
+            model = next((m for m in self._store.list_models()
+                          if m.path == base or m.base_model == base or m.name == base), None)
+            if model is None or model.id is None:
+                raise JobError(
+                    "model_unavailable", "Register existing model weights before training."
+                )
+            model_id = model.id
+        plan = self._job_service.placement.plan("training")
+        if plan.selected_target.node_id is None:
+            raise JobError("worker_unavailable", "Training requires a TailCam worker.")
+        review = self.dataset_review(dataset_id)
+        spec = self.prepare_training_job(
+            dataset_id=dataset_id, dataset_revision=review["revision"], base_model_id=model_id,
+            epochs=epochs, image_size=imgsz, seed=1234,
+            worker_node_id=plan.selected_target.node_id, camera_ids=review["camera_ids"],
+            classes=review["classes"], job_id=str(uuid4()), budget=plan.budget,
+        )
+        self._job_service.submit(
+            spec, idempotency_key=spec.job_id, principal_scope="manual-training"
+        )
+        return self._store.get_run(int(spec.reference["training_run_id"]))
 
     def _train_job(
         self,

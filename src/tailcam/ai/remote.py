@@ -15,10 +15,13 @@ throttled so a dead peer can't stall the caller.
 
 from __future__ import annotations
 
+import json
+import math
 import threading
 import time
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import urlsplit
 
 import numpy as np
 
@@ -66,12 +69,13 @@ class RemoteDetector:
         self._lock = threading.Lock()
         self._down_until = 0.0
         self.last_error = ""
+        self._observation: dict[str, Any] = {}
 
     def _http(self) -> Any:
         if self._client is None:
             import httpx
 
-            self._client = httpx.Client(timeout=_TIMEOUT, follow_redirects=False)
+            self._client = httpx.Client(timeout=_TIMEOUT, follow_redirects=False, trust_env=False)
         return self._client
 
     @property
@@ -85,6 +89,7 @@ class RemoteDetector:
             "base_url": base or "",
             "reachable": base is not None and time.monotonic() >= self._down_until,
             "error": self.last_error,
+            **self._observation,
         }
 
     def _post(self, image: np.ndarray, mode: str) -> dict[str, Any] | None:
@@ -95,23 +100,52 @@ class RemoteDetector:
             self.last_error = "detection node not found on the tailnet"
             return None
         try:
+            parsed = urlsplit(base)
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.hostname
+                or parsed.username
+                or parsed.password
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError("Invalid selected endpoint")
             payload = _to_jpeg(image)
-            resp = self._http().post(
+            started = time.monotonic()
+            with self._http().stream(
+                "POST",
                 f"{base}/api/detect-image",
                 params={"mode": mode},
                 content=payload,
-                headers={"Content-Type": "image/jpeg"},
-            )
-            if resp.status_code != 200:
-                raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:120]}")
+                headers={"Content-Type": "image/jpeg", "Accept-Encoding": "identity"},
+            ) as resp:
+                if (
+                    resp.status_code != 200
+                    or resp.headers.get("content-encoding", "identity").lower() != "identity"
+                ):
+                    raise ValueError("Invalid peer response")
+                body = bytearray()
+                for chunk in resp.iter_bytes():
+                    if len(body) + len(chunk) > 256 * 1024 or time.monotonic() - started > _TIMEOUT:
+                        raise ValueError("Peer response too large")
+                    body.extend(chunk)
+                data = json.loads(body)
+            if not isinstance(data, dict):
+                raise ValueError("Invalid peer result")
             self.last_error = ""
-            data = resp.json()
-            return data if isinstance(data, dict) else None
-        except Exception as exc:
+            model = data.get("model_name")
+            self._observation = {"round_trip_ms": (time.monotonic() - started) * 1000}
+            if isinstance(model, str) and 0 < len(model) <= 256:
+                self._observation["model_name"] = model
+            return data
+        except Exception:
             with self._lock:
                 self._down_until = time.monotonic() + _FAILURE_BACKOFF
-                self.last_error = str(exc)
-            log.warning("remote detection via %s failed: %s", base, exc)
+                self.last_error = (
+                    "Selected detection node is unavailable or returned an invalid result"
+                )
+                self._observation = {}
+            log.warning("Selected remote detection request failed")
             return None
 
     def detect(self, image: np.ndarray) -> list[Detection] | None:
@@ -120,18 +154,32 @@ class RemoteDetector:
         if data is None:
             return None
         if not data.get("detector_active", True):
-            return []
+            return None
+        boxes = data.get("boxes") or []
+        if not isinstance(boxes, list) or len(boxes) > 1000:
+            return None
         out: list[Detection] = []
-        for b in data.get("boxes") or []:
+        for b in boxes:
             try:
+                if not isinstance(b["label"], str) or not 0 < len(b["label"]) <= 256:
+                    return None
+                if any(
+                    type(b[k]) not in {int, float} or not math.isfinite(b[k]) or not 0 <= b[k] <= 1
+                    for k in ("confidence", "cx", "cy", "w", "h")
+                ):
+                    return None
                 out.append(
                     Detection(
-                        label=str(b["label"]), confidence=float(b["confidence"]),
-                        cx=float(b["cx"]), cy=float(b["cy"]), w=float(b["w"]), h=float(b["h"]),
+                        label=str(b["label"]),
+                        confidence=float(b["confidence"]),
+                        cx=float(b["cx"]),
+                        cy=float(b["cy"]),
+                        w=float(b["w"]),
+                        h=float(b["h"]),
                     )
                 )
             except (KeyError, TypeError, ValueError):
-                continue
+                return None
         return out
 
     def analyze(self, image: np.ndarray) -> Analysis | None:
@@ -139,10 +187,22 @@ class RemoteDetector:
         if not data or not data.get("label"):
             return None
         try:
+            label, description = data["label"], data.get("description") or data["label"]
+            confidence = data.get("confidence") or 0.0
+            if (
+                not isinstance(label, str)
+                or not 0 < len(label) <= 256
+                or not isinstance(description, str)
+                or len(description) > 2048
+                or type(confidence) not in {int, float}
+                or not math.isfinite(confidence)
+                or not 0 <= confidence <= 1
+            ):
+                return None
             return Analysis(
-                label=str(data["label"]),
-                description=str(data.get("description") or data["label"]),
-                confidence=float(data.get("confidence") or 0.0),
+                label=label,
+                description=description,
+                confidence=float(confidence),
             )
         except (KeyError, TypeError, ValueError):
             return None

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import time
 
+import pytest
+
 
 def _wait(predicate, timeout: float = 10.0, interval: float = 0.05) -> bool:
     deadline = time.monotonic() + timeout
@@ -34,9 +36,7 @@ def test_printer_timelapse_presets_are_stable(client):
     assert presets["Maximum Quality"]["smooth_quality"] == "maximum"
 
 
-def test_start_persists_and_uses_per_capture_printer_settings(
-    client, context, monkeypatch
-):
+def test_start_persists_and_uses_per_capture_printer_settings(client, context, monkeypatch):
     from tailcam.timelapse import worker as worker_module
 
     qualities: list[int] = []
@@ -140,15 +140,8 @@ def test_ffmpeg_output_quality_uses_fixed_safe_arguments():
     assert maximum[maximum.index("-preset") + 1] == "slower"
 
 
-def test_auto_smooth_uses_persisted_capture_options(context, monkeypatch):
+def test_auto_smooth_uses_persisted_capture_options(context):
     camera_id = _synthetic_id(context)
-    calls: list[tuple[int, dict[str, object]]] = []
-
-    def recording_smooth(tl_id, **kwargs):
-        calls.append((tl_id, kwargs))
-        return context.timelapse.get(tl_id)
-
-    monkeypatch.setattr(context.timelapse, "smooth", recording_smooth)
     record = context.timelapse.start(
         camera_id,
         interval_seconds=0.1,
@@ -160,21 +153,29 @@ def test_auto_smooth_uses_persisted_capture_options(context, monkeypatch):
         smooth_engine="rife",
         smooth_quality="maximum",
     )
-
+    # Later settings edits must not alter either stage's admitted parameters.
+    context.config.timelapse.smooth_target_fps = 120
+    context.config.timelapse.smooth_engine = "ffmpeg"
+    context.config.timelapse.smooth_quality = "standard"
     assert record is not None and record.id is not None
-    assert _wait(lambda: bool(calls))
-    assert calls == [
-        (
-            record.id,
-            {
-                "target_fps": 48,
-                "interpolate": False,
-                "deflicker": False,
-                "engine": "rife",
-                "quality": "maximum",
-            },
-        )
-    ]
+    assert _wait(lambda: bool(context.jobs.list()))
+    job = context.jobs.list()[0]
+    spec = context.jobs.spec(job.job_id)
+    assert [stage.task for stage in spec.stages] == ["timelapse_encode", "timelapse_interpolate"]
+    encode, smooth = spec.stages
+    assert smooth.depends_on == [encode.stage_id]
+    assert smooth.parameters == {
+        "fps": record.output_fps,
+        "target_fps": 48,
+        "interpolate": False,
+        "deflicker": False,
+        "engine": "rife",
+        "quality": "maximum",
+    }
+    assert encode.input_artifacts == smooth.input_artifacts
+    assert encode.placement_plan.task == "timelapse_encode"
+    assert smooth.placement_plan.task == "timelapse_interpolate"
+    assert job.state == "queued"  # no uninstalled RIFE engine is invoked by this contract test
 
 
 def test_smooth_api_rejects_unknown_output_quality(client, context):
@@ -193,7 +194,8 @@ def test_smooth_api_rejects_unknown_output_quality(client, context):
     assert response.status_code == 422
 
 
-def test_failed_resmooth_preserves_previous_good_artifact(context, tmp_path, monkeypatch):
+@pytest.mark.parametrize("durable", [False, True])
+def test_failed_resmooth_preserves_previous_good_artifact(context, tmp_path, monkeypatch, durable):
     from tailcam.persistence.models import TimelapseRecord
     from tailcam.timelapse import service as service_module
 
@@ -227,8 +229,23 @@ def test_failed_resmooth_preserves_previous_good_artifact(context, tmp_path, mon
         smooth_path=str(previous),
         smooth_size_bytes=previous.stat().st_size,
     )
-    monkeypatch.setattr(service_module, "ffmpeg_path", lambda: "ffmpeg")
-    monkeypatch.setattr(service_module, "run_ffmpeg", lambda command: False)
+    if durable:
+        # A real isolated FFmpeg attempt receives invalid frame bytes. The prior
+        # good managed artifact must stay published when that attempt fails.
+        previous_artifact = context.storage_service.adopt_existing(
+            previous,
+            "timelapse_smooth",
+            namespace="timelapse",
+            legacy_id=str(tl_id),
+            variant="smooth",
+            camera_id="camera",
+        )
+        context.jobs.start()
+    else:
+        # Retain the direct adapter's pre-existing failed-output contract too.
+        context.timelapse._job_service = None
+        monkeypatch.setattr(service_module, "ffmpeg_path", lambda: "ffmpeg")
+        monkeypatch.setattr(service_module, "run_ffmpeg", lambda command: False)
 
     context.timelapse.smooth(tl_id)
 
@@ -238,18 +255,32 @@ def test_failed_resmooth_preserves_previous_good_artifact(context, tmp_path, mon
     assert saved.smooth_size_bytes == len(b"last-good-smooth-video")
     assert previous.read_bytes() == b"last-good-smooth-video"
     assert not (frames_dir.parent / "smooth.pending.mp4").exists()
+    if durable:
+        alias = context.storage_service.catalog.resolve_alias("timelapse", str(tl_id), "smooth")
+        assert alias.artifact_id == previous_artifact.artifact_id
+        assert (
+            context.storage_service.resolve(alias.artifact_id).read_bytes() == previous.read_bytes()
+        )
+        jobs = context.jobs.list()
+        assert len(jobs) == 1 and jobs[0].state == "failed"
+        assert jobs[0].stages[0].attempt == 1
+        assert not jobs[0].stages[0].outputs
 
 
-def test_analysis_api_requires_ollama_and_lists_persisted_events(client, context):
+def test_analysis_api_requires_ollama_and_lists_persisted_events(client, context, monkeypatch):
     from tailcam.persistence.models import TimelapseAnalysisEventRecord
 
     camera_id = _synthetic_id(context)
-    rejected = client.post(
-        f"/api/cameras/{camera_id}/timelapse/start",
-        json={"analysis_enabled": True},
-    )
-    assert rejected.status_code == 409
-    assert "Models" in rejected.json()["detail"]
+    # Legacy direct analysis still refuses a missing local Ollama configuration;
+    # workload-based analysis validates its selected worker independently.
+    with monkeypatch.context() as legacy:
+        legacy.setattr(context, "workloads", None)
+        rejected = client.post(
+            f"/api/cameras/{camera_id}/timelapse/start",
+            json={"analysis_enabled": True},
+        )
+        assert rejected.status_code == 409
+        assert "Models" in rejected.json()["detail"]
 
     started = client.post(
         f"/api/cameras/{camera_id}/timelapse/start",
@@ -285,3 +316,36 @@ def test_analysis_api_requires_ollama_and_lists_persisted_events(client, context
     summary = client.get(f"/api/timelapse/{started['id']}").json()
     assert summary["analysis_event_count"] == 1
     assert summary["analysis_latest_state"] == "healthy"
+
+
+@pytest.mark.parametrize("refusal", ["role", "placement"])
+def test_analysis_placement_loss_does_not_stop_capture(context, monkeypatch, refusal):
+    from tailcam.jobs.models import JobError
+    from tailcam.node import RoleDisabledError
+
+    accepted = []
+
+    def submit(*args):
+        if not accepted:
+            accepted.append(args)
+            return
+        if refusal == "role":
+            raise RoleDisabledError("analysis")
+        raise JobError("worker_unavailable", "Approved worker went offline")
+
+    monkeypatch.setattr(context.timelapse_analysis, "submit", submit)
+    record = context.timelapse.start(
+        _synthetic_id(context),
+        interval_seconds=0.05,
+        max_frames=5,
+        analysis_enabled=True,
+        analysis_cadence_seconds=0.1,
+    )
+    assert _wait(lambda: context.timelapse.get(record.id).frames_captured == 5), (
+        context.timelapse.get(record.id), accepted, context.jobs.list()
+    )
+    events = context.store.list_timelapse_analysis_events(record.id)
+    assert accepted and events
+    assert all(event.state == "uncertain" and event.confidence == 0 for event in events)
+    assert all("placement unavailable" in event.description for event in events)
+    assert context.timelapse.get(record.id).state == "encoding"
