@@ -290,7 +290,9 @@ class TransferReceiver:
                     descriptor = _open(root, root_fd, incoming, os.O_RDWR)
                 except FileNotFoundError:
                     try:
-                        descriptor = _open(root, root_fd, final, os.O_RDONLY)
+                        # Recovery still flushes verified bytes before publishing
+                        # metadata. Windows fsync requires a writable handle.
+                        descriptor = _open(root, root_fd, final, os.O_RDWR)
                         recovered = True
                     except FileNotFoundError:
                         if transfer.size_bytes:

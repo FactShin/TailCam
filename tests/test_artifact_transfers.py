@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 from pathlib import Path
 from uuid import uuid4
 
@@ -155,8 +156,31 @@ def test_crash_after_atomic_rename_before_database_commit(nodes, monkeypatch):
     assert (root / artifact_filename(declaration.artifact)).exists()
     assert owner.catalog.list() == []
     monkeypatch.setattr(owner.catalog, "save", original)
+    # Model Windows' flush requirement on every platform. A read-only recovery
+    # handle must never pass the final durability boundary before catalog commit.
+    from tailcam.storage import transfers
+
+    open_file, sync_file = transfers._open, os.fsync
+    recovered_handles = {}
+    flushed = []
+
+    def open_recovery(root_path, descriptor, name, flags):
+        handle = open_file(root_path, descriptor, name, flags)
+        if name == artifact_filename(declaration.artifact):
+            recovered_handles[handle] = flags
+        return handle
+
+    def flush_recovery(handle):
+        if handle in recovered_handles and stat.S_ISREG(os.fstat(handle).st_mode):
+            assert recovered_handles[handle] & (os.O_WRONLY | os.O_RDWR)
+            flushed.append(handle)
+        return sync_file(handle)
+
+    monkeypatch.setattr(transfers, "_open", open_recovery)
+    monkeypatch.setattr(os, "fsync", flush_recovery)
     restarted = StorageService(AppConfig(), Store(owner.store.db_path), owner.node_id)
     artifact = restarted.transfers.commit(transfer.transfer_id)
+    assert len(flushed) == 1
     assert restarted.resolve(artifact.artifact_id).read_bytes() == b"durable"
 
 
