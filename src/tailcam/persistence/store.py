@@ -740,6 +740,9 @@ class Store:
 
     # -- dataset samples ---------------------------------------------------
     def add_sample(self, record: DatasetSampleRecord) -> int:
+        from tailcam.training.labels import validate_class_label
+
+        validate_class_label(record.label)
         with self._conn() as conn:
             cur = conn.execute(
                 """
@@ -798,6 +801,9 @@ class Store:
         return [_sample_from_row(r) for r in rows]
 
     def set_sample_label(self, sample_id: int, label: str | None) -> None:
+        from tailcam.training.labels import validate_class_label
+
+        validate_class_label(label)
         with self._conn() as conn:
             conn.execute(
                 "UPDATE dataset_samples SET label=?, confidence=NULL WHERE id=?", (label, sample_id)
@@ -808,6 +814,9 @@ class Store:
     ) -> None:
         """A machine-produced label keeps its confidence (unlike a human
         relabel, which clears it — see set_sample_label)."""
+        from tailcam.training.labels import validate_class_label
+
+        validate_class_label(label)
         with self._conn() as conn:
             conn.execute(
                 "UPDATE dataset_samples SET label=?, confidence=? WHERE id=?",

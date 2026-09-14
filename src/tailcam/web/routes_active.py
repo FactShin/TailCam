@@ -142,7 +142,9 @@ def labeling_backends(ctx: AppContext = Depends(get_context)) -> list[LabelingBa
     """Models that can watch + pre-label frames, with availability."""
     if not ctx.has_role("training") or not ctx.has_role("analysis"):
         return []
-    infos = list_labeling_backends(ctx.store, ctx.detector, ctx.analyzer)
+    infos = list_labeling_backends(
+        ctx.store, ctx.detector, ctx.analyzer, storage_service=ctx.storage_service,
+    )
     return [LabelingBackendInfo(**vars(i)) for i in infos]
 
 

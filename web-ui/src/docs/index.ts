@@ -18,6 +18,7 @@ import notifications from "./md/notifications.md?raw";
 import plugins from "./md/plugins.md?raw";
 import tailscale from "./md/tailscale.md?raw";
 import fleet from "./md/fleet.md?raw";
+import storage from "./md/storage.md?raw";
 import security from "./md/security.md?raw";
 import mcpOverview from "./md/mcp-overview.md?raw";
 import mcpConnect from "./md/mcp-connect.md?raw";
@@ -74,6 +75,8 @@ export const DOCS: DocPage[] = [
     summary: "Serving over the tailnet, ports, and identity." },
   { slug: "fleet", title: "Fleet (multi-node)", group: "Network & fleet", body: fleet,
     summary: "Peer discovery, aggregated cameras, storage nodes, and relay." },
+  { slug: "storage", title: "Storage destinations", group: "Network & fleet", body: storage,
+    summary: "Content owners, mount identity, quotas, transfer recovery and reviewed migrations." },
   { slug: "security", title: "Security & access", group: "Network & fleet", body: security,
     summary: "Principals, roles, grants, and the audit log." },
 

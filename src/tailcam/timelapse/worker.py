@@ -11,6 +11,7 @@ import numpy as np
 
 from tailcam.camera.frame import FrameBuffer, FrameConsumer
 from tailcam.logging_setup import get_logger
+from tailcam.storage.models import StorageError
 from tailcam.streaming.encoder import encode_jpeg
 
 log = get_logger(__name__)
@@ -40,6 +41,7 @@ class TimelapseCaptureWorker:
         on_frame: Callable[[int], None] | None = None,
         on_complete: Callable[[], None] | None = None,
         reacquire: Callable[[], FrameBuffer | None] | None = None,
+        save_frame: Callable[[Path, bytes, int], None] | None = None,
     ) -> None:
         self.tl_id = tl_id
         self.camera_id = camera_id
@@ -50,6 +52,7 @@ class TimelapseCaptureWorker:
         self.jpeg_quality = jpeg_quality
         self.max_frames = max_frames
         self.duration = duration_seconds
+        self._save_frame = save_frame
         self._on_frame = on_frame
         self._on_complete = on_complete
         self.frames_captured = 0
@@ -101,14 +104,24 @@ class TimelapseCaptureWorker:
     def _save(self, image: np.ndarray) -> None:
         try:
             path = self.frames_dir / f"{self.frames_captured:06d}.jpg"
-            path.write_bytes(encode_jpeg(image, self.jpeg_quality))
+            data = encode_jpeg(image, self.jpeg_quality)
+            if self._save_frame is None:
+                path.write_bytes(data)
+            else:
+                self._save_frame(path, data, self.frames_captured)
         except Exception as exc:  # disk full, drive unmounted
             self._save_failures += 1
+            if isinstance(exc, StorageError) and exc.code in {
+                "workspace_full",
+                "workspace_forbidden",
+            }:
+                self._save_failures = _MAX_SAVE_FAILURES
             log.warning("timelapse %s: failed to save frame: %s", self.tl_id, exc)
             if self._save_failures >= _MAX_SAVE_FAILURES:
                 log.error(
                     "timelapse %s: %d consecutive save failures; stopping capture",
-                    self.tl_id, self._save_failures,
+                    self.tl_id,
+                    self._save_failures,
                 )
                 self.failed = True
                 self._stop.set()

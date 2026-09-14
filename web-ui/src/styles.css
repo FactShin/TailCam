@@ -1393,3 +1393,50 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .fp-foot { display: flex; align-items: center; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line, rgba(255,255,255,.08)); margin-top: 8px; flex-wrap: wrap; }
 .fp-hidden { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted, #8a90a8); }
 .fp-disk { font-size: 11px; color: var(--muted, #8a90a8); }
+
+/* Unified storage keeps long identities and review controls usable on phones. */
+.storage-screen { max-width: 1180px; }
+.storage-tabs { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 24px; }
+.storage-tabs .btn { white-space:normal; text-align:center; }
+.storage-stack { display:grid; gap:20px; }
+.storage-policy-form, .storage-stack > *, .storage-destination, .storage-fields, .storage-item { min-width:0; }
+.storage-fieldset { display:grid; gap:16px; min-width:0; margin:0; padding:0; border:0; }
+.storage-fieldset:disabled { opacity:.7; }
+.storage-destination, .storage-fields, .storage-filters { display:grid; grid-template-columns:minmax(0,1fr); gap:14px; }
+.storage-filters { margin:20px 0; align-items:end; }
+.storage-destination .tl-select, .storage-fields .tl-input, .storage-filters .tl-select, .storage-fieldset > .tl-field .tl-select { width:100%; min-width:0; }
+.storage-notice { padding:12px 14px; margin:12px 0; border:1px solid var(--border); border-radius:8px; color:var(--text); background:var(--bg2); font-size:13px; line-height:1.6; overflow-wrap:anywhere; }
+.storage-notice.is-error { border-color:var(--warn); }
+.storage-notice p { margin:6px 0 0; }
+.storage-notice .btn { margin-left:4px; }
+.storage-notice + .btn { margin-top:8px; }
+.storage-id, .storage-path { font-size:11px; line-height:1.6; overflow-wrap:anywhere; }
+.storage-id { color:var(--muted); margin:10px 0; }
+.storage-path { font-size:13px; margin:10px 0; }
+.storage-heading { font-family:var(--font); font-size:14px; font-weight:600; margin:0; overflow-wrap:anywhere; }
+.storage-section { border-top:1px solid var(--border); padding-top:20px; margin-top:8px; }
+.storage-section > summary { cursor:pointer; font-size:14px; font-weight:600; padding:4px 0 12px; }
+.storage-section > form { margin-top:12px; }
+.storage-check { display:flex; align-items:flex-start; gap:10px; font-size:13px; line-height:1.6; cursor:pointer; }
+.storage-check input { flex-shrink:0; width:17px; height:17px; margin:2px 0 0; accent-color:var(--accent); }
+.storage-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:8px; }
+.storage-actions .btn { white-space:normal; }
+.storage-rule, .storage-item { border:1px solid var(--border); border-radius:9px; padding:16px; }
+.storage-rule { display:grid; gap:14px; margin:16px 0; }
+.storage-row-head { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; }
+.storage-empty { padding:22px 0; font-size:13px; color:var(--muted); line-height:1.7; }
+.storage-list { display:grid; gap:12px; }
+.storage-stats { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; margin:16px 0; font-size:12px; }
+.storage-stats dt { color:var(--muted); font-size:11px; margin-bottom:4px; }
+.storage-stats dd { margin:0; overflow-wrap:anywhere; line-height:1.5; }
+.storage-meta { color:var(--muted); font-size:12px; line-height:1.6; margin:12px 0; }
+.storage-progress { width:100%; height:8px; margin-top:16px; accent-color:var(--accent); }
+.storage-kind-checks { display:grid; gap:10px; }
+.storage-preview-items { list-style:none; padding:0; margin:18px 0; display:grid; gap:10px; max-height:420px; overflow:auto; }
+.storage-preview-items li { padding:12px; border:1px solid var(--border); border-radius:6px; font-size:12px; display:grid; gap:6px; overflow-wrap:anywhere; }
+.storage-preview-items li span { color:var(--muted); }
+.storage-gallery-link { display:inline-block; color:var(--accent); font-size:12px; margin-top:10px; }
+@container appframe (min-width:760px) {
+  .storage-fields, .storage-destination, .storage-stats, .storage-kind-checks { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .storage-filters { grid-template-columns:repeat(3,minmax(0,1fr)); }
+}

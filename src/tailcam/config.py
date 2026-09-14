@@ -85,6 +85,17 @@ class StorageConfig:
     # with the most storage or the CPU to encode. "" = save here. If the node is
     # unreachable when a capture starts, it runs locally instead.
     node: str = ""
+    # Explicit opt-in preserves legacy content routes until unified policy is applied.
+    unified_enabled: bool = False
+    policy: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.unified_enabled, bool) or not isinstance(self.policy, dict):
+            raise ValueError("invalid unified storage configuration")
+        if self.policy:
+            from tailcam.storage.models import StoragePolicy
+
+            self.policy = StoragePolicy.model_validate(self.policy).model_dump(exclude_none=True)
 
 
 @dataclass

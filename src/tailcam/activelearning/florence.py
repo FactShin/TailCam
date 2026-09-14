@@ -35,7 +35,8 @@ _FLORENCE_CONFIDENCE = 0.75
 
 def _packages_missing() -> list[str]:
     return [
-        pkg for pkg in ("torch", "transformers", "timm", "einops")
+        pkg
+        for pkg in ("torch", "transformers", "timm", "einops")
         if importlib.util.find_spec(pkg) is None
     ]
 
@@ -43,9 +44,20 @@ def _packages_missing() -> list[str]:
 class Florence2Backend:
     """Zero-shot object detection with Florence-2."""
 
-    def __init__(self, model_name: str = DEFAULT_MODEL, model_path: str = "") -> None:
+    def __init__(
+        self,
+        model_name: str = DEFAULT_MODEL,
+        model_path: str = "",
+        *,
+        cache_dir: str | None = None,
+        local_files_only: bool = False,
+    ) -> None:
         # model_path: a fine-tuned checkpoint directory; falls back to the hub name.
         self.model_name = model_path or model_name
+        self._local_files_only = local_files_only
+        self._load_options = (
+            {"cache_dir": cache_dir, "local_files_only": True} if local_files_only else {}
+        )
         # Lazily-loaded transformers handles (heavy optional deps).
         self._model: Any = None
         self._processor: Any = None
@@ -55,17 +67,20 @@ class Florence2Backend:
     def info(self) -> BackendInfo:
         missing = _packages_missing()
         if missing:
-            detail = (
-                "install " + ", ".join(missing)
-                + " — pip install 'tailcam[florence2]'"
+            detail = "install " + ", ".join(missing) + " — pip install 'tailcam[florence2]'"
+            return BackendInfo(
+                id="florence2", name="Florence-2", kind="vlm", available=False, detail=detail
             )
-            return BackendInfo(id="florence2", name="Florence-2", kind="vlm",
-                               available=False, detail=detail)
         detail = self._load_error or (
             "ready" if self._model is not None else "ready (loads on first frame)"
         )
-        return BackendInfo(id="florence2", name="Florence-2", kind="vlm",
-                           available=not self._load_error, detail=detail)
+        return BackendInfo(
+            id="florence2",
+            name="Florence-2",
+            kind="vlm",
+            available=not self._load_error,
+            detail=detail,
+        )
 
     def _load(self) -> bool:
         if self._model is not None:
@@ -82,10 +97,13 @@ class Florence2Backend:
             self._device = device if device in ("cuda", "mps") else "cpu"
             dtype = torch.float16 if self._device == "cuda" else torch.float32
             self._model = AutoModelForCausalLM.from_pretrained(
-                self.model_name, torch_dtype=dtype, trust_remote_code=True
+                self.model_name,
+                torch_dtype=dtype,
+                trust_remote_code=not self._local_files_only,
+                **self._load_options,
             ).to(self._device)
             self._processor = AutoProcessor.from_pretrained(
-                self.model_name, trust_remote_code=True
+                self.model_name, trust_remote_code=not self._local_files_only, **self._load_options
             )
             log.info("florence-2 loaded (%s on %s)", self.model_name, self._device)
             return True
@@ -104,10 +122,7 @@ class Florence2Backend:
             pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
             task = "<OD>"
             inputs = self._processor(text=task, images=pil, return_tensors="pt")
-            inputs = {
-                k: (v.to(self._device) if hasattr(v, "to") else v)
-                for k, v in inputs.items()
-            }
+            inputs = {k: (v.to(self._device) if hasattr(v, "to") else v) for k, v in inputs.items()}
             if self._device == "cuda":
                 inputs["pixel_values"] = inputs["pixel_values"].half()
             generated = self._model.generate(
@@ -160,9 +175,7 @@ def florence_finetune_support() -> tuple[bool, str]:
     """(available, human-readable detail) for fine-tuning on this machine."""
     missing = _packages_missing()
     if missing:
-        return False, (
-            "install " + ", ".join(missing) + " — pip install 'tailcam[florence2]'"
-        )
+        return False, ("install " + ", ".join(missing) + " — pip install 'tailcam[florence2]'")
     from tailcam.training.engine import torch_device
 
     device = torch_device()
@@ -200,9 +213,7 @@ def finetune_florence(
 
     device = torch_device()
     device = device if device in ("cuda", "mps") else "cpu"
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name, trust_remote_code=True
-    ).to(device)
+    model = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True).to(device)
     processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
     model.train()

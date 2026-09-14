@@ -63,6 +63,9 @@ def main():
     config.peers.auto_discover = False
     config.peers.static = [args.peer] if args.peer else []
     config.storage.node = args.storage
+    # The fixture provisions a real isolated location, just as Settings setup
+    # does. Runtime producers must never create a missing external mount.
+    (args.root / "media").mkdir(exist_ok=True)
     config.storage.media_dir = str(args.root / "media")
     config.detection.enabled = False
     config.ai.enabled = bool(args.ai)

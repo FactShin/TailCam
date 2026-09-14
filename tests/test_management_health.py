@@ -56,6 +56,10 @@ def test_capability_identifiers_are_stable() -> None:
             "node.reload",
             "node.audit",
             "ai.ollama.status",
+            "storage.catalog.v1",
+            "storage.policy.v1",
+            "storage.transfers.v1",
+            "storage.migration.v1",
         }
     )
 

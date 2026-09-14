@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useCameras } from "../api/hooks";
-import { IconAi, IconBook, IconBrain, IconCamera, IconChip, IconFilm, IconGrid, IconMotion, IconSearch, IconServer, IconSettings, IconTimelapse, IconWall } from "../icons";
+import { IconAi, IconBook, IconBrain, IconCamera, IconChip, IconFilm, IconGrid, IconHdd, IconMotion, IconSearch, IconServer, IconSettings, IconTimelapse, IconWall } from "../icons";
 import { cameraPath } from "../lib/nav";
 
 interface PalItem {
@@ -36,6 +36,7 @@ export function CommandPalette({
       { kind: "screen", id: "/events", label: "Events", icon: IconMotion, meta: "screen", to: "/events" },
       { kind: "screen", id: "/ai", label: "AI Studio", icon: IconAi, meta: "screen", to: "/ai" },
       { kind: "screen", id: "/timelapse", label: "Timelapse", icon: IconTimelapse, meta: "screen", to: "/timelapse" },
+      { kind: "screen", id: "/storage", label: "Storage", icon: IconHdd, meta: "policy, content, transfers, migration", to: "/storage" },
       { kind: "screen", id: "/training", label: "Training", icon: IconBrain, meta: "AI Studio tab", to: "/ai?tab=training" },
       { kind: "screen", id: "/models", label: "Models", icon: IconChip, meta: "AI Studio tab", to: "/ai?tab=models" },
       { kind: "screen", id: "/plugins", label: "Plugins", icon: IconChip, meta: "screen", to: "/plugins" },

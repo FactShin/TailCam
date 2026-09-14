@@ -14,6 +14,7 @@ from tailcam import paths
 from tailcam.config import AppConfig
 from tailcam.media.capture_router import CaptureRoutingError
 from tailcam.node import RoleDisabledError
+from tailcam.storage.models import StorageError
 from tailcam.web.context import AppContext
 
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -57,6 +58,12 @@ def create_app(config: AppConfig | None = None, context: AppContext | None = Non
             content={"detail": str(exc), "code": "role_disabled", "role": exc.role},
         )
 
+    @app.exception_handler(StorageError)
+    async def storage_rejected(_request: Request, exc: StorageError) -> JSONResponse:
+        return JSONResponse(
+            status_code=exc.status_code, content={"detail": exc.detail, "code": exc.code},
+        )
+
     @app.exception_handler(CaptureRoutingError)
     async def capture_rejected(_request: Request, exc: CaptureRoutingError) -> JSONResponse:
         payload = {"detail": exc.detail}
@@ -80,11 +87,13 @@ def create_app(config: AppConfig | None = None, context: AppContext | None = Non
         routes_node_v1,
         routes_proxy,
         routes_remote,
+        routes_storage_v1,
         routes_stream,
     )
 
     app.include_router(routes_stream.router)
     app.include_router(routes_node_v1.router)
+    app.include_router(routes_storage_v1.router)
     app.include_router(routes_fleet_v1.router)
     app.include_router(routes_proxy.router)
     app.include_router(routes_active.router)

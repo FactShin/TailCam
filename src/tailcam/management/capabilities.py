@@ -32,6 +32,10 @@ _CAPABILITIES = frozenset(
         "node.reload",
         "node.audit",
         "ai.ollama.status",
+        "storage.catalog.v1",
+        "storage.policy.v1",
+        "storage.transfers.v1",
+        "storage.migration.v1",
     }
 )
 _ACTIONS = frozenset({"reload"})
@@ -51,6 +55,8 @@ class NodeCapabilityService:
             available.difference_update({"camera.view", "camera.control", "camera.record"})
         elif "storage" not in roles and not (ctx and ctx.config.storage.node):
             available.discard("camera.record")
+        if "storage" not in roles:
+            available.difference_update({"storage.transfers.v1", "storage.migration.v1"})
         if "analysis" not in roles:
             available.discard("ai.ollama.status")
         return NodeCapabilitySet(

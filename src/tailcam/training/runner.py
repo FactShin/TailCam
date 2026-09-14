@@ -8,6 +8,7 @@ else — the train/val export, class selection, metric capture — is plain logi
 
 from __future__ import annotations
 
+import json
 import random
 import shutil
 from collections import defaultdict
@@ -15,7 +16,10 @@ from collections.abc import Callable
 from pathlib import Path
 
 from tailcam.logging_setup import get_logger
+from tailcam.persistence.models import DatasetSampleRecord
 from tailcam.persistence.store import Store
+from tailcam.storage.models import StorageError
+from tailcam.training.labels import validate_class_label
 
 log = get_logger(__name__)
 
@@ -26,23 +30,30 @@ def export_classification_dataset(
     out_dir: Path,
     val_frac: float = 0.2,
     min_per_class: int = 2,
+    sample_resolver: Callable[[DatasetSampleRecord], Path] | None = None,
+    copy_sample: Callable[[str, Path], None] | None = None,
 ) -> tuple[list[str], int, int]:
     """Lay out labeled samples as ``out_dir/{train,val}/<class>/*.jpg`` (the
     format Ultralytics classification expects). Returns (classes, n_train, n_val).
     Raises ValueError if there isn't enough labeled data to train."""
     by_class: dict[str, list[str]] = defaultdict(list)
     for s in store.list_samples(dataset_id, limit=1_000_000):
-        if s.label and Path(s.path).exists():
-            by_class[s.label].append(s.path)
+        validate_class_label(s.label)
+        source = sample_resolver(s) if sample_resolver is not None else Path(s.path)
+        if s.label and source.is_file():
+            by_class[s.label].append(str(source))
 
     classes = sorted(c for c, items in by_class.items() if len(items) >= min_per_class)
     if len(classes) < 2:
         raise ValueError(
             "need at least 2 labeled classes with "
             f"{min_per_class}+ samples each (have: "
-            + ", ".join(f"{c}={len(by_class[c])}" for c in sorted(by_class)) + ")"
+            + ", ".join(f"{c}={len(by_class[c])}" for c in sorted(by_class))
+            + ")"
         )
 
+    if out_dir.is_symlink():
+        raise ValueError("Export directory must not be a symbolic link")
     if out_dir.exists():
         shutil.rmtree(out_dir, ignore_errors=True)
     n_train = n_val = 0
@@ -60,7 +71,7 @@ def export_classification_dataset(
             dest.mkdir(parents=True, exist_ok=True)
             for i, src in enumerate(group):
                 try:
-                    shutil.copyfile(src, dest / f"{i:06d}.jpg")
+                    (copy_sample or shutil.copyfile)(src, dest / f"{i:06d}.jpg")
                 except OSError:  # pragma: no cover
                     continue
             if split == "train":
@@ -76,6 +87,8 @@ def export_detection_dataset(
     out_dir: Path,
     val_frac: float = 0.2,
     min_boxes: int = 1,
+    sample_resolver: Callable[[DatasetSampleRecord], Path] | None = None,
+    copy_sample: Callable[[str, Path], None] | None = None,
 ) -> tuple[list[str], int, int]:
     """Lay out annotated samples as a YOLO *detection* dataset::
 
@@ -89,12 +102,13 @@ def export_detection_dataset(
     annotated: list[tuple[str, list]] = []  # (image_path, [SampleAnnotationRecord])
     label_set: set[str] = set()
     for s in store.list_samples(dataset_id, limit=1_000_000):
-        if not Path(s.path).exists() or s.id is None:
+        source = sample_resolver(s) if sample_resolver is not None else Path(s.path)
+        if not source.is_file() or s.id is None:
             continue
         boxes = store.list_annotations(s.id)
         if len(boxes) < min_boxes:
             continue
-        annotated.append((s.path, boxes))
+        annotated.append((str(source), boxes))
         label_set.update(b.label for b in boxes)
 
     classes = sorted(label_set)
@@ -105,6 +119,8 @@ def export_detection_dataset(
         )
     class_idx = {name: i for i, name in enumerate(classes)}
 
+    if out_dir.is_symlink():
+        raise ValueError("Export directory must not be a symbolic link")
     if out_dir.exists():
         shutil.rmtree(out_dir, ignore_errors=True)
     for split in ("train", "val"):
@@ -124,7 +140,7 @@ def export_detection_dataset(
         for i, (src, boxes) in enumerate(items):
             stem = f"{i:06d}"
             try:
-                shutil.copyfile(src, out_dir / "images" / split / f"{stem}.jpg")
+                (copy_sample or shutil.copyfile)(src, out_dir / "images" / split / f"{stem}.jpg")
             except OSError:  # pragma: no cover
                 continue
             lines = [
@@ -137,9 +153,11 @@ def export_detection_dataset(
             )
             counts[split] += 1
 
-    names = "\n".join(f"  {i}: {name}" for i, name in enumerate(classes))
+    # JSON strings are valid YAML scalars and cannot inject keys, tags or
+    # directives through a label or a Windows/path name.
+    names = "\n".join(f"  {i}: {json.dumps(name)}" for i, name in enumerate(classes))
     (out_dir / "data.yaml").write_text(
-        f"path: {out_dir}\ntrain: images/train\nval: images/val\nnames:\n{names}\n"
+        f"path: {json.dumps(str(out_dir))}\ntrain: images/train\nval: images/val\nnames:\n{names}\n"
     )
     return classes, counts["train"], counts["val"]
 
@@ -154,6 +172,7 @@ def train_model(
     on_epoch: Callable[[int], None],
     should_stop: Callable[[], bool] | None = None,
     task: str = "classification",
+    offline: bool = False,
 ) -> dict:
     """Fine-tune a YOLO model. Returns {'model_path', 'metrics'}.
 
@@ -170,11 +189,17 @@ def train_model(
             on_epoch(int(getattr(trainer, "epoch", 0)) + 1)
             if should_stop is not None and should_stop():
                 trainer.stop = True
+        except StorageError:
+            trainer.stop = True
+            raise
         except Exception:
             pass
 
     model.add_callback("on_train_epoch_end", _cb)
     data = str(data_dir / "data.yaml") if task == "detection" else str(data_dir)
+    # A preprovisioned unified job cannot trigger an AMP reference-model
+    # download, plot-font download, or an unaccounted dataset image cache.
+    offline_options = {"amp": False, "plots": False, "cache": False} if offline else {}
     model.train(
         data=data,
         epochs=epochs,
@@ -184,6 +209,7 @@ def train_model(
         name="train",
         exist_ok=True,
         verbose=False,
+        **offline_options,
     )
     best = project_dir / "train" / "weights" / "best.pt"
     return {"model_path": str(best), "metrics": _extract_metrics(model, task)}

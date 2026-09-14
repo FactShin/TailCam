@@ -47,6 +47,16 @@ from tailcam.ai.analyzer import Detection
 from tailcam.camera.manager import CameraManager
 from tailcam.config import ActiveLearningConfig, AppConfig
 from tailcam.logging_setup import get_logger
+from tailcam.media.storage import (
+    ProducerWorkspace,
+    alias,
+    archive_tree,
+    enabled,
+    local_path,
+    safe_filename,
+    sample_path,
+    store_image,
+)
 from tailcam.persistence.models import (
     DatasetSampleRecord,
     ModelRecord,
@@ -117,6 +127,7 @@ class ActiveLearningService:
         *,
         role_check: Callable[[], None] | None = None,
         analysis_check: Callable[[], None] | None = None,
+        storage_service=None,
     ) -> None:
         self._manager = manager
         self._store = store
@@ -127,6 +138,8 @@ class ActiveLearningService:
         self._training = training  # TrainingService (owns the YOLO fine-tune path)
         self._host = host
         self._role_check = role_check or (lambda: None)
+        self._storage_service = storage_service
+        self._storage_jobs: dict[int, ProducerWorkspace] = {}
         self._analysis_check = analysis_check or (lambda: None)
         self.label_studio = label_studio or LabelStudioService(self._config)
         self._stop = threading.Event()
@@ -150,19 +163,42 @@ class ActiveLearningService:
             if self._thread is not None and self._thread.is_alive():
                 raise ValueError("active learning is already running")
         cfg = self._config
+        if (
+            enabled(self._storage_service)
+            and cfg.source.startswith("dataset:")
+            and self._storage_service.get_policy().zero_local_media
+        ):
+            from tailcam.storage.models import StorageError
+
+            raise StorageError(
+                "workspace_forbidden", "Dataset labeling requires a bounded local workspace"
+            )
         backend = build_labeling_backend(
-            cfg.labeling_model, self._store, self._detector, self._analyzer
+            cfg.labeling_model,
+            self._store,
+            self._detector,
+            self._analyzer,
+            storage_service=self._storage_service,
         )
         if backend is None:
             raise ValueError(f"unknown labeling model '{cfg.labeling_model}'")
         info = backend.info()
         if not info.available:
             raise ValueError(f"labeling model {info.name} is not available: {info.detail}")
-        dataset_id = self._resolve_dataset()
-        # Verify Label Studio up front (connection + project), so the loop
-        # never discovers a bad token mid-session.
-        self.label_studio.ensure_project(self._label_names())
-        self._app_config.save()  # persists a newly created project id
+        try:
+            prepare = getattr(backend, "prepare", None)
+            if prepare is not None:
+                prepare()
+            dataset_id = self._resolve_dataset()
+            # Verify Label Studio up front (connection + project), so the loop
+            # never discovers a bad token mid-session.
+            self.label_studio.ensure_project(self._label_names())
+            self._app_config.save()  # persists a newly created project id
+        except Exception:
+            shutdown = getattr(backend, "shutdown", None)
+            if shutdown is not None:
+                shutdown()
+            raise
         with self._lock:
             self._backend = backend
             self._stats = SessionStats(
@@ -172,13 +208,14 @@ class ActiveLearningService:
                 dataset_id=dataset_id,
             )
             self._stop.clear()
-            self._thread = threading.Thread(
-                target=self._run, name="active-learning", daemon=True
-            )
+            self._thread = threading.Thread(target=self._run, name="active-learning", daemon=True)
             self._thread.start()
         log.info(
             "active learning started: model=%s source=%s threshold=%.2f dataset=%s",
-            cfg.labeling_model, cfg.source, cfg.confidence_threshold, dataset_id,
+            cfg.labeling_model,
+            cfg.source,
+            cfg.confidence_threshold,
+            dataset_id,
         )
 
     def stop(self) -> None:
@@ -186,7 +223,12 @@ class ActiveLearningService:
         thread = self._thread
         if thread is not None:
             thread.join(timeout=6.0)
+        if thread is not None and thread.is_alive():
+            return  # the running backend still owns its model workspace
         self._thread = None
+        shutdown = getattr(self._backend, "shutdown", None)
+        if shutdown is not None:
+            shutdown()
         with self._lock:
             self._stats.running = False
 
@@ -297,12 +339,27 @@ class ActiveLearningService:
                 return False
             with self._lock:
                 stats.seen_sample_ids.add(sample.id or 0)
-            image = cv2.imread(sample.path)
-            if image is None:
-                continue
-            self._handle_frame(
-                image, camera_id=sample.camera_id, existing_sample=sample
-            )
+            lease = None
+            try:
+                source = Path(sample.path)
+                artifact = (
+                    self._storage_service.catalog.resolve_alias("sample", str(sample.id), "file")
+                    if self._storage_service is not None
+                    else None
+                )
+                if artifact is not None:
+                    lease = self._storage_service.workspace_for_artifact(
+                        artifact.artifact_id,
+                        max_bytes=self._storage_service.get_policy().workspace_max_bytes // 4,
+                    )
+                    source = self._storage_service.materialize(artifact.artifact_id, lease)
+                image = cv2.imread(str(source))
+                if image is None:
+                    continue
+                self._handle_frame(image, camera_id=sample.camera_id, existing_sample=sample)
+            finally:
+                if lease is not None:
+                    lease.release()
         return not todo
 
     # -- per-frame handling -------------------------------------------------------
@@ -333,14 +390,17 @@ class ActiveLearningService:
             return
         annotations = [
             FrameAnnotation(
-                label=d.label, cx=d.cx, cy=d.cy, w=d.w, h=d.h,
-                confidence=d.confidence, source=SOURCE_MACHINE,
+                label=d.label,
+                cx=d.cx,
+                cy=d.cy,
+                w=d.w,
+                h=d.h,
+                confidence=d.confidence,
+                source=SOURCE_MACHINE,
             )
             for d in (detections or [])
         ]
-        sample = existing_sample or self._save_sample(
-            image, camera_id, decision, annotations
-        )
+        sample = existing_sample or self._save_sample(image, camera_id, decision, annotations)
         if sample is None or sample.id is None:
             return
         if decision == "auto":
@@ -348,18 +408,37 @@ class ActiveLearningService:
             with self._lock:
                 self._stats.auto_labeled += 1
             return
+        # An admitted sample keeps its stable review identity even if an
+        # administrator disables the policy while this frame is in flight.
+        managed_sample = (
+            self._storage_service is not None
+            and self._storage_service.catalog.resolve_alias(
+                "sample",
+                str(sample.id),
+                "file",
+            )
+            is not None
+        )
         # decision == "review"
         try:
             frame = AnnotatedFrame(
-                image_path=sample.path,
+                image_path=f"tailcam-sample:{sample.id}" if managed_sample else sample.path,
                 annotations=annotations,
                 camera_id=camera_id,
                 timestamp=sample.created_ts,
                 labeling_model=cfg.labeling_model,
             )
-            task_id = self.label_studio.submit_frame(
-                cfg.project_id, frame, cfg.labeling_model
-            )
+            if managed_sample:
+                from tailcam.streaming.encoder import encode_jpeg
+
+                task_id = self.label_studio.submit_frame(
+                    cfg.project_id,
+                    frame,
+                    cfg.labeling_model,
+                    image_bytes=encode_jpeg(image, 88),
+                )
+            else:
+                task_id = self.label_studio.submit_frame(cfg.project_id, frame, cfg.labeling_model)
         except LabelStudioError as exc:
             with self._lock:
                 self._stats.errors += 1
@@ -389,23 +468,28 @@ class ActiveLearningService:
         with self._lock:
             return self._stats.sent_for_review >= cap
 
-    def _apply_machine_labels(
-        self, sample_id: int, annotations: list[FrameAnnotation]
-    ) -> None:
+    def _apply_machine_labels(self, sample_id: int, annotations: list[FrameAnnotation]) -> None:
         self._role_check()
         ts = time.time()
-        self._store.replace_annotations(
-            sample_id,
-            [
-                SampleAnnotationRecord(
-                    id=None, sample_id=sample_id, label=a.label,
-                    cx=a.cx, cy=a.cy, w=a.w, h=a.h, created_ts=ts,
-                )
-                for a in annotations
-            ],
-        )
+        records = [
+            SampleAnnotationRecord(
+                id=None,
+                sample_id=sample_id,
+                label=a.label,
+                cx=a.cx,
+                cy=a.cy,
+                w=a.w,
+                h=a.h,
+                created_ts=ts,
+            )
+            for a in annotations
+        ]
         top = max(annotations, key=lambda a: a.confidence or 0.0)
+        artifact = self._training._publish_annotation(sample_id, top.label, records)
+        self._store.replace_annotations(sample_id, records)
         self._store.set_sample_machine_label(sample_id, top.label, top.confidence)
+        if artifact is not None:
+            alias(self._storage_service, "sample", sample_id, "annotation", artifact)
 
     def _save_sample(
         self,
@@ -418,9 +502,35 @@ class ActiveLearningService:
         from tailcam.streaming.encoder import encode_jpeg
 
         dataset_id = self._stats.dataset_id
+        if enabled(self._storage_service):
+            service = self._storage_service
+            artifact, thumb = store_image(
+                service,
+                "training_sample",
+                image,
+                camera_id=camera_id,
+                metadata={"dataset_id": dataset_id, "decision": decision, "host": self._host},
+            )
+            confidences = [a.confidence for a in annotations if a.confidence is not None]
+            record = DatasetSampleRecord(
+                id=None,
+                dataset_id=dataset_id,
+                path=local_path(service, artifact),
+                thumb=local_path(service, thumb) or None,
+                label=None,
+                source=SAMPLE_SOURCE_AUTO if decision == "auto" else SAMPLE_SOURCE_REVIEW,
+                camera_id=camera_id,
+                host=self._host,
+                created_ts=time.time(),
+                confidence=min(confidences) if confidences else None,
+            )
+            record.id = self._store.add_sample(record)
+            alias(service, "sample", record.id, "file", artifact)
+            alias(service, "sample", record.id, "thumbnail", thumb)
+            return record
         ts = time.time()
         stamp = datetime.fromtimestamp(ts).strftime("%Y%m%d-%H%M%S-%f")[:-3]
-        safe = (camera_id or "frame").replace("/", "_")
+        safe = safe_filename(camera_id or "frame")
         frames_dir = paths.datasets_dir() / str(dataset_id) / "frames"
         frames_dir.mkdir(parents=True, exist_ok=True)
         path = frames_dir / f"al_{safe}_{stamp}.jpg"
@@ -477,8 +587,12 @@ class ActiveLearningService:
                 "pending": counts.get("pending", 0),
                 "dataset_version": 0,
             }
-        by_path = {self._store.get_sample(i.sample_id).path: i  # type: ignore[union-attr]
-                   for i in pending if self._store.get_sample(i.sample_id) is not None}
+        by_path = {
+            self._store.get_sample(i.sample_id).path: i  # type: ignore[union-attr]
+            for i in pending
+            if self._store.get_sample(i.sample_id) is not None
+        }
+        by_path.update({f"tailcam-sample:{item.sample_id}": item for item in pending})
         project_ids = {i.ls_project_id for i in pending if i.ls_project_id} or (
             {cfg.project_id} if cfg.project_id else set()
         )
@@ -490,20 +604,29 @@ class ActiveLearningService:
                 item = by_path.get(task.image_path)
                 if item is None or item.id is None:
                     continue
-                self._store.replace_annotations(
-                    item.sample_id,
-                    [
-                        SampleAnnotationRecord(
-                            id=None, sample_id=item.sample_id, label=a.label,
-                            cx=a.cx, cy=a.cy, w=a.w, h=a.h, created_ts=ts,
-                        )
-                        for a in task.annotations
-                    ],
-                )
+                records = [
+                    SampleAnnotationRecord(
+                        id=None,
+                        sample_id=item.sample_id,
+                        label=a.label,
+                        cx=a.cx,
+                        cy=a.cy,
+                        w=a.w,
+                        h=a.h,
+                        created_ts=ts,
+                    )
+                    for a in task.annotations
+                ]
                 top = max(task.annotations, key=lambda a: a.w * a.h)
+                artifact = self._training._publish_annotation(item.sample_id, top.label, records)
+                self._store.replace_annotations(item.sample_id, records)
                 self._store.set_sample_label(item.sample_id, top.label)
+                if artifact is not None:
+                    alias(self._storage_service, "sample", item.sample_id, "annotation", artifact)
                 self._store.update_review_item(
-                    item.id, status="completed", completed_ts=ts,
+                    item.id,
+                    status="completed",
+                    completed_ts=ts,
                     ls_task_id=task.task_id or item.ls_task_id,
                 )
                 touched_datasets.add(item.dataset_id)
@@ -541,6 +664,14 @@ class ActiveLearningService:
             return self._training.train(dataset_id, epochs=epochs)
         if target not in ("florence2", "qwen2.5-vl"):
             raise ValueError(f"unknown fine-tune target '{target}'")
+        if enabled(self._storage_service):
+            from tailcam.storage.models import StorageError
+
+            raise StorageError(
+                "unsupported_cache_control",
+                "Unified VLM fine-tuning requires an isolated worker to contain dependency "
+                "and compiler caches. Use preprovisioned YOLO weights for local training.",
+            )
         support = {b.id: b for b in list_finetune_backends(self._store)}[target]
         if not support.available:
             raise RuntimeError(f"{support.name} fine-tuning unavailable: {support.detail}")
@@ -549,6 +680,11 @@ class ActiveLearningService:
                 "a training run is already in progress — stop it or wait for it to finish"
             )
         ep = epochs or (3 if target == "florence2" else 1)
+        job = (
+            ProducerWorkspace(self._storage_service, ("model_output", "export"))
+            if enabled(self._storage_service)
+            else None
+        )
         run = TrainingRunRecord(
             id=None,
             dataset_id=dataset_id,
@@ -563,6 +699,8 @@ class ActiveLearningService:
             created_ts=time.time(),
         )
         run.id = self._store.add_run(run)
+        if job is not None:
+            self._storage_jobs[run.id] = job
         stop = threading.Event()
         with self._lock:
             self._run_stops[run.id] = stop
@@ -582,28 +720,30 @@ class ActiveLearningService:
         stop.set()
         return True
 
-    def _export_pairs(self, dataset_id: int, target: str) -> list[tuple[str, str]]:
+    def _export_pairs(
+        self, dataset_id: int, target: str, job: ProducerWorkspace | None = None
+    ) -> list[tuple[str, str]]:
         """(image_path, model-format target string) pairs for a VLM fine-tune."""
         pairs: list[tuple[str, str]] = []
         for sample in self._store.list_samples(dataset_id, limit=1_000_000):
-            if sample.id is None or not Path(sample.path).exists():
+            source = sample_path(job, sample) if job is not None else Path(sample.path)
+            if sample.id is None or not source.is_file():
                 continue
             boxes = self._store.list_annotations(sample.id)
             if not boxes:
                 continue
             anns = [
-                FrameAnnotation(label=b.label, cx=b.cx, cy=b.cy, w=b.w, h=b.h,
-                                source=SOURCE_HUMAN)
+                FrameAnnotation(label=b.label, cx=b.cx, cy=b.cy, w=b.w, h=b.h, source=SOURCE_HUMAN)
                 for b in boxes
             ]
             if target == "florence2":
-                pairs.append((sample.path, to_florence_od_string(anns)))
+                pairs.append((str(source), to_florence_od_string(anns)))
             else:
-                image = cv2.imread(sample.path)
+                image = cv2.imread(str(source))
                 if image is None:
                     continue
                 h, w = image.shape[:2]
-                pairs.append((sample.path, to_qwen_json(anns, w, h)))
+                pairs.append((str(source), to_qwen_json(anns, w, h)))
         return pairs
 
     def _vlm_train_job(
@@ -611,41 +751,87 @@ class ActiveLearningService:
     ) -> None:
         try:
             self._store.update_run(run_id, status="preparing", started_ts=time.time())
-            pairs = self._export_pairs(dataset_id, target)
+            job = self._storage_jobs.get(run_id)
+            pairs = (
+                self._export_pairs(dataset_id, target, job)
+                if job is not None
+                else self._export_pairs(dataset_id, target)
+            )
             if not pairs:
                 raise ValueError("no annotated samples — label some frames first")
             self._store.update_run(
                 run_id, status="training", log=f"{len(pairs)} annotated sample(s)"
             )
-            out_dir = paths.models_dir() / f"run-{run_id}" / target
-            on_epoch = lambda e: self._store.update_run(run_id, epoch=e)  # noqa: E731
+            out_dir = (
+                job.path if job is not None else paths.models_dir() / f"run-{run_id}"
+            ) / target
+            if job is not None:
+                export_dir = job.path / "dataset"
+                export_dir.mkdir()
+                portable_pairs = []
+                from tailcam.media.storage import bounded_copy
+
+                for index, (source, label) in enumerate(pairs):
+                    relative = f"{index:06d}.jpg"
+                    bounded_copy(job, source, export_dir / relative)
+                    portable_pairs.append({"image": relative, "label": label})
+                job.write(export_dir / "labels.json", json.dumps(portable_pairs).encode())
+                export = archive_tree(job, export_dir, job.path / "dataset.zip")
+                artifact = job.finish(
+                    export,
+                    "export",
+                    mime_type="application/zip",
+                    metadata={"run_id": run_id, "filename": "dataset.zip"},
+                )
+                alias(job.service, "training_run", run_id, "export", artifact)
+            on_epoch = lambda e: self._training._training_epoch(run_id, e, job)  # noqa: E731
             if target == "florence2":
                 from tailcam.activelearning.florence import finetune_florence
 
                 result = finetune_florence(
-                    pairs, out_dir, epochs=epochs, on_epoch=on_epoch,
+                    pairs,
+                    out_dir,
+                    epochs=epochs,
+                    on_epoch=on_epoch,
                     should_stop=stop.is_set,
                 )
             else:
                 from tailcam.activelearning.qwen import finetune_qwen
 
                 result = finetune_qwen(
-                    pairs, out_dir, epochs=epochs, on_epoch=on_epoch,
+                    pairs,
+                    out_dir,
+                    epochs=epochs,
+                    on_epoch=on_epoch,
                     should_stop=stop.is_set,
                 )
             if stop.is_set():
                 self._store.update_run(run_id, status="stopped", ended_ts=time.time())
                 return
-            classes = sorted(
-                self._store.dataset_annotation_label_counts(dataset_id)
-            )
+            classes = sorted(self._store.dataset_annotation_label_counts(dataset_id))
             name = {"florence2": "Florence-2", "qwen2.5-vl": "Qwen2.5-VL"}[target]
+            model_path = result["model_path"]
+            artifact = None
+            if job is not None:
+                archive = archive_tree(job, Path(model_path), job.path / "model.zip")
+                artifact = job.finish(
+                    archive,
+                    "model_output",
+                    mime_type="application/zip",
+                    metadata={
+                        "run_id": run_id,
+                        "format": "directory-zip",
+                        "filename": "model.zip",
+                        "backend": target,
+                    },
+                )
+                model_path = ""  # the registry resolves the archive through its alias
             model_id = self._store.add_model(
                 ModelRecord(
                     id=None,
                     name=f"{name} fine-tune {datetime.now().strftime('%Y-%m-%d %H:%M')}",
                     kind="trained",
-                    path=result["model_path"],
+                    path=model_path,
                     classes_json=json.dumps(classes),
                     base_model=target,
                     metrics_json=json.dumps(result.get("metrics", {})),
@@ -653,17 +839,27 @@ class ActiveLearningService:
                     task="detection",
                 )
             )
+            if job is not None and artifact is not None:
+                alias(job.service, "model", model_id, "file", artifact)
+                job.release()
+                self._storage_jobs.pop(run_id, None)
             self._store.update_run(
-                run_id, status="complete", model_id=model_id, epoch=epochs,
-                metrics_json=json.dumps(result.get("metrics", {})), ended_ts=time.time(),
+                run_id,
+                status="complete",
+                model_id=model_id,
+                epoch=epochs,
+                metrics_json=json.dumps(result.get("metrics", {})),
+                ended_ts=time.time(),
             )
-            log.info("active learning: %s fine-tune run %s complete -> model %s",
-                     target, run_id, model_id)
+            log.info(
+                "active learning: %s fine-tune run %s complete -> model %s",
+                target,
+                run_id,
+                model_id,
+            )
         except Exception as exc:
             log.exception("active learning: fine-tune run %s failed: %s", run_id, exc)
-            self._store.update_run(
-                run_id, status="error", log=str(exc)[:500], ended_ts=time.time()
-            )
+            self._store.update_run(run_id, status="error", log=str(exc)[:500], ended_ts=time.time())
         finally:
             with self._lock:
                 self._run_stops.pop(run_id, None)

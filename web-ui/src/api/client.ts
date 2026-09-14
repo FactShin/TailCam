@@ -29,7 +29,7 @@ export class ApiError extends Error {
   }
 }
 
-async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
+export async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
     headers: init?.body ? { "Content-Type": "application/json" } : undefined,

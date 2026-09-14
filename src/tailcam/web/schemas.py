@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from tailcam.node import validate_node_name, validate_roles
+from tailcam.training.labels import validate_class_label
 
 
 class TransformModel(BaseModel):
@@ -603,6 +604,8 @@ class SampleInfo(BaseModel):
 
 class SampleRelabel(BaseModel):
     label: str | None = None  # None clears the label
+
+    _safe_class_label = field_validator("label")(validate_class_label)
 
 
 class AnnotationBox(BaseModel):

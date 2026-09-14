@@ -135,8 +135,10 @@ def test_export_detection_dataset_yolo_layout(store, tmp_path):
     assert classes == ["dog", "person"]
     assert n_train + n_val == 6
     assert n_val >= 1
-    data_yaml = (out / "data.yaml").read_text()
-    assert "0: dog" in data_yaml and "1: person" in data_yaml
+    import yaml
+
+    data_yaml = yaml.safe_load((out / "data.yaml").read_text())
+    assert data_yaml["names"] == {0: "dog", 1: "person"}
     # One label file per exported image, in YOLO "<idx> cx cy w h" form.
     train_labels = list((out / "labels" / "train").glob("*.txt"))
     assert len(train_labels) == n_train
